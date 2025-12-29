@@ -1,0 +1,418 @@
+# CELERY SETUP & USAGE GUIDE
+
+## 🚀 Quick Start
+
+### 1. Install Dependencies
+
+```bash
+cd backend
+pip install celery[redis] flower
+```
+
+### 2. Start Services (Docker)
+
+```bash
+# Start all services
+docker-compose up -d
+
+# Or start specific services
+docker-compose up -d postgres redis
+```
+
+### 3. Start Celery Workers (Development)
+
+**Terminal 1 - Main Worker:**
+```bash
+celery -A app.workers.celery_app worker --loglevel=info
+```
+
+**Terminal 2 - Beat (Scheduler):**
+```bash
+celery -A app.workers.celery_app beat --loglevel=info
+```
+
+**Terminal 3 - Flower (Monitoring):**
+```bash
+celery -A app.workers.celery_app flower
+# Open http://localhost:5555
+```
+
+---
+
+## 📝 Usage Examples
+
+### Trigger Tasks from Code
+
+```python
+# In your API endpoint
+from app.workers.tasks.email_tasks import send_verification_email
+
+@router.post("/register")
+async def register(user_data: dict):
+    # ... create user ...
+    
+    # Send email asynchronously
+    send_verification_email.delay(
+        email=user.email,
+        name=user.full_name,
+        verification_url=f"https://autoflow.app/verify?token={token}"
+    )
+    
+    return {"message": "Registration successful"}
+```
+
+### Schedule Task for Later
+
+```python
+from datetime import timedelta
+from app.workers.tasks.email_tasks import send_invoice_email
+
+# Send in 1 hour
+send_invoice_email.apply_async(
+    args=["client@example.com", "INV-001", "https://..."],
+    countdown=3600  # seconds
+)
+
+# Send at specific time
+from datetime import datetime
+send_invoice_email.apply_async(
+    args=["client@example.com", "INV-001", "https://..."],
+    eta=datetime(2025, 12, 31, 23, 59, 59)
+)
+```
+
+### Set Task Priority
+
+```python
+# High priority (9 = highest)
+send_verification_email.apply_async(
+    args=["urgent@example.com", "John", "https://..."],
+    priority=9
+)
+
+# Low priority (0 = lowest)
+send_bulk_notification.apply_async(
+    args=[email_list, "Newsletter", "..."],
+    priority=1
+)
+```
+
+### Chain Tasks
+
+```python
+from celery import chain
+
+# Execute tasks sequentially
+result = chain(
+    task1.s(arg1),
+    task2.s(),  # Gets result from task1
+    task3.s()   # Gets result from task2
+).apply_async()
+```
+
+### Group Tasks (Parallel)
+
+```python
+from celery import group
+
+# Execute tasks in parallel
+job = group(
+    send_email.s("user1@example.com"),
+    send_email.s("user2@example.com"),
+    send_email.s("user3@example.com")
+)
+
+result = job.apply_async()
+```
+
+---
+
+## 🔍 Monitoring
+
+### Flower Dashboard
+
+Open browser: http://localhost:5555
+
+**Features:**
+- Real-time task monitoring
+- Worker status
+- Task history
+- Task retry/revoke
+- Task rate charts
+
+### CLI Commands
+
+```bash
+# List active workers
+celery -A app.workers.celery_app inspect active
+
+# List scheduled tasks (Beat)
+celery -A app.workers.celery_app inspect scheduled
+
+# List registered tasks
+celery -A app.workers.celery_app inspect registered
+
+# Revoke task by ID
+celery -A app.workers.celery_app revoke <task_id>
+
+# Purge all tasks from queue
+celery -A app.workers.celery_app purge
+```
+
+---
+
+## 🐛 Debugging
+
+### Enable Verbose Logging
+
+```bash
+celery -A app.workers.celery_app worker --loglevel=debug
+```
+
+### Test Task Execution
+
+```python
+# In Python shell
+from app.workers.tasks.email_tasks import send_verification_email
+
+# Execute synchronously (for testing)
+result = send_verification_email("test@example.com", "Test", "https://...")
+
+# Execute asynchronously
+task = send_verification_email.delay("test@example.com", "Test", "https://...")
+
+# Wait for result (blocking)
+result = task.get(timeout=10)
+
+# Check status
+print(task.status)  # PENDING, STARTED, SUCCESS, FAILURE
+```
+
+---
+
+## 📊 Performance Tuning
+
+### Worker Concurrency
+
+```bash
+# More workers (CPU-bound tasks)
+celery -A app.workers.celery_app worker --concurrency=8
+
+# Auto-scale (min 2, max 10)
+celery -A app.workers.celery_app worker --autoscale=10,2
+```
+
+### Queue Priorities
+
+```python
+# app/workers/celery_app.py
+celery_app.conf.task_routes = {
+    "app.workers.tasks.email_tasks.*": {
+        "queue": "email",
+        "priority": 9
+    },
+    "app.workers.tasks.integration_tasks.*": {
+        "queue": "integrations", 
+        "priority": 5
+    }
+}
+```
+
+Start queue-specific workers:
+
+```bash
+# Email queue only (high priority)
+celery -A app.workers.celery_app worker --queues=email
+
+# Integration queue only
+celery -A app.workers.celery_app worker --queues=integrations
+
+# Multiple queues
+celery -A app.workers.celery_app worker --queues=email,integrations
+```
+
+---
+
+## 🔄 Scheduled Tasks (Cron)
+
+### Configure in celery_app.py
+
+```python
+from celery.schedules import crontab
+
+celery_app.conf.beat_schedule = {
+    # Every 5 minutes
+    "sync-emails": {
+        "task": "app.workers.tasks.integration_tasks.sync_gmail_emails",
+        "schedule": crontab(minute="*/5"),
+    },
+    
+    # Every day at 2 AM
+    "daily-cleanup": {
+        "task": "app.workers.tasks.maintenance_tasks.cleanup_old_results",
+        "schedule": crontab(hour=2, minute=0),
+    },
+    
+    # Every Monday at 9 AM
+    "weekly-report": {
+        "task": "app.workers.tasks.report_tasks.generate_weekly_report",
+        "schedule": crontab(hour=9, minute=0, day_of_week=1),
+    },
+    
+    # 1st of every month at 3 AM
+    "monthly-report": {
+        "task": "app.workers.tasks.report_tasks.generate_monthly_report",
+        "schedule": crontab(day_of_month=1, hour=3, minute=0),
+    }
+}
+```
+
+### Start Beat Scheduler
+
+```bash
+celery -A app.workers.celery_app beat --loglevel=info
+```
+
+---
+
+## 🚨 Error Handling
+
+### Retry Configuration
+
+```python
+@celery_app.task(
+    bind=True,
+    max_retries=3,           # Max 3 retries
+    default_retry_delay=60,  # Wait 60s before retry
+    autoretry_for=(Exception,),  # Auto-retry on any exception
+    retry_backoff=True,      # Exponential backoff (60s, 120s, 240s)
+    retry_jitter=True        # Add randomness to backoff
+)
+def my_task(self, arg):
+    try:
+        # Task logic
+        pass
+    except Exception as exc:
+        # Manual retry
+        raise self.retry(exc=exc, countdown=120)
+```
+
+### Dead Letter Queue
+
+Failed tasks (after all retries) → logged but not re-executed.
+
+Check Flower dashboard for failed tasks.
+
+---
+
+## 🔧 Production Setup
+
+### Systemd Service (Linux)
+
+**File: `/etc/systemd/system/celery-worker.service`**
+
+```ini
+[Unit]
+Description=Celery Worker
+After=network.target
+
+[Service]
+Type=forking
+User=autoflow
+Group=autoflow
+WorkingDirectory=/opt/autoflow/backend
+Environment="PATH=/opt/autoflow/venv/bin"
+ExecStart=/opt/autoflow/venv/bin/celery -A app.workers.celery_app worker \
+          --loglevel=info \
+          --concurrency=4 \
+          --logfile=/var/log/celery/worker.log
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**File: `/etc/systemd/system/celery-beat.service`**
+
+```ini
+[Unit]
+Description=Celery Beat Scheduler
+After=network.target
+
+[Service]
+Type=simple
+User=autoflow
+Group=autoflow
+WorkingDirectory=/opt/autoflow/backend
+Environment="PATH=/opt/autoflow/venv/bin"
+ExecStart=/opt/autoflow/venv/bin/celery -A app.workers.celery_app beat \
+          --loglevel=info \
+          --logfile=/var/log/celery/beat.log
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Enable & Start:**
+
+```bash
+sudo systemctl enable celery-worker celery-beat
+sudo systemctl start celery-worker celery-beat
+sudo systemctl status celery-worker celery-beat
+```
+
+---
+
+## 📈 Scaling
+
+### Multiple Workers
+
+```bash
+# Start 3 workers
+celery -A app.workers.celery_app worker --concurrency=4 -n worker1@%h
+celery -A app.workers.celery_app worker --concurrency=4 -n worker2@%h
+celery -A app.workers.celery_app worker --concurrency=4 -n worker3@%h
+```
+
+### Different Machines
+
+All workers connect to same Redis instance:
+
+**Machine 1 (emails):**
+```bash
+celery -A app.workers.celery_app worker --queues=email --concurrency=2
+```
+
+**Machine 2 (integrations):**
+```bash
+celery -A app.workers.celery_app worker --queues=integrations --concurrency=4
+```
+
+**Machine 3 (processes):**
+```bash
+celery -A app.workers.celery_app worker --queues=processes --concurrency=8
+```
+
+---
+
+## ✅ Checklist for Manus
+
+- [ ] Install Redis
+- [ ] Install Celery + Flower
+- [ ] Copy all task files to `app/workers/tasks/`
+- [ ] Configure `celery_app.py`
+- [ ] Test tasks locally
+- [ ] Configure beat schedule
+- [ ] Setup Flower monitoring
+- [ ] Test scheduled tasks
+- [ ] Configure systemd (production)
+- [ ] Monitor performance
+
+---
+
+## 🔗 Resources
+
+- Celery Docs: https://docs.celeryq.dev/
+- Flower Docs: https://flower.readthedocs.io/
+- Redis Docs: https://redis.io/docs/

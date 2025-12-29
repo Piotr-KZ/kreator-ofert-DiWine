@@ -1,0 +1,1321 @@
+ SEKCJA 3: AUTENTYKACJA I AUTORYZACJA
+
+🎯 CEL
+Zaimplementować bezpieczny system auth dla AutoFlow który obsługuje:
+
+JWT tokens (access + refresh)
+Password hashing (bcrypt)
+RBAC (Role-Based Access Control)
+Email verification
+Password reset
+API tokens (dla integracji)
+Multi-tenancy security (izolacja organizacji)
+
+
+🔐 FIREBASE AUTH → FASTAPI JWT
+Firebase Auth (przed):
+typescript// Firebase handles everything
+import { getAuth, signInWithEmailAndPassword } from 'firebase/auth';
+
+const auth = getAuth();
+const userCredential = await signInWithEmailAndPassword(auth, email, password);
+const idToken = await userCredential.user.getIdToken();
+
+// Token verification (backend)
+const decodedToken = await admin.auth().verifyIdToken(idToken);
+✅ ZALETY:
+
+Zero setup (Firebase robi wszystko)
+Built-in email verification
+OAuth providers (Google, Facebook)
+
+❌ WADY:
+
+Lock-in do Firebase
+Trudna customizacja
+Kosztowne przy dużej skali
+
+FastAPI + JWT (teraz):
+python# Backend generates JWT
+from jose import jwt
+from passlib.context import CryptContext
+from datetime import datetime, timedelta
+
+# Verify password + generate token
+if verify_password(password, user.password_hash):
+    access_token = create_access_token(
+        data={"sub": str(user.id), "org": user.organization_id}
+    )
+    refresh_token = create_refresh_token(
+        data={"sub": str(user.id)}
+    )
+✅ ZALETY:
+
+Pełna kontrola
+Customizable
+Tańsze
+Portable (łatwo zmienić stack)
+
+⚠️ WYMAGA:
+
+Własna implementacja (ale standardowa)
+Email service (SendGrid/SMTP)
+Token management
+
+
+🔧 IMPLEMENTACJA KROK PO KROKU
+1. PASSWORD HASHING (bcrypt)
+python# app/core/security.py
+from passlib.context import CryptContext
+
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """
+    Verify plain password against hashed password.
+    
+    Args:
+        plain_password: User input (plaintext)
+        hashed_password: Stored hash from DB
+    
+    Returns:
+        True if password matches, False otherwise
+    """
+    return pwd_context.verify(plain_password, hashed_password)
+
+def get_password_hash(password: str) -> str:
+    """
+    Hash password using bcrypt.
+    
+    Args:
+        password: Plaintext password
+    
+    Returns:
+        Bcrypt hash string
+    """
+    return pwd_context.hash(password)
+
+def validate_password_strength(password: str) -> bool:
+    """
+    Validate password meets requirements:
+    - At least 8 characters
+    - Contains uppercase letter
+    - Contains lowercase letter
+    - Contains number
+    - Contains special character
+    
+    Returns:
+        True if valid, raises ValueError if not
+    """
+    if len(password) < 8:
+        raise ValueError("Password must be at least 8 characters long")
+    
+    if not any(char.isupper() for char in password):
+        raise ValueError("Password must contain at least one uppercase letter")
+    
+    if not any(char.islower() for char in password):
+        raise ValueError("Password must contain at least one lowercase letter")
+    
+    if not any(char.isdigit() for char in password):
+        raise ValueError("Password must contain at least one number")
+    
+    special_chars = "!@#$%^&*()_+-=[]{}|;:,.<>?"
+    if not any(char in special_chars for char in password):
+        raise ValueError("Password must contain at least one special character")
+    
+    return True
+Użycie:
+python# Register user
+hashed_password = get_password_hash("MySecurePass123!")
+
+user = User(
+    email="jan@example.com",
+    password_hash=hashed_password
+)
+db.add(user)
+db.commit()
+
+# Login user
+if verify_password(input_password, user.password_hash):
+    # Password correct → generate token
+    pass
+else:
+    raise HTTPException(401, "Invalid credentials")
+
+2. JWT TOKEN GENERATION
+python# app/core/security.py (continued)
+from jose import JWTError, jwt
+from datetime import datetime, timedelta
+from app.core.config import settings
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
+    """
+    Create JWT access token.
+    
+    Args:
+        data: Payload data (user_id, org_id, role, etc)
+        expires_delta: Token expiration time (default: 15 minutes)
+    
+    Returns:
+        JWT token string
+    """
+    to_encode = data.copy()
+    
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    
+    to_encode.update({
+        "exp": expire,
+        "iat": datetime.utcnow(),
+        "type": "access"
+    })
+    
+    encoded_jwt = jwt.encode(
+        to_encode, 
+        settings.SECRET_KEY, 
+        algorithm=settings.ALGORITHM
+    )
+    return encoded_jwt
+
+def create_refresh_token(data: dict) -> str:
+    """
+    Create JWT refresh token (long-lived).
+    
+    Args:
+        data: Payload data (typically just user_id)
+    
+    Returns:
+        JWT refresh token string
+    """
+    to_encode = data.copy()
+    expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
+    
+    to_encode.update({
+        "exp": expire,
+        "iat": datetime.utcnow(),
+        "type": "refresh"
+    })
+    
+    encoded_jwt = jwt.encode(
+        to_encode,
+        settings.REFRESH_SECRET_KEY,  # Different secret!
+        algorithm=settings.ALGORITHM
+    )
+    return encoded_jwt
+
+def decode_access_token(token: str) -> dict | None:
+    """
+    Decode and verify JWT access token.
+    
+    Args:
+        token: JWT token string
+    
+    Returns:
+        Decoded payload dict or None if invalid
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            settings.SECRET_KEY,
+            algorithms=[settings.ALGORITHM]
+        )
+        
+        # Verify token type
+        if payload.get("type") != "access":
+            return None
+        
+        return payload
+    except JWTError:
+        return None
+
+def decode_refresh_token(token: str) -> dict | None:
+    """
+    Decode and verify JWT refresh token.
+    
+    Args:
+        token: JWT refresh token string
+    
+    Returns:
+        Decoded payload dict or None if invalid
+    """
+    try:
+        payload = jwt.decode(
+            token,
+            settings.REFRESH_SECRET_KEY,
+            algorithms=[settings.ALGORITHM]
+        )
+        
+        # Verify token type
+        if payload.get("type") != "refresh":
+            return None
+        
+        return payload
+    except JWTError:
+        return None
+Config:
+python# app/core/config.py
+from pydantic_settings import BaseSettings
+
+class Settings(BaseSettings):
+    # JWT Settings
+    SECRET_KEY: str  # openssl rand -hex 32
+    REFRESH_SECRET_KEY: str  # Different key for refresh tokens!
+    ALGORITHM: str = "HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES: int = 15  # Short-lived
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 30    # Long-lived
+    
+    model_config = SettingsConfigDict(env_file=".env")
+
+settings = Settings()
+
+3. AUTHENTICATION DEPENDENCY
+python# app/core/dependencies.py
+from fastapi import Depends, HTTPException, status
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from sqlalchemy.orm import Session
+from app.db.session import get_db
+from app.db.models.user import User
+from app.core.security import decode_access_token
+
+security = HTTPBearer()
+
+async def get_current_user(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+) -> User:
+    """
+    Get current authenticated user from JWT token.
+    
+    Usage:
+        @router.get("/me")
+        async def get_me(current_user: User = Depends(get_current_user)):
+            return current_user
+    
+    Raises:
+        HTTPException 401 if token invalid or user not found
+    """
+    token = credentials.credentials
+    
+    # Decode token
+    payload = decode_access_token(token)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    
+    # Extract user_id
+    user_id: str = payload.get("sub")
+    if user_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Could not validate credentials"
+        )
+    
+    # Get user from DB
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found"
+        )
+    
+    # Check if user is active
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Inactive user"
+        )
+    
+    return user
+
+async def get_current_active_user(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """
+    Get current user and verify email is verified.
+    
+    Raises:
+        HTTPException 403 if email not verified
+    """
+    if not current_user.email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email not verified"
+        )
+    return current_user
+
+4. RBAC (ROLE-BASED ACCESS CONTROL)
+python# app/db/models/user.py
+from enum import Enum
+
+class UserRole(str, Enum):
+    ADMIN = "admin"        # Full access to organization
+    USER = "user"          # Can create/edit own processes
+    VIEWER = "viewer"      # Read-only access
+python# app/core/dependencies.py (continued)
+from app.db.models.user import UserRole
+
+def require_role(required_roles: list[UserRole]):
+    """
+    Dependency factory for role-based access control.
+    
+    Usage:
+        @router.delete("/users/{user_id}")
+        async def delete_user(
+            user_id: int,
+            current_user: User = Depends(require_role([UserRole.ADMIN]))
+        ):
+            # Only admins can delete users
+            pass
+    
+    Args:
+        required_roles: List of allowed roles
+    
+    Returns:
+        Dependency function
+    """
+    async def role_checker(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role not in required_roles:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Insufficient permissions. Required: {required_roles}"
+            )
+        return current_user
+    
+    return role_checker
+
+# Convenience functions
+def require_admin():
+    """Require ADMIN role"""
+    return require_role([UserRole.ADMIN])
+
+def require_user_or_admin():
+    """Require USER or ADMIN role (not VIEWER)"""
+    return require_role([UserRole.USER, UserRole.ADMIN])
+Użycie w routes:
+python# app/api/v1/endpoints/users.py
+from fastapi import APIRouter, Depends
+from app.core.dependencies import require_admin, get_current_user
+from app.db.models.user import User
+
+router = APIRouter()
+
+@router.get("/users")
+async def list_users(
+    current_user: User = Depends(require_admin())  # Only admins!
+):
+    """List all users in organization (admin only)"""
+    return {"users": [...]}
+
+@router.get("/me")
+async def get_me(
+    current_user: User = Depends(get_current_user)  # Any authenticated user
+):
+    """Get current user profile"""
+    return current_user
+
+@router.post("/processes")
+async def create_process(
+    process_data: dict,
+    current_user: User = Depends(require_user_or_admin())  # Not viewers
+):
+    """Create new process (users and admins only)"""
+    return {"process": {...}}
+
+5. REGISTER & LOGIN ENDPOINTS
+python# app/api/v1/endpoints/auth.py
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+from pydantic import BaseModel, EmailStr
+from app.db.session import get_db
+from app.db.models.user import User
+from app.db.models.organization import Organization
+from app.core.security import (
+    get_password_hash, 
+    verify_password, 
+    create_access_token, 
+    create_refresh_token,
+    validate_password_strength
+)
+from app.services.email_service import EmailService
+import secrets
+
+router = APIRouter(prefix="/auth", tags=["auth"])
+
+# ============================================
+# SCHEMAS
+# ============================================
+class RegisterInput(BaseModel):
+    email: EmailStr
+    password: str
+    full_name: str
+    organization_name: str
+
+class LoginInput(BaseModel):
+    email: EmailStr
+    password: str
+
+class TokenOutput(BaseModel):
+    access_token: str
+    refresh_token: str
+    token_type: str = "bearer"
+
+class RefreshTokenInput(BaseModel):
+    refresh_token: str
+
+# ============================================
+# REGISTER
+# ============================================
+@router.post("/register", response_model=TokenOutput, status_code=status.HTTP_201_CREATED)
+async def register(
+    input: RegisterInput,
+    db: Session = Depends(get_db),
+    email_service: EmailService = Depends()
+):
+    """
+    Register new user + organization.
+    
+    Flow:
+    1. Validate password strength
+    2. Check if email exists
+    3. Create organization
+    4. Create user (with email verification token)
+    5. Send verification email
+    6. Return tokens
+    """
+    
+    # 1. Validate password strength
+    try:
+        validate_password_strength(input.password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    # 2. Check if email exists
+    existing_user = db.query(User).filter(User.email == input.email).first()
+    if existing_user:
+        raise HTTPException(
+            status_code=400,
+            detail="Email already registered"
+        )
+    
+    # 3. Create organization
+    org_slug = input.organization_name.lower().replace(" ", "-")
+    organization = Organization(
+        name=input.organization_name,
+        slug=org_slug
+    )
+    db.add(organization)
+    db.flush()  # Get org.id
+    
+    # 4. Create user
+    verification_token = secrets.token_urlsafe(32)
+    
+    user = User(
+        organization_id=organization.id,
+        email=input.email,
+        password_hash=get_password_hash(input.password),
+        full_name=input.full_name,
+        role="admin",  # First user is admin
+        email_verification_token=verification_token,
+        email_verified=False
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    
+    # 5. Send verification email
+    verification_url = f"https://autoflow.app/verify-email?token={verification_token}"
+    await email_service.send_verification_email(
+        to=user.email,
+        name=user.full_name,
+        verification_url=verification_url
+    )
+    
+    # 6. Generate tokens
+    access_token = create_access_token(
+        data={
+            "sub": str(user.id),
+            "org": user.organization_id,
+            "role": user.role
+        }
+    )
+    refresh_token = create_refresh_token(
+        data={"sub": str(user.id)}
+    )
+    
+    return TokenOutput(
+        access_token=access_token,
+        refresh_token=refresh_token
+    )
+
+# ============================================
+# LOGIN
+# ============================================
+@router.post("/login", response_model=TokenOutput)
+async def login(
+    input: LoginInput,
+    db: Session = Depends(get_db)
+):
+    """
+    Login user with email + password.
+    
+    Flow:
+    1. Find user by email
+    2. Verify password
+    3. Check if user is active
+    4. Generate tokens
+    5. Update last_login_at
+    """
+    
+    # 1. Find user
+    user = db.query(User).filter(User.email == input.email).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials"
+        )
+    
+    # 2. Verify password
+    if not verify_password(input.password, user.password_hash):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials"
+        )
+    
+    # 3. Check if active
+    if not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Account is disabled"
+        )
+    
+    # 4. Generate tokens
+    access_token = create_access_token(
+        data={
+            "sub": str(user.id),
+            "org": user.organization_id,
+            "role": user.role
+        }
+    )
+    refresh_token = create_refresh_token(
+        data={"sub": str(user.id)}
+    )
+    
+    # 5. Update last login
+    from datetime import datetime
+    user.last_login_at = datetime.utcnow()
+    db.commit()
+    
+    return TokenOutput(
+        access_token=access_token,
+        refresh_token=refresh_token
+    )
+
+# ============================================
+# REFRESH TOKEN
+# ============================================
+@router.post("/refresh", response_model=TokenOutput)
+async def refresh_token(
+    input: RefreshTokenInput,
+    db: Session = Depends(get_db)
+):
+    """
+    Refresh access token using refresh token.
+    
+    Flow:
+    1. Decode refresh token
+    2. Get user from DB
+    3. Generate new access token
+    4. Return new tokens
+    """
+    
+    # 1. Decode refresh token
+    from app.core.security import decode_refresh_token
+    
+    payload = decode_refresh_token(input.refresh_token)
+    if payload is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid refresh token"
+        )
+    
+    user_id = payload.get("sub")
+    
+    # 2. Get user
+    user = db.query(User).filter(User.id == int(user_id)).first()
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive"
+        )
+    
+    # 3. Generate new tokens
+    access_token = create_access_token(
+        data={
+            "sub": str(user.id),
+            "org": user.organization_id,
+            "role": user.role
+        }
+    )
+    
+    # Optionally rotate refresh token (more secure)
+    new_refresh_token = create_refresh_token(
+        data={"sub": str(user.id)}
+    )
+    
+    return TokenOutput(
+        access_token=access_token,
+        refresh_token=new_refresh_token
+    )
+
+6. EMAIL VERIFICATION
+python# app/api/v1/endpoints/auth.py (continued)
+
+@router.post("/verify-email")
+async def verify_email(
+    token: str,
+    db: Session = Depends(get_db)
+):
+    """
+    Verify user email with token.
+    
+    Args:
+        token: Email verification token from URL
+    
+    Returns:
+        Success message
+    """
+    
+    # Find user by token
+    user = db.query(User).filter(
+        User.email_verification_token == token
+    ).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired verification token"
+        )
+    
+    # Mark as verified
+    user.email_verified = True
+    user.email_verification_token = None  # Clear token
+    db.commit()
+    
+    return {
+        "message": "Email verified successfully",
+        "email": user.email
+    }
+
+@router.post("/resend-verification")
+async def resend_verification(
+    email: EmailStr,
+    db: Session = Depends(get_db),
+    email_service: EmailService = Depends()
+):
+    """
+    Resend email verification link.
+    
+    Args:
+        email: User email
+    
+    Returns:
+        Success message
+    """
+    
+    user = db.query(User).filter(User.email == email).first()
+    
+    if not user:
+        # Don't reveal if email exists (security)
+        return {"message": "If email exists, verification link was sent"}
+    
+    if user.email_verified:
+        raise HTTPException(
+            status_code=400,
+            detail="Email already verified"
+        )
+    
+    # Generate new token
+    verification_token = secrets.token_urlsafe(32)
+    user.email_verification_token = verification_token
+    db.commit()
+    
+    # Send email
+    verification_url = f"https://autoflow.app/verify-email?token={verification_token}"
+    await email_service.send_verification_email(
+        to=user.email,
+        name=user.full_name,
+        verification_url=verification_url
+    )
+    
+    return {"message": "Verification email sent"}
+
+7. PASSWORD RESET
+python# app/api/v1/endpoints/auth.py (continued)
+from datetime import datetime, timedelta
+
+class ForgotPasswordInput(BaseModel):
+    email: EmailStr
+
+class ResetPasswordInput(BaseModel):
+    token: str
+    new_password: str
+
+@router.post("/forgot-password")
+async def forgot_password(
+    input: ForgotPasswordInput,
+    db: Session = Depends(get_db),
+    email_service: EmailService = Depends()
+):
+    """
+    Request password reset link.
+    
+    Flow:
+    1. Find user by email
+    2. Generate reset token (expires in 1 hour)
+    3. Send reset email
+    4. Return success (don't reveal if email exists)
+    """
+    
+    user = db.query(User).filter(User.email == input.email).first()
+    
+    if user and user.is_active:
+        # Generate reset token
+        reset_token = secrets.token_urlsafe(32)
+        
+        user.password_reset_token = reset_token
+        user.password_reset_expires = datetime.utcnow() + timedelta(hours=1)
+        db.commit()
+        
+        # Send email
+        reset_url = f"https://autoflow.app/reset-password?token={reset_token}"
+        await email_service.send_password_reset_email(
+            to=user.email,
+            name=user.full_name,
+            reset_url=reset_url
+        )
+    
+    # Always return success (security - don't reveal if email exists)
+    return {"message": "If email exists, password reset link was sent"}
+
+@router.post("/reset-password")
+async def reset_password(
+    input: ResetPasswordInput,
+    db: Session = Depends(get_db)
+):
+    """
+    Reset password with token.
+    
+    Flow:
+    1. Find user by reset token
+    2. Check if token expired
+    3. Validate new password strength
+    4. Update password hash
+    5. Clear reset token
+    """
+    
+    # 1. Find user
+    user = db.query(User).filter(
+        User.password_reset_token == input.token
+    ).first()
+    
+    if not user:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid or expired reset token"
+        )
+    
+    # 2. Check expiration
+    if user.password_reset_expires < datetime.utcnow():
+        raise HTTPException(
+            status_code=400,
+            detail="Reset token has expired"
+        )
+    
+    # 3. Validate password strength
+    try:
+        validate_password_strength(input.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    
+    # 4. Update password
+    user.password_hash = get_password_hash(input.new_password)
+    
+    # 5. Clear reset token
+    user.password_reset_token = None
+    user.password_reset_expires = None
+    
+    db.commit()
+    
+    return {"message": "Password reset successfully"}
+
+8. API TOKENS (dla integracji)
+python# app/api/v1/endpoints/api_tokens.py
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from pydantic import BaseModel
+from app.db.session import get_db
+from app.db.models.user import User
+from app.db.models.api_token import ApiToken
+from app.core.dependencies import get_current_user
+import secrets
+import hashlib
+
+router = APIRouter(prefix="/api-tokens", tags=["api-tokens"])
+
+class CreateApiTokenInput(BaseModel):
+    name: str
+    scopes: list[str] = ["read", "write"]
+
+class ApiTokenOutput(BaseModel):
+    id: int
+    name: str
+    token: str  # Only returned on creation!
+    scopes: list[str]
+    created_at: datetime
+    
+    class Config:
+        from_attributes = True
+
+@router.post("/", response_model=ApiTokenOutput, status_code=201)
+async def create_api_token(
+    input: CreateApiTokenInput,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Create new API token.
+    
+    ⚠️ Token is only shown ONCE - save it!
+    
+    Returns:
+        API token (plaintext) - save this!
+    """
+    
+    # Generate random token
+    token = secrets.token_urlsafe(32)
+    
+    # Hash for storage (never store plaintext!)
+    token_hash = hashlib.sha256(token.encode()).digest()
+    
+    # Create in DB
+    api_token = ApiToken(
+        user_id=current_user.id,
+        token_hash=token_hash,
+        name=input.name,
+        scopes=input.scopes
+    )
+    db.add(api_token)
+    db.commit()
+    db.refresh(api_token)
+    
+    # Return token ONLY on creation
+    return ApiTokenOutput(
+        id=api_token.id,
+        name=api_token.name,
+        token=token,  # ⚠️ Only time we show plaintext!
+        scopes=api_token.scopes,
+        created_at=api_token.created_at
+    )
+
+@router.get("/")
+async def list_api_tokens(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all API tokens for current user (without token values)"""
+    
+    tokens = db.query(ApiToken).filter(
+        ApiToken.user_id == current_user.id
+    ).all()
+    
+    return [
+        {
+            "id": t.id,
+            "name": t.name,
+            "scopes": t.scopes,
+            "created_at": t.created_at,
+            "last_used_at": t.last_used_at
+        }
+        for t in tokens
+    ]
+
+@router.delete("/{token_id}")
+async def delete_api_token(
+    token_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete API token"""
+    
+    token = db.query(ApiToken).filter(
+        ApiToken.id == token_id,
+        ApiToken.user_id == current_user.id
+    ).first()
+    
+    if not token:
+        raise HTTPException(404, "Token not found")
+    
+    db.delete(token)
+    db.commit()
+    
+    return {"message": "Token deleted"}
+API Token Authentication:
+python# app/core/dependencies.py (continued)
+from app.db.models.api_token import ApiToken
+
+async def get_user_from_api_token(
+    credentials: HTTPAuthorizationCredentials = Depends(security),
+    db: Session = Depends(get_db)
+) -> User:
+    """
+    Authenticate user via API token (alternative to JWT).
+    
+    Usage:
+        @router.get("/integrations/sync")
+        async def sync_data(
+            current_user: User = Depends(get_user_from_api_token)
+        ):
+            # Called from external service with API token
+            pass
+    """
+    token = credentials.credentials
+    
+    # Hash the token
+    token_hash = hashlib.sha256(token.encode()).digest()
+    
+    # Find in DB
+    api_token = db.query(ApiToken).filter(
+        ApiToken.token_hash == token_hash
+    ).first()
+    
+    if not api_token:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid API token"
+        )
+    
+    # Check expiration
+    if api_token.expires_at and api_token.expires_at < datetime.utcnow():
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="API token expired"
+        )
+    
+    # Update last used
+    api_token.last_used_at = datetime.utcnow()
+    db.commit()
+    
+    # Get user
+    user = db.query(User).filter(User.id == api_token.user_id).first()
+    
+    if not user or not user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found or inactive"
+        )
+    
+    return user
+
+9. MULTI-TENANCY SECURITY
+python# app/core/middleware.py
+from fastapi import Request, HTTPException
+from sqlalchemy import text
+
+async def set_rls_context_middleware(request: Request, call_next):
+    """
+    Middleware to set PostgreSQL RLS context variables.
+    
+    Sets:
+    - app.current_org_id (for organization isolation)
+    - app.current_user_id (for user-specific policies)
+    """
+    
+    # Get user from request state (set by auth dependency)
+    user = getattr(request.state, "user", None)
+    
+    if user:
+        db = request.state.db
+        
+        # Set RLS context variables
+        await db.execute(text(f"SET app.current_org_id = {user.organization_id}"))
+        await db.execute(text(f"SET app.current_user_id = {user.id}"))
+    
+    response = await call_next(request)
+    return response
+Register middleware:
+python# app/main.py
+from fastapi import FastAPI
+from app.core.middleware import set_rls_context_middleware
+
+app = FastAPI()
+
+@app.middleware("http")
+async def rls_middleware(request: Request, call_next):
+    return await set_rls_context_middleware(request, call_next)
+
+🔐 SECURITY BEST PRACTICES
+1. NIGDY NIE PRZECHOWUJ PLAINTEXTU!
+❌ ŹLE:
+python# NIGDY!
+user.password = "MyPassword123"
+user.api_token = "sk-abc123"
+✅ DOBRZE:
+python# Password - bcrypt hash
+user.password_hash = get_password_hash("MyPassword123")
+
+# API token - SHA256 hash
+token_hash = hashlib.sha256(token.encode()).digest()
+api_token.token_hash = token_hash
+2. Używaj różnych sekretów dla różnych tokenów:
+python# .env
+SECRET_KEY=your-secret-key-for-access-tokens       # 32+ random chars
+REFRESH_SECRET_KEY=different-secret-for-refresh    # 32+ random chars
+3. Short-lived access tokens:
+pythonACCESS_TOKEN_EXPIRE_MINUTES=15   # ✅ Short (15 min)
+REFRESH_TOKEN_EXPIRE_DAYS=30     # ✅ Long (30 days)
+4. Rate limiting dla auth endpoints:
+python# app/api/v1/endpoints/auth.py
+from slowapi import Limiter
+from slowapi.util import get_remote_address
+
+limiter = Limiter(key_func=get_remote_address)
+
+@router.post("/login")
+@limiter.limit("5/minute")  # Max 5 attempts per minute
+async def login(...):
+    pass
+
+@router.post("/register")
+@limiter.limit("3/hour")  # Max 3 registrations per hour
+async def register(...):
+    pass
+5. HTTPS ONLY (production):
+python# app/main.py
+from fastapi.middleware.httpsredirect import HTTPSRedirectMiddleware
+
+if not settings.DEBUG:
+    app.add_middleware(HTTPSRedirectMiddleware)
+6. Secure cookies (dla refresh tokens):
+python@router.post("/login")
+async def login(response: Response, ...):
+    # ... login logic ...
+    
+    # Set refresh token in HttpOnly cookie (safer than localStorage)
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,  # ✅ Not accessible via JavaScript
+        secure=True,    # ✅ HTTPS only
+        samesite="lax", # ✅ CSRF protection
+        max_age=30 * 24 * 60 * 60  # 30 days
+    )
+    
+    return {"access_token": access_token}
+
+⚠️ POTENCJALNE PROBLEMY
+Problem 1: Token Expiration nie działa
+❌ ŹLE:
+python# Zapomniałeś sprawdzić expiration!
+payload = jwt.decode(token, SECRET_KEY, algorithms=["HS256"])
+return payload  # Może być expired!
+✅ DOBRZE:
+pythontry:
+    payload = jwt.decode(
+        token, 
+        SECRET_KEY, 
+        algorithms=["HS256"],
+        options={"verify_exp": True}  # ✅ Sprawdza expiration
+    )
+    return payload
+except jwt.ExpiredSignatureError:
+    raise HTTPException(401, "Token expired")
+except jwt.JWTError:
+    raise HTTPException(401, "Invalid token")
+Problem 2: Password reset token jednorazowy
+❌ ŹLE:
+python# Token można użyć wielokrotnie!
+if user.password_reset_token == token:
+    user.password_hash = new_hash
+    # Nie czyścisz tokenu!
+✅ DOBRZE:
+pythonif user.password_reset_token == token:
+    user.password_hash = new_hash
+    user.password_reset_token = None  # ✅ Clear token po użyciu!
+    user.password_reset_expires = None
+Problem 3: Email case sensitivity
+❌ ŹLE:
+python# Jan@Example.com != jan@example.com
+user = db.query(User).filter(User.email == email).first()
+✅ DOBRZE:
+python# Zawsze lowercase przed zapisem i porównaniem
+email = email.lower()
+user = db.query(User).filter(User.email == email).first()
+W modelu:
+pythonfrom sqlalchemy import event
+
+@event.listens_for(User.email, 'set', retval=True)
+def lowercase_email(target, value, oldvalue, initiator):
+    """Automatically lowercase email on set"""
+    return value.lower() if value else value
+
+📊 TESTING AUTH
+python# tests/test_auth.py
+import pytest
+from fastapi.testclient import TestClient
+from app.main import app
+from app.core.security import create_access_token
+
+client = TestClient(app)
+
+def test_register_success():
+    """Test successful registration"""
+    response = client.post("/api/v1/auth/register", json={
+        "email": "test@example.com",
+        "password": "SecurePass123!",
+        "full_name": "Test User",
+        "organization_name": "Test Org"
+    })
+    
+    assert response.status_code == 201
+    data = response.json()
+    assert "access_token" in data
+    assert "refresh_token" in data
+
+def test_register_weak_password():
+    """Test registration with weak password"""
+    response = client.post("/api/v1/auth/register", json={
+        "email": "test@example.com",
+        "password": "weak",  # Too short
+        "full_name": "Test User",
+        "organization_name": "Test Org"
+    })
+    
+    assert response.status_code == 400
+    assert "Password must be at least 8 characters" in response.json()["detail"]
+
+def test_login_success(db_session):
+    """Test successful login"""
+    # Create user first
+    from app.db.models.user import User
+    from app.core.security import get_password_hash
+    
+    user = User(
+        email="test@example.com",
+        password_hash=get_password_hash("SecurePass123!"),
+        full_name="Test User",
+        organization_id=1,
+        is_active=True,
+        email_verified=True
+    )
+    db_session.add(user)
+    db_session.commit()
+    
+    # Login
+    response = client.post("/api/v1/auth/login", json={
+        "email": "test@example.com",
+        "password": "SecurePass123!"
+    })
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert "access_token" in data
+
+def test_login_wrong_password():
+    """Test login with wrong password"""
+    response = client.post("/api/v1/auth/login", json={
+        "email": "test@example.com",
+        "password": "WrongPassword"
+    })
+    
+    assert response.status_code == 401
+    assert "Invalid credentials" in response.json()["detail"]
+
+def test_protected_endpoint_no_token():
+    """Test accessing protected endpoint without token"""
+    response = client.get("/api/v1/users/me")
+    
+    assert response.status_code == 401
+
+def test_protected_endpoint_with_token(db_session):
+    """Test accessing protected endpoint with valid token"""
+    # Create user
+    user = User(
+        id=1,
+        email="test@example.com",
+        organization_id=1,
+        role="user"
+    )
+    db_session.add(user)
+    db_session.commit()
+    
+    # Generate token
+    token = create_access_token(data={"sub": "1", "org": 1, "role": "user"})
+    
+    # Access protected endpoint
+    response = client.get(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    
+    assert response.status_code == 200
+    data = response.json()
+    assert data["email"] == "test@example.com"
+
+def test_rbac_admin_only(db_session):
+    """Test RBAC - only admin can access"""
+    # Create non-admin user
+    user = User(id=1, organization_id=1, role="user")
+    db_session.add(user)
+    db_session.commit()
+    
+    token = create_access_token(data={"sub": "1", "org": 1, "role": "user"})
+    
+    # Try to access admin endpoint
+    response = client.delete(
+        "/api/v1/users/2",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    
+    assert response.status_code == 403
+    assert "Insufficient permissions" in response.json()["detail"]
+
+✅ PODSUMOWANIE
+✅ Implementacja kompletna:
+
+Password hashing (bcrypt)
+JWT tokens (access + refresh)
+RBAC (admin, user, viewer)
+Email verification
+Password reset
+API tokens (dla integracji)
+Multi-tenancy (RLS context)
+Rate limiting (brute force protection)
+Security best practices
+
+📋 Checklist dla Manusa:
+
+ Implementuj app/core/security.py (hashing + JWT)
+ Stwórz app/core/dependencies.py (auth dependencies)
+ Zaimplementuj endpoints /auth/register, /auth/login, /auth/refresh
+ Dodaj email verification flow
+ Dodaj password reset flow
+ Implementuj API tokens
+ Setup RLS middleware
+ Napisz testy auth (pytest)
+ Rate limiting dla auth endpoints
+ HTTPS redirect (production)
+
+🔗 Następna sekcja:
+Sekcja 4: Integracje (Stripe, Outlook, Fakturownia, Google)
+
+OAuth 2.0 flow
+Stripe webhooks
+Outlook IMAP
+Fakturownia API
+Gmail, Drive, Sheets (Google OAuth)
+SendGrid (emails)

@@ -1,0 +1,1325 @@
+SEKCJA 6: TESTING (pytest)
+
+🎯 CEL
+Zaimplementować kompletny system testowania dla AutoFlow:
+
+pytest - framework testowy
+Fixtures - wielokrotnego użytku setup/teardown
+Unit tests - testy jednostkowe (use cases, services)
+Integration tests - testy integracyjne (API endpoints, DB)
+Mocking - mockowanie zewnętrznych serwisów
+Coverage - pokrycie kodu testami
+CI/CD - automatyczne testy w pipeline
+
+
+📁 STRUKTURA TESTÓW
+backend/
+├── app/
+│   ├── api/
+│   ├── modules/
+│   ├── workers/
+│   └── ...
+│
+└── tests/
+    ├── __init__.py
+    ├── conftest.py                    # Fixtures globalne
+    │
+    ├── unit/                          # Testy jednostkowe
+    │   ├── __init__.py
+    │   ├── test_use_cases.py          # Use cases
+    │   ├── test_repositories.py       # Repositories
+    │   ├── test_services.py           # Services (Stripe, email, etc)
+    │   └── test_security.py           # JWT, hashing, etc
+    │
+    ├── integration/                   # Testy integracyjne
+    │   ├── __init__.py
+    │   ├── test_api_auth.py           # Auth endpoints
+    │   ├── test_api_users.py          # User endpoints
+    │   ├── test_api_subscriptions.py  # Subscription endpoints
+    │   ├── test_database.py           # Database operations
+    │   └── test_celery_tasks.py       # Celery tasks
+    │
+    ├── e2e/                           # End-to-end tests
+    │   ├── __init__.py
+    │   └── test_complete_flows.py     # Complete workflows
+    │
+    └── fixtures/                      # Test data
+        ├── __init__.py
+        ├── users.py
+        ├── subscriptions.py
+        └── processes.py
+
+📄 PLIK 1: tests/conftest.py
+Fixtures globalne dla wszystkich testów
+python# tests/conftest.py
+"""
+Global pytest fixtures.
+
+These fixtures are available in all test files without import.
+"""
+
+import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+from fastapi.testclient import TestClient
+from app.main import app
+from app.db.base import Base
+from app.db.session import get_db
+from app.core.config import settings
+from app.db.models.user import User
+from app.db.models.organization import Organization
+from app.db.models.subscription import Subscription
+from app.core.security import get_password_hash
+from datetime import datetime, timedelta
+
+# Test database URL (use separate test database)
+TEST_DATABASE_URL = "postgresql://autoflow:password@localhost:5432/autoflow_test"
+
+
+@pytest.fixture(scope="session")
+def engine():
+    """
+    Create test database engine.
+    
+    Scope: session (created once per test session)
+    """
+    engine = create_engine(TEST_DATABASE_URL)
+    
+    # Create all tables
+    Base.metadata.create_all(bind=engine)
+    
+    yield engine
+    
+    # Drop all tables after tests
+    Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(scope="function")
+def db_session(engine):
+    """
+    Create database session for each test.
+    
+    Scope: function (new session per test)
+    
+    Each test gets a fresh database state via transaction rollback.
+    """
+    connection = engine.connect()
+    transaction = connection.begin()
+    
+    Session = sessionmaker(bind=connection)
+    session = Session()
+    
+    yield session
+    
+    # Rollback transaction after test
+    session.close()
+    transaction.rollback()
+    connection.close()
+
+
+@pytest.fixture(scope="function")
+def client(db_session):
+    """
+    FastAPI test client with database session override.
+    
+    Usage:
+        def test_my_endpoint(client):
+            response = client.get("/api/v1/users/me")
+            assert response.status_code == 200
+    """
+    def override_get_db():
+        try:
+            yield db_session
+        finally:
+            pass
+    
+    app.dependency_overrides[get_db] = override_get_db
+    
+    with TestClient(app) as test_client:
+        yield test_client
+    
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def test_organization(db_session):
+    """
+    Create test organization.
+    
+    Returns:
+        Organization object
+    """
+    organization = Organization(
+        name="Test Organization",
+        slug="test-org",
+        stripe_customer_id="cus_test123"
+    )
+    db_session.add(organization)
+    db_session.commit()
+    db_session.refresh(organization)
+    
+    return organization
+
+
+@pytest.fixture
+def test_user(db_session, test_organization):
+    """
+    Create test user.
+    
+    Returns:
+        User object with known password
+    """
+    user = User(
+        organization_id=test_organization.id,
+        email="test@example.com",
+        password_hash=get_password_hash("TestPassword123!"),
+        full_name="Test User",
+        role="user",
+        is_active=True,
+        email_verified=True
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    
+    # Attach plain password for testing
+    user.plain_password = "TestPassword123!"
+    
+    return user
+
+
+@pytest.fixture
+def test_admin(db_session, test_organization):
+    """
+    Create test admin user.
+    
+    Returns:
+        Admin User object
+    """
+    admin = User(
+        organization_id=test_organization.id,
+        email="admin@example.com",
+        password_hash=get_password_hash("AdminPassword123!"),
+        full_name="Admin User",
+        role="admin",
+        is_active=True,
+        email_verified=True
+    )
+    db_session.add(admin)
+    db_session.commit()
+    db_session.refresh(admin)
+    
+    admin.plain_password = "AdminPassword123!"
+    
+    return admin
+
+
+@pytest.fixture
+def auth_headers(test_user):
+    """
+    Generate auth headers for test user.
+    
+    Returns:
+        Dict with Authorization header
+    
+    Usage:
+        def test_protected_endpoint(client, auth_headers):
+            response = client.get("/api/v1/users/me", headers=auth_headers)
+    """
+    from app.core.security import create_access_token
+    
+    access_token = create_access_token(
+        data={
+            "sub": str(test_user.id),
+            "org": test_user.organization_id,
+            "role": test_user.role
+        }
+    )
+    
+    return {"Authorization": f"Bearer {access_token}"}
+
+
+@pytest.fixture
+def admin_headers(test_admin):
+    """Generate auth headers for admin user."""
+    from app.core.security import create_access_token
+    
+    access_token = create_access_token(
+        data={
+            "sub": str(test_admin.id),
+            "org": test_admin.organization_id,
+            "role": test_admin.role
+        }
+    )
+    
+    return {"Authorization": f"Bearer {access_token}"}
+
+
+@pytest.fixture
+def test_subscription(db_session, test_organization):
+    """
+    Create test subscription.
+    
+    Returns:
+        Subscription object
+    """
+    subscription = Subscription(
+        organization_id=test_organization.id,
+        stripe_subscription_id="sub_test123",
+        stripe_customer_id="cus_test123",
+        status="active",
+        plan="pro",
+        current_period_start=datetime.utcnow(),
+        current_period_end=datetime.utcnow() + timedelta(days=30)
+    )
+    db_session.add(subscription)
+    db_session.commit()
+    db_session.refresh(subscription)
+    
+    return subscription
+
+
+@pytest.fixture
+def mock_stripe():
+    """
+    Mock Stripe API.
+    
+    Usage:
+        def test_create_subscription(mock_stripe):
+            # Stripe calls will be mocked
+            pass
+    """
+    from unittest.mock import MagicMock, patch
+    
+    with patch('stripe.Customer.create') as mock_customer_create, \
+         patch('stripe.Subscription.create') as mock_sub_create, \
+         patch('stripe.Subscription.retrieve') as mock_sub_retrieve:
+        
+        # Mock customer creation
+        mock_customer = MagicMock()
+        mock_customer.id = "cus_mock123"
+        mock_customer_create.return_value = mock_customer
+        
+        # Mock subscription creation
+        mock_subscription = MagicMock()
+        mock_subscription.id = "sub_mock123"
+        mock_subscription.status = "active"
+        mock_subscription.current_period_end = int((datetime.utcnow() + timedelta(days=30)).timestamp())
+        mock_sub_create.return_value = mock_subscription
+        mock_sub_retrieve.return_value = mock_subscription
+        
+        yield {
+            'customer_create': mock_customer_create,
+            'subscription_create': mock_sub_create,
+            'subscription_retrieve': mock_sub_retrieve
+        }
+
+
+@pytest.fixture
+def mock_email_service():
+    """
+    Mock email service.
+    
+    Usage:
+        def test_send_email(mock_email_service):
+            # Email sending will be mocked
+            pass
+    """
+    from unittest.mock import MagicMock, patch
+    
+    with patch('app.services.email_service.EmailService') as mock_service:
+        mock_instance = MagicMock()
+        mock_service.return_value = mock_instance
+        
+        yield mock_instance
+
+
+@pytest.fixture
+def mock_celery():
+    """
+    Mock Celery tasks (execute synchronously).
+    
+    Usage:
+        def test_async_task(mock_celery):
+            # Celery tasks will execute immediately
+            pass
+    """
+    from unittest.mock import patch
+    
+    with patch('app.workers.celery_app.celery_app.conf.task_always_eager', True):
+        yield
+
+📄 PLIK 2: tests/unit/test_use_cases.py
+Testy Use Cases (business logic)
+python# tests/unit/test_use_cases.py
+"""
+Unit tests for Use Cases.
+
+Tests business logic in isolation from HTTP layer and database.
+"""
+
+import pytest
+from unittest.mock import MagicMock, AsyncMock
+from app.modules.subscriptions.use_cases.create_subscription import CreateSubscriptionUseCase
+from app.modules.subscriptions.schemas import CreateSubscriptionInput
+from app.modules.users.use_cases.register_user import RegisterUserUseCase
+from app.modules.users.schemas import RegisterUserInput
+
+
+class TestCreateSubscriptionUseCase:
+    """Tests for CreateSubscriptionUseCase"""
+    
+    @pytest.mark.asyncio
+    async def test_create_subscription_success(self):
+        """Test successful subscription creation"""
+        
+        # Mock dependencies
+        mock_sub_repo = MagicMock()
+        mock_sub_repo.find_by_user_id = AsyncMock(return_value=None)  # No existing sub
+        mock_sub_repo.create = AsyncMock(return_value=MagicMock(id=1, status="active"))
+        
+        mock_stripe_service = MagicMock()
+        mock_stripe = MagicMock()
+        mock_stripe.id = "sub_123"
+        mock_stripe.status = "active"
+        mock_stripe.current_period_end = 1234567890
+        mock_stripe_service.create_subscription = AsyncMock(return_value=mock_stripe)
+        
+        # Create use case
+        use_case = CreateSubscriptionUseCase(
+            subscription_repo=mock_sub_repo,
+            stripe_service=mock_stripe_service
+        )
+        
+        # Execute
+        input_data = CreateSubscriptionInput(
+            user_id=1,
+            price_id="price_123"
+        )
+        
+        result = await use_case.execute(input_data)
+        
+        # Assertions
+        assert result.is_right()  # Success
+        assert mock_stripe_service.create_subscription.called
+        assert mock_sub_repo.create.called
+    
+    @pytest.mark.asyncio
+    async def test_create_subscription_already_exists(self):
+        """Test creation when subscription already exists"""
+        
+        # Mock existing subscription
+        mock_sub_repo = MagicMock()
+        existing_sub = MagicMock(id=1, status="active")
+        mock_sub_repo.find_by_user_id = AsyncMock(return_value=existing_sub)
+        
+        mock_stripe_service = MagicMock()
+        
+        use_case = CreateSubscriptionUseCase(
+            subscription_repo=mock_sub_repo,
+            stripe_service=mock_stripe_service
+        )
+        
+        input_data = CreateSubscriptionInput(
+            user_id=1,
+            price_id="price_123"
+        )
+        
+        result = await use_case.execute(input_data)
+        
+        # Should return error
+        assert result.is_left()  # Error
+        assert mock_stripe_service.create_subscription.not_called
+    
+    @pytest.mark.asyncio
+    async def test_create_subscription_stripe_failure(self):
+        """Test handling Stripe API failure"""
+        
+        mock_sub_repo = MagicMock()
+        mock_sub_repo.find_by_user_id = AsyncMock(return_value=None)
+        
+        # Mock Stripe failure
+        mock_stripe_service = MagicMock()
+        mock_stripe_service.create_subscription = AsyncMock(
+            side_effect=Exception("Stripe API error")
+        )
+        
+        use_case = CreateSubscriptionUseCase(
+            subscription_repo=mock_sub_repo,
+            stripe_service=mock_stripe_service
+        )
+        
+        input_data = CreateSubscriptionInput(
+            user_id=1,
+            price_id="price_123"
+        )
+        
+        result = await use_case.execute(input_data)
+        
+        # Should return error
+        assert result.is_left()
+        assert "Stripe API error" in str(result.value)
+
+
+class TestRegisterUserUseCase:
+    """Tests for RegisterUserUseCase"""
+    
+    @pytest.mark.asyncio
+    async def test_register_user_success(self):
+        """Test successful user registration"""
+        
+        # Mock dependencies
+        mock_user_repo = MagicMock()
+        mock_user_repo.find_by_email = AsyncMock(return_value=None)  # Email available
+        mock_user_repo.create = AsyncMock(return_value=MagicMock(id=1, email="test@example.com"))
+        
+        mock_org_repo = MagicMock()
+        mock_org_repo.create = AsyncMock(return_value=MagicMock(id=1, name="Test Org"))
+        
+        mock_email_service = MagicMock()
+        mock_email_service.send_verification_email = AsyncMock()
+        
+        use_case = RegisterUserUseCase(
+            user_repo=mock_user_repo,
+            org_repo=mock_org_repo,
+            email_service=mock_email_service
+        )
+        
+        input_data = RegisterUserInput(
+            email="test@example.com",
+            password="SecurePass123!",
+            full_name="Test User",
+            organization_name="Test Org"
+        )
+        
+        result = await use_case.execute(input_data)
+        
+        # Assertions
+        assert result.is_right()
+        assert mock_user_repo.create.called
+        assert mock_org_repo.create.called
+        assert mock_email_service.send_verification_email.called
+    
+    @pytest.mark.asyncio
+    async def test_register_user_email_exists(self):
+        """Test registration with existing email"""
+        
+        mock_user_repo = MagicMock()
+        existing_user = MagicMock(email="test@example.com")
+        mock_user_repo.find_by_email = AsyncMock(return_value=existing_user)
+        
+        mock_org_repo = MagicMock()
+        mock_email_service = MagicMock()
+        
+        use_case = RegisterUserUseCase(
+            user_repo=mock_user_repo,
+            org_repo=mock_org_repo,
+            email_service=mock_email_service
+        )
+        
+        input_data = RegisterUserInput(
+            email="test@example.com",
+            password="SecurePass123!",
+            full_name="Test User",
+            organization_name="Test Org"
+        )
+        
+        result = await use_case.execute(input_data)
+        
+        # Should return error
+        assert result.is_left()
+        assert mock_user_repo.create.not_called
+    
+    @pytest.mark.asyncio
+    async def test_register_user_weak_password(self):
+        """Test registration with weak password"""
+        
+        mock_user_repo = MagicMock()
+        mock_user_repo.find_by_email = AsyncMock(return_value=None)
+        
+        mock_org_repo = MagicMock()
+        mock_email_service = MagicMock()
+        
+        use_case = RegisterUserUseCase(
+            user_repo=mock_user_repo,
+            org_repo=mock_org_repo,
+            email_service=mock_email_service
+        )
+        
+        input_data = RegisterUserInput(
+            email="test@example.com",
+            password="weak",  # Too weak
+            full_name="Test User",
+            organization_name="Test Org"
+        )
+        
+        result = await use_case.execute(input_data)
+        
+        # Should return error
+        assert result.is_left()
+        assert "password" in str(result.value).lower()
+
+📄 PLIK 3: tests/integration/test_api_auth.py
+Testy API endpoints - Authentication
+python# tests/integration/test_api_auth.py
+"""
+Integration tests for authentication API endpoints.
+
+Tests full request/response cycle with database.
+"""
+
+import pytest
+from app.core.security import create_access_token
+
+
+class TestRegisterEndpoint:
+    """Tests for POST /api/v1/auth/register"""
+    
+    def test_register_success(self, client, db_session):
+        """Test successful registration"""
+        
+        response = client.post("/api/v1/auth/register", json={
+            "email": "newuser@example.com",
+            "password": "SecurePass123!",
+            "full_name": "New User",
+            "organization_name": "New Organization"
+        })
+        
+        assert response.status_code == 201
+        data = response.json()
+        assert "access_token" in data
+        assert "refresh_token" in data
+        assert data["token_type"] == "bearer"
+    
+    def test_register_duplicate_email(self, client, test_user):
+        """Test registration with existing email"""
+        
+        response = client.post("/api/v1/auth/register", json={
+            "email": test_user.email,  # Already exists
+            "password": "SecurePass123!",
+            "full_name": "Duplicate User",
+            "organization_name": "Duplicate Org"
+        })
+        
+        assert response.status_code == 400
+        assert "already registered" in response.json()["detail"].lower()
+    
+    def test_register_weak_password(self, client):
+        """Test registration with weak password"""
+        
+        response = client.post("/api/v1/auth/register", json={
+            "email": "weak@example.com",
+            "password": "weak",  # Too weak
+            "full_name": "Weak User",
+            "organization_name": "Weak Org"
+        })
+        
+        assert response.status_code == 400
+        assert "password" in response.json()["detail"].lower()
+    
+    def test_register_invalid_email(self, client):
+        """Test registration with invalid email"""
+        
+        response = client.post("/api/v1/auth/register", json={
+            "email": "not-an-email",
+            "password": "SecurePass123!",
+            "full_name": "Invalid User",
+            "organization_name": "Invalid Org"
+        })
+        
+        assert response.status_code == 422  # Validation error
+
+
+class TestLoginEndpoint:
+    """Tests for POST /api/v1/auth/login"""
+    
+    def test_login_success(self, client, test_user):
+        """Test successful login"""
+        
+        response = client.post("/api/v1/auth/login", json={
+            "email": test_user.email,
+            "password": test_user.plain_password
+        })
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert "access_token" in data
+        assert "refresh_token" in data
+    
+    def test_login_wrong_password(self, client, test_user):
+        """Test login with wrong password"""
+        
+        response = client.post("/api/v1/auth/login", json={
+            "email": test_user.email,
+            "password": "WrongPassword123!"
+        })
+        
+        assert response.status_code == 401
+        assert "invalid credentials" in response.json()["detail"].lower()
+    
+    def test_login_nonexistent_user(self, client):
+        """Test login with non-existent email"""
+        
+        response = client.post("/api/v1/auth/login", json={
+            "email": "nonexistent@example.com",
+            "password": "SomePassword123!"
+        })
+        
+        assert response.status_code == 401
+    
+    def test_login_inactive_user(self, client, test_user, db_session):
+        """Test login with inactive user"""
+        
+        # Deactivate user
+        test_user.is_active = False
+        db_session.commit()
+        
+        response = client.post("/api/v1/auth/login", json={
+            "email": test_user.email,
+            "password": test_user.plain_password
+        })
+        
+        assert response.status_code == 403
+        assert "disabled" in response.json()["detail"].lower()
+
+
+class TestRefreshTokenEndpoint:
+    """Tests for POST /api/v1/auth/refresh"""
+    
+    def test_refresh_token_success(self, client, test_user):
+        """Test successful token refresh"""
+        
+        from app.core.security import create_refresh_token
+        
+        # Create refresh token
+        refresh_token = create_refresh_token(data={"sub": str(test_user.id)})
+        
+        response = client.post("/api/v1/auth/refresh", json={
+            "refresh_token": refresh_token
+        })
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert "access_token" in data
+        assert "refresh_token" in data
+    
+    def test_refresh_token_invalid(self, client):
+        """Test refresh with invalid token"""
+        
+        response = client.post("/api/v1/auth/refresh", json={
+            "refresh_token": "invalid.token.here"
+        })
+        
+        assert response.status_code == 401
+    
+    def test_refresh_token_expired(self, client):
+        """Test refresh with expired token"""
+        
+        from app.core.security import create_refresh_token
+        from datetime import timedelta
+        
+        # Create expired token
+        expired_token = create_refresh_token(
+            data={"sub": "1"},
+            expires_delta=timedelta(seconds=-1)  # Already expired
+        )
+        
+        response = client.post("/api/v1/auth/refresh", json={
+            "refresh_token": expired_token
+        })
+        
+        assert response.status_code == 401
+
+
+class TestProtectedEndpoints:
+    """Tests for protected endpoints requiring auth"""
+    
+    def test_get_me_success(self, client, auth_headers, test_user):
+        """Test GET /api/v1/users/me with valid token"""
+        
+        response = client.get("/api/v1/users/me", headers=auth_headers)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["email"] == test_user.email
+        assert data["id"] == test_user.id
+    
+    def test_get_me_no_token(self, client):
+        """Test GET /api/v1/users/me without token"""
+        
+        response = client.get("/api/v1/users/me")
+        
+        assert response.status_code == 401
+    
+    def test_get_me_invalid_token(self, client):
+        """Test GET /api/v1/users/me with invalid token"""
+        
+        headers = {"Authorization": "Bearer invalid.token.here"}
+        response = client.get("/api/v1/users/me", headers=headers)
+        
+        assert response.status_code == 401
+    
+    def test_get_me_expired_token(self, client, test_user):
+        """Test GET /api/v1/users/me with expired token"""
+        
+        from datetime import timedelta
+        
+        # Create expired token
+        expired_token = create_access_token(
+            data={"sub": str(test_user.id)},
+            expires_delta=timedelta(seconds=-1)
+        )
+        
+        headers = {"Authorization": f"Bearer {expired_token}"}
+        response = client.get("/api/v1/users/me", headers=headers)
+        
+        assert response.status_code == 401
+
+📄 PLIK 4: tests/integration/test_api_subscriptions.py
+Testy API endpoints - Subscriptions
+python# tests/integration/test_api_subscriptions.py
+"""
+Integration tests for subscription API endpoints.
+"""
+
+import pytest
+
+
+class TestCreateSubscriptionEndpoint:
+    """Tests for POST /api/v1/subscriptions"""
+    
+    def test_create_subscription_success(self, client, auth_headers, mock_stripe):
+        """Test successful subscription creation"""
+        
+        response = client.post(
+            "/api/v1/subscriptions",
+            headers=auth_headers,
+            json={
+                "price_id": "price_test123",
+                "payment_method_id": "pm_test123"
+            }
+        )
+        
+        assert response.status_code == 201
+        data = response.json()
+        assert data["status"] == "active"
+        assert "stripe_subscription_id" in data
+    
+    def test_create_subscription_already_exists(
+        self, 
+        client, 
+        auth_headers, 
+        test_subscription
+    ):
+        """Test creation when subscription already exists"""
+        
+        response = client.post(
+            "/api/v1/subscriptions",
+            headers=auth_headers,
+            json={"price_id": "price_test123"}
+        )
+        
+        assert response.status_code == 400
+        assert "already" in response.json()["detail"].lower()
+    
+    def test_create_subscription_unauthorized(self, client):
+        """Test creation without auth"""
+        
+        response = client.post(
+            "/api/v1/subscriptions",
+            json={"price_id": "price_test123"}
+        )
+        
+        assert response.status_code == 401
+
+
+class TestGetSubscriptionEndpoint:
+    """Tests for GET /api/v1/subscriptions/me"""
+    
+    def test_get_subscription_success(
+        self, 
+        client, 
+        auth_headers, 
+        test_subscription
+    ):
+        """Test getting current subscription"""
+        
+        response = client.get("/api/v1/subscriptions/me", headers=auth_headers)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["id"] == test_subscription.id
+        assert data["status"] == test_subscription.status
+    
+    def test_get_subscription_not_found(self, client, auth_headers):
+        """Test getting subscription when none exists"""
+        
+        response = client.get("/api/v1/subscriptions/me", headers=auth_headers)
+        
+        assert response.status_code == 404
+
+
+class TestCancelSubscriptionEndpoint:
+    """Tests for DELETE /api/v1/subscriptions/me"""
+    
+    def test_cancel_subscription_success(
+        self,
+        client,
+        auth_headers,
+        test_subscription,
+        mock_stripe
+    ):
+        """Test subscription cancellation"""
+        
+        response = client.delete("/api/v1/subscriptions/me", headers=auth_headers)
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert data["cancel_at_period_end"] is True
+    
+    def test_cancel_subscription_not_found(self, client, auth_headers):
+        """Test canceling non-existent subscription"""
+        
+        response = client.delete("/api/v1/subscriptions/me", headers=auth_headers)
+        
+        assert response.status_code == 404
+
+
+class TestBillingPortalEndpoint:
+    """Tests for POST /api/v1/subscriptions/billing-portal"""
+    
+    def test_create_portal_session_success(
+        self,
+        client,
+        auth_headers,
+        test_subscription,
+        mock_stripe
+    ):
+        """Test creating billing portal session"""
+        
+        # Mock Stripe portal session
+        mock_stripe['billing_portal_create'] = MagicMock()
+        mock_session = MagicMock()
+        mock_session.url = "https://billing.stripe.com/session/xxx"
+        mock_stripe['billing_portal_create'].return_value = mock_session
+        
+        response = client.post(
+            "/api/v1/subscriptions/billing-portal",
+            headers=auth_headers
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        assert "url" in data
+        assert data["url"].startswith("https://")
+
+📄 PLIK 5: tests/unit/test_services.py
+Testy Services (Stripe, Email, etc)
+python# tests/unit/test_services.py
+"""
+Unit tests for external services.
+"""
+
+import pytest
+from unittest.mock import MagicMock, patch, AsyncMock
+from app.services.email_service import EmailService
+from app.integrations.stripe.connector import StripeConnector
+from app.integrations.fakturownia.connector import FakturowniaConnector
+
+
+class TestEmailService:
+    """Tests for EmailService"""
+    
+    @patch('app.services.email_service.SendGridAPIClient')
+    def test_send_email_success(self, mock_sendgrid):
+        """Test successful email sending"""
+        
+        # Mock SendGrid response
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 202
+        mock_client.send.return_value = mock_response
+        mock_sendgrid.return_value = mock_client
+        
+        # Send email
+        service = EmailService()
+        result = service.send_email(
+            to="test@example.com",
+            subject="Test",
+            body="Test body"
+        )
+        
+        assert result["success"] is True
+        assert result["status_code"] == 202
+    
+    @patch('app.services.email_service.SendGridAPIClient')
+    def test_send_verification_email(self, mock_sendgrid):
+        """Test sending verification email"""
+        
+        mock_client = MagicMock()
+        mock_response = MagicMock()
+        mock_response.status_code = 202
+        mock_client.send.return_value = mock_response
+        mock_sendgrid.return_value = mock_client
+        
+        service = EmailService()
+        service.send_verification_email(
+            to="test@example.com",
+            name="Test User",
+            verification_url="https://autoflow.app/verify?token=abc"
+        )
+        
+        # Verify email was sent
+        assert mock_client.send.called
+
+
+class TestStripeConnector:
+    """Tests for StripeConnector"""
+    
+    @pytest.mark.asyncio
+    @patch('stripe.Customer.create')
+    async def test_create_customer_success(self, mock_create):
+        """Test creating Stripe customer"""
+        
+        # Mock Stripe response
+        mock_customer = MagicMock()
+        mock_customer.id = "cus_test123"
+        mock_customer.email = "test@example.com"
+        mock_create.return_value = mock_customer
+        
+        # Create customer
+        from app.integrations.stripe.schemas import StripeCredentials
+        
+        connector = StripeConnector(
+            credentials=StripeCredentials(
+                api_key="sk_test_xxx",
+                webhook_secret="whsec_xxx"
+            )
+        )
+        
+        customer = await connector.create_customer(
+            email="test@example.com",
+            name="Test User"
+        )
+        
+        assert customer.id == "cus_test123"
+        assert mock_create.called
+    
+    @pytest.mark.asyncio
+    @patch('stripe.Subscription.create')
+    async def test_create_subscription_success(self, mock_create):
+        """Test creating Stripe subscription"""
+        
+        mock_subscription = MagicMock()
+        mock_subscription.id = "sub_test123"
+        mock_subscription.status = "active"
+        mock_create.return_value = mock_subscription
+        
+        from app.integrations.stripe.schemas import StripeCredentials
+        
+        connector = StripeConnector(
+            credentials=StripeCredentials(
+                api_key="sk_test_xxx",
+                webhook_secret="whsec_xxx"
+            )
+        )
+        
+        subscription = await connector.create_subscription(
+            customer_id="cus_test123",
+            price_id="price_test123"
+        )
+        
+        assert subscription.id == "sub_test123"
+        assert subscription.status == "active"
+
+
+class TestFakturowniaConnector:
+    """Tests for FakturowniaConnector"""
+    
+    @pytest.mark.asyncio
+    async def test_create_invoice_success(self):
+        """Test creating invoice in Fakturownia"""
+        
+        from app.integrations.fakturownia.schemas import FakturowniaCredentials
+        import httpx
+        
+        # Mock HTTP response
+        mock_response = MagicMock()
+        mock_response.status_code = 201
+        mock_response.json.return_value = {
+            "id": 123,
+            "number": "INV/2025/001"
+        }
+        
+        with patch.object(httpx.AsyncClient, 'post', return_value=mock_response):
+            connector = FakturowniaConnector(
+                credentials=FakturowniaCredentials(
+                    api_token="test_token",
+                    domain="test-firma"
+                )
+            )
+            
+            invoice = await connector.create_invoice(
+                client_name="Test Client",
+                client_nip="1234567890",
+                items=[{
+                    "name": "Service",
+                    "quantity": 1,
+                    "total_price_gross": 100.00,
+                    "tax": 23
+                }]
+            )
+            
+            assert invoice["id"] == 123
+            assert invoice["number"] == "INV/2025/001"
+
+📄 PLIK 6: pytest.ini
+pytest configuration
+ini# pytest.ini
+[pytest]
+# Test discovery patterns
+python_files = test_*.py
+python_classes = Test*
+python_functions = test_*
+
+# Test paths
+testpaths = tests
+
+# Markers (for categorizing tests)
+markers =
+    unit: Unit tests (fast, no external dependencies)
+    integration: Integration tests (database, API)
+    e2e: End-to-end tests (complete workflows)
+    slow: Slow tests (> 1 second)
+    asyncio: Async tests
+
+# Async mode
+asyncio_mode = auto
+
+# Coverage settings
+addopts =
+    --verbose
+    --strict-markers
+    --tb=short
+    --cov=app
+    --cov-report=term-missing
+    --cov-report=html
+    --cov-fail-under=80
+
+# Ignore warnings
+filterwarnings =
+    ignore::DeprecationWarning
+    ignore::PendingDeprecationWarning
+
+📄 PLIK 7: .coveragerc
+Coverage configuration
+ini# .coveragerc
+[run]
+source = app
+omit =
+    */tests/*
+    */migrations/*
+    */__pycache__/*
+    */venv/*
+    */site-packages/*
+
+[report]
+# Regexes for lines to exclude from consideration
+exclude_lines =
+    # Have to re-enable the standard pragma
+    pragma: no cover
+
+    # Don't complain about missing debug-only code:
+    def __repr__
+    if self\.debug
+
+    # Don't complain if tests don't hit defensive assertion code:
+    raise AssertionError
+    raise NotImplementedError
+
+    # Don't complain if non-runnable code isn't run:
+    if 0:
+    if __name__ == .__main__.:
+
+    # Don't complain about abstract methods
+    @(abc\.)?abstractmethod
+
+ignore_errors = True
+
+[html]
+directory = htmlcov
+
+🚀 USAGE GUIDE
+Install pytest + dependencies:
+bashpip install pytest pytest-asyncio pytest-cov pytest-mock httpx
+Run all tests:
+bashpytest
+Run specific test file:
+bashpytest tests/unit/test_use_cases.py -v
+Run specific test:
+bashpytest tests/unit/test_use_cases.py::TestCreateSubscriptionUseCase::test_create_subscription_success -v
+Run tests by marker:
+bash# Unit tests only
+pytest -m unit
+
+# Integration tests only
+pytest -m integration
+
+# Exclude slow tests
+pytest -m "not slow"
+Run with coverage:
+bashpytest --cov=app --cov-report=html
+# Open htmlcov/index.html in browser
+Run in parallel (faster):
+bashpip install pytest-xdist
+pytest -n auto  # Use all CPU cores
+Watch mode (re-run on file changes):
+bashpip install pytest-watch
+ptw  # or: pytest-watch
+
+✅ BEST PRACTICES
+1. Test Naming Convention:
+python# ✅ GOOD - Clear what's being tested
+def test_create_subscription_success():
+    pass
+
+def test_create_subscription_already_exists():
+    pass
+
+def test_create_subscription_stripe_failure():
+    pass
+
+# ❌ BAD - Unclear
+def test_subscription():
+    pass
+
+def test_1():
+    pass
+2. Arrange-Act-Assert Pattern:
+pythondef test_login_success(client, test_user):
+    # ARRANGE - Setup test data
+    email = test_user.email
+    password = test_user.plain_password
+    
+    # ACT - Execute action
+    response = client.post("/api/v1/auth/login", json={
+        "email": email,
+        "password": password
+    })
+    
+    # ASSERT - Verify results
+    assert response.status_code == 200
+    assert "access_token" in response.json()
+3. Use Fixtures for Common Setup:
+python# ❌ BAD - Duplicate setup
+def test_a(client, db_session):
+    user = User(email="test@example.com", ...)
+    db_session.add(user)
+    db_session.commit()
+    # ... test ...
+
+def test_b(client, db_session):
+    user = User(email="test@example.com", ...)
+    db_session.add(user)
+    db_session.commit()
+    # ... test ...
+
+# ✅ GOOD - Fixture
+@pytest.fixture
+def test_user(db_session):
+    user = User(email="test@example.com", ...)
+    db_session.add(user)
+    db_session.commit()
+    return user
+
+def test_a(client, test_user):
+    # ... test ...
+
+def test_b(client, test_user):
+    # ... test ...
+4. Mock External Services:
+python# ✅ GOOD - Mock Stripe
+@patch('stripe.Customer.create')
+def test_create_customer(mock_create):
+    mock_create.return_value = MagicMock(id="cus_123")
+    # ... test ...
+
+# ❌ BAD - Real API call (slow, unreliable)
+def test_create_customer():
+    customer = stripe.Customer.create(...)  # Real API call!
+5. Test Edge Cases:
+python# ✅ Test happy path
+def test_login_success():
+    pass
+
+# ✅ Test error cases
+def test_login_wrong_password():
+    pass
+
+def test_login_nonexistent_user():
+    pass
+
+def test_login_inactive_user():
+    pass
+
+def test_login_invalid_email_format():
+    pass
+
+⚠️ COMMON ISSUES
+Issue 1: Database not cleaned between tests
+Problem:
+pythondef test_a(db_session):
+    user = User(email="test@example.com")
+    db_session.add(user)
+    db_session.commit()
+
+def test_b(db_session):
+    user = User(email="test@example.com")  # IntegrityError!
+Solution: Use transaction rollback in fixture (see conftest.py)
+Issue 2: Async test not awaited
+Problem:
+pythondef test_async_function():
+    result = async_function()  # Returns coroutine, not result!
+Solution:
+python@pytest.mark.asyncio
+async def test_async_function():
+    result = await async_function()  # ✅
+Issue 3: Mock not applied
+Problem:
+python@patch('app.services.StripeService')  # Wrong path!
+def test_stripe(mock_stripe):
+    # Mock not applied
+Solution:
+python@patch('app.integrations.stripe.connector.stripe')  # ✅ Correct import path
+def test_stripe(mock_stripe):
+    pass
+```
+
+---
+
+## 📊 COVERAGE TARGETS
+```
+TARGET COVERAGE:
+├── Overall: 80%+
+├── Use Cases: 90%+ (critical business logic)
+├── Repositories: 85%+
+├── API Endpoints: 80%+
+├── Services: 75%+
+└── Workers/Tasks: 70%+
+
+✅ CHECKLIST DLA MANUSA
+
+ Install pytest + dependencies
+ Copy conftest.py
+ Copy test files (unit, integration)
+ Copy pytest.ini + .coveragerc
+ Create test database
+ Run all tests (pytest)
+ Check coverage (pytest --cov)
+ Fix failing tests
+ Add tests for new features
+ Setup CI/CD to run tests automatically
+
+
+KONIEC SEKCJI 6! 🎉
+Czy kontynuować z Sekcją 7 (Deployment - Docker, CI/CD)? 🚀tak

@@ -1,0 +1,1636 @@
+22:49📋 SEKCJA 4: INTEGRACJE (Stripe, Outlook, Fakturownia, Google)
+
+🎯 CEL
+Zaimplementować system integracji z zewnętrznymi platformami:
+
+Stripe - płatności, subskrypcje, webhooks
+Outlook - IMAP (email bez OAuth)
+Fakturownia - faktury API
+Google - Gmail, Drive, Sheets (OAuth 2.0)
+SendGrid - wysyłka emaili
+Generic REST API - template dla innych platform
+
+
+🏗️ ARCHITEKTURA INTEGRACJI
+Base Connector Pattern:
+python# app/integrations/base.py
+from abc import ABC, abstractmethod
+from typing import Dict, Any, Optional
+from pydantic import BaseModel
+
+class IntegrationCredentials(BaseModel):
+    """Base model dla credentials"""
+    pass
+
+class IntegrationConfig(BaseModel):
+    """Base model dla konfiguracji"""
+    integration_type: str
+    is_active: bool = True
+
+class BaseConnector(ABC):
+    """
+    Base class dla wszystkich connectorów.
+    
+    Każda integracja dziedziczy i implementuje:
+    - test_connection()
+    - connect()
+    - disconnect()
+    """
+    
+    def __init__(
+        self,
+        credentials: IntegrationCredentials,
+        config: Optional[IntegrationConfig] = None
+    ):
+        self.credentials = credentials
+        self.config = config or IntegrationConfig(integration_type=self.__class__.__name__)
+    
+    @abstractmethod
+    async def test_connection(self) -> Dict[str, Any]:
+        """
+        Test połączenia z platformą.
+        
+        Returns:
+            {
+                "success": bool,
+                "message": str,
+                "metadata": dict  # Opcjonalne info (user email, org name, etc)
+            }
+        """
+        raise NotImplementedError
+    
+    @abstractmethod
+    async def connect(self) -> Dict[str, Any]:
+        """
+        Nawiąż połączenie i zapisz credentials.
+        
+        Returns:
+            Connection details
+        """
+        raise NotImplementedError
+    
+    @abstractmethod
+    async def disconnect(self) -> None:
+        """Rozłącz i usuń credentials"""
+        raise NotImplementedError
+
+💳 1. STRIPE INTEGRATION
+Credentials & Config:
+python# app/integrations/stripe/schemas.py
+from pydantic import BaseModel, Field
+from app.integrations.base import IntegrationCredentials, IntegrationConfig
+
+class StripeCredentials(IntegrationCredentials):
+    """Stripe API credentials"""
+    api_key: str = Field(..., description="Stripe secret key (sk_...)")
+    webhook_secret: str = Field(..., description="Stripe webhook secret (whsec_...)")
+
+class StripeConfig(IntegrationConfig):
+    integration_type: str = "stripe"
+    currency: str = "PLN"
+    success_url: str = "https://autoflow.app/subscription/success"
+    cancel_url: str = "https://autoflow.app/subscription/cancel"
+Connector:
+python# app/integrations/stripe/connector.py
+from typing import Dict, Any
+import stripe
+from stripe.error import StripeError
+from app.integrations.base import BaseConnector
+from app.integrations.stripe.schemas import StripeCredentials, StripeConfig
+
+class StripeConnector(BaseConnector):
+    """
+    Stripe integration connector.
+    
+    Features:
+    - Create customers
+    - Create subscriptions
+    - Create checkout sessions
+    - Handle webhooks
+    - List invoices
+    """
+    
+    def __init__(self, credentials: StripeCredentials, config: StripeConfig = None):
+        super().__init__(credentials, config)
+        stripe.api_key = credentials.api_key
+    
+    async def test_connection(self) -> Dict[str, Any]:
+        """Test Stripe API connection"""
+        try:
+            # Simple API call to verify key
+            account = stripe.Account.retrieve()
+            
+            return {
+                "success": True,
+                "message": "Stripe connected successfully",
+                "metadata": {
+                    "account_id": account.id,
+                    "country": account.country,
+                    "currency": account.default_currency
+                }
+            }
+        except StripeError as e:
+            return {
+                "success": False,
+                "message": f"Stripe connection failed: {str(e)}"
+            }
+    
+    async def connect(self) -> Dict[str, Any]:
+        """Connect to Stripe (verify credentials)"""
+        return await self.test_connection()
+    
+    async def disconnect(self) -> None:
+        """Disconnect from Stripe (clear credentials)"""
+        stripe.api_key = None
+    
+    # ============================================
+    # CUSTOMER MANAGEMENT
+    # ============================================
+    
+    async def create_customer(
+        self,
+        email: str,
+        name: str,
+        metadata: Dict[str, Any] = None
+    ) -> stripe.Customer:
+        """
+        Create Stripe customer.
+        
+        Args:
+            email: Customer email
+            name: Customer name
+            metadata: Additional metadata (org_id, etc)
+        
+        Returns:
+            Stripe Customer object
+        """
+        try:
+            customer = stripe.Customer.create(
+                email=email,
+                name=name,
+                metadata=metadata or {}
+            )
+            return customer
+        except StripeError as e:
+            raise Exception(f"Failed to create Stripe customer: {str(e)}")
+    
+    async def get_customer(self, customer_id: str) -> stripe.Customer:
+        """Get Stripe customer by ID"""
+        try:
+            return stripe.Customer.retrieve(customer_id)
+        except StripeError as e:
+            raise Exception(f"Failed to get customer: {str(e)}")
+    
+    # ============================================
+    # SUBSCRIPTION MANAGEMENT
+    # ============================================
+    
+    async def create_subscription(
+        self,
+        customer_id: str,
+        price_id: str,
+        payment_method_id: str = None,
+        trial_days: int = None
+    ) -> stripe.Subscription:
+        """
+        Create subscription for customer.
+        
+        Args:
+            customer_id: Stripe customer ID
+            price_id: Stripe price ID (price_...)
+            payment_method_id: Payment method ID (optional for trial)
+            trial_days: Trial period in days
+        
+        Returns:
+            Stripe Subscription object
+        """
+        try:
+            params = {
+                "customer": customer_id,
+                "items": [{"price": price_id}],
+                "expand": ["latest_invoice.payment_intent"]
+            }
+            
+            if payment_method_id:
+                params["default_payment_method"] = payment_method_id
+            
+            if trial_days:
+                params["trial_period_days"] = trial_days
+            
+            subscription = stripe.Subscription.create(**params)
+            return subscription
+        except StripeError as e:
+            raise Exception(f"Failed to create subscription: {str(e)}")
+    
+    async def cancel_subscription(
+        self,
+        subscription_id: str,
+        immediately: bool = False
+    ) -> stripe.Subscription:
+        """
+        Cancel subscription.
+        
+        Args:
+            subscription_id: Stripe subscription ID
+            immediately: If True, cancel now. If False, cancel at period end.
+        
+        Returns:
+            Canceled subscription
+        """
+        try:
+            if immediately:
+                return stripe.Subscription.delete(subscription_id)
+            else:
+                return stripe.Subscription.modify(
+                    subscription_id,
+                    cancel_at_period_end=True
+                )
+        except StripeError as e:
+            raise Exception(f"Failed to cancel subscription: {str(e)}")
+    
+    async def change_subscription_plan(
+        self,
+        subscription_id: str,
+        new_price_id: str
+    ) -> stripe.Subscription:
+        """
+        Change subscription plan.
+        
+        Args:
+            subscription_id: Stripe subscription ID
+            new_price_id: New price ID
+        
+        Returns:
+            Updated subscription
+        """
+        try:
+            # Get current subscription
+            subscription = stripe.Subscription.retrieve(subscription_id)
+            
+            # Update subscription item
+            return stripe.Subscription.modify(
+                subscription_id,
+                items=[{
+                    "id": subscription["items"]["data"][0].id,
+                    "price": new_price_id
+                }],
+                proration_behavior="create_prorations"  # Prorate charges
+            )
+        except StripeError as e:
+            raise Exception(f"Failed to change plan: {str(e)}")
+    
+    # ============================================
+    # CHECKOUT SESSION (dla frontendu)
+    # ============================================
+    
+    async def create_checkout_session(
+        self,
+        customer_id: str,
+        price_id: str,
+        success_url: str = None,
+        cancel_url: str = None
+    ) -> stripe.checkout.Session:
+        """
+        Create Stripe Checkout session (hosted payment page).
+        
+        Args:
+            customer_id: Stripe customer ID
+            price_id: Stripe price ID
+            success_url: Redirect URL on success
+            cancel_url: Redirect URL on cancel
+        
+        Returns:
+            Checkout Session with URL
+        """
+        try:
+            session = stripe.checkout.Session.create(
+                customer=customer_id,
+                mode="subscription",
+                line_items=[{"price": price_id, "quantity": 1}],
+                success_url=success_url or self.config.success_url,
+                cancel_url=cancel_url or self.config.cancel_url
+            )
+            return session
+        except StripeError as e:
+            raise Exception(f"Failed to create checkout session: {str(e)}")
+    
+    # ============================================
+    # BILLING PORTAL (manage payment methods)
+    # ============================================
+    
+    async def create_billing_portal_session(
+        self,
+        customer_id: str,
+        return_url: str = "https://autoflow.app/settings/billing"
+    ) -> stripe.billing_portal.Session:
+        """
+        Create customer portal session (manage payment methods, invoices).
+        
+        Args:
+            customer_id: Stripe customer ID
+            return_url: URL to return after managing billing
+        
+        Returns:
+            Portal session with URL
+        """
+        try:
+            session = stripe.billing_portal.Session.create(
+                customer=customer_id,
+                return_url=return_url
+            )
+            return session
+        except StripeError as e:
+            raise Exception(f"Failed to create portal session: {str(e)}")
+    
+    # ============================================
+    # INVOICES
+    # ============================================
+    
+    async def list_invoices(
+        self,
+        customer_id: str,
+        limit: int = 10
+    ) -> list[stripe.Invoice]:
+        """List invoices for customer"""
+        try:
+            invoices = stripe.Invoice.list(
+                customer=customer_id,
+                limit=limit
+            )
+            return invoices.data
+        except StripeError as e:
+            raise Exception(f"Failed to list invoices: {str(e)}")
+Webhook Handler:
+python# app/api/v1/endpoints/webhooks.py
+from fastapi import APIRouter, Request, HTTPException, Header
+from app.integrations.stripe.connector import StripeConnector
+from app.db.session import get_db
+from app.db.models.subscription import Subscription
+from sqlalchemy.orm import Session
+import stripe
+
+router = APIRouter(prefix="/webhooks", tags=["webhooks"])
+
+@router.post("/stripe")
+async def stripe_webhook(
+    request: Request,
+    stripe_signature: str = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Handle Stripe webhooks.
+    
+    Events:
+    - customer.subscription.created
+    - customer.subscription.updated
+    - customer.subscription.deleted
+    - invoice.payment_succeeded
+    - invoice.payment_failed
+    """
+    
+    # Get raw body
+    payload = await request.body()
+    
+    # Verify webhook signature
+    try:
+        event = stripe.Webhook.construct_event(
+            payload,
+            stripe_signature,
+            settings.STRIPE_WEBHOOK_SECRET
+        )
+    except ValueError:
+        raise HTTPException(400, "Invalid payload")
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(400, "Invalid signature")
+    
+    # Handle event
+    event_type = event["type"]
+    data = event["data"]["object"]
+    
+    if event_type == "customer.subscription.created":
+        await handle_subscription_created(data, db)
+    
+    elif event_type == "customer.subscription.updated":
+        await handle_subscription_updated(data, db)
+    
+    elif event_type == "customer.subscription.deleted":
+        await handle_subscription_deleted(data, db)
+    
+    elif event_type == "invoice.payment_succeeded":
+        await handle_payment_succeeded(data, db)
+    
+    elif event_type == "invoice.payment_failed":
+        await handle_payment_failed(data, db)
+    
+    return {"status": "success"}
+
+async def handle_subscription_created(data: dict, db: Session):
+    """Handle new subscription"""
+    subscription = db.query(Subscription).filter(
+        Subscription.stripe_subscription_id == data["id"]
+    ).first()
+    
+    if subscription:
+        subscription.status = data["status"]
+        subscription.current_period_start = datetime.fromtimestamp(data["current_period_start"])
+        subscription.current_period_end = datetime.fromtimestamp(data["current_period_end"])
+        db.commit()
+
+async def handle_subscription_updated(data: dict, db: Session):
+    """Handle subscription update"""
+    subscription = db.query(Subscription).filter(
+        Subscription.stripe_subscription_id == data["id"]
+    ).first()
+    
+    if subscription:
+        subscription.status = data["status"]
+        subscription.current_period_end = datetime.fromtimestamp(data["current_period_end"])
+        subscription.cancel_at_period_end = data.get("cancel_at_period_end", False)
+        db.commit()
+
+async def handle_subscription_deleted(data: dict, db: Session):
+    """Handle subscription cancellation"""
+    subscription = db.query(Subscription).filter(
+        Subscription.stripe_subscription_id == data["id"]
+    ).first()
+    
+    if subscription:
+        subscription.status = "canceled"
+        subscription.canceled_at = datetime.utcnow()
+        db.commit()
+
+async def handle_payment_succeeded(data: dict, db: Session):
+    """Handle successful payment"""
+    # Update invoice in DB
+    from app.db.models.invoice import Invoice
+    
+    invoice = db.query(Invoice).filter(
+        Invoice.stripe_invoice_id == data["id"]
+    ).first()
+    
+    if invoice:
+        invoice.status = "paid"
+        invoice.paid_at = datetime.fromtimestamp(data["status_transitions"]["paid_at"])
+        invoice.amount_paid = data["amount_paid"] / 100  # Convert from cents
+        db.commit()
+
+async def handle_payment_failed(data: dict, db: Session):
+    """Handle failed payment"""
+    # Update subscription status, send email notification
+    pass
+
+📧 2. OUTLOOK INTEGRATION (IMAP)
+Credentials:
+python# app/integrations/outlook/schemas.py
+from pydantic import BaseModel, EmailStr
+from app.integrations.base import IntegrationCredentials
+
+class OutlookCredentials(IntegrationCredentials):
+    """Outlook IMAP credentials (no OAuth needed)"""
+    email: EmailStr
+    password: str  # Encrypted in DB!
+    
+class OutlookConfig(IntegrationConfig):
+    integration_type: str = "outlook"
+    imap_server: str = "outlook.office365.com"
+    imap_port: int = 993
+    smtp_server: str = "smtp.office365.com"
+    smtp_port: int = 587
+Connector:
+python# app/integrations/outlook/connector.py
+import imaplib
+import email
+from email.header import decode_header
+from typing import List, Dict, Any
+from app.integrations.base import BaseConnector
+from app.integrations.outlook.schemas import OutlookCredentials, OutlookConfig
+
+class OutlookConnector(BaseConnector):
+    """
+    Outlook IMAP connector (simple email access).
+    
+    Features:
+    - Connect via IMAP (no OAuth)
+    - Read emails
+    - Search emails
+    - Download attachments
+    - Mark as read/unread
+    """
+    
+    def __init__(self, credentials: OutlookCredentials, config: OutlookConfig = None):
+        super().__init__(credentials, config or OutlookConfig())
+        self.imap_client = None
+    
+    async def test_connection(self) -> Dict[str, Any]:
+        """Test IMAP connection"""
+        try:
+            # Connect to IMAP server
+            mail = imaplib.IMAP4_SSL(
+                self.config.imap_server,
+                self.config.imap_port
+            )
+            
+            # Login
+            mail.login(
+                self.credentials.email,
+                self.credentials.password
+            )
+            
+            # Get mailbox info
+            status, messages = mail.select("INBOX")
+            num_messages = int(messages[0])
+            
+            mail.logout()
+            
+            return {
+                "success": True,
+                "message": "Outlook connected successfully",
+                "metadata": {
+                    "email": self.credentials.email,
+                    "inbox_count": num_messages
+                }
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Outlook connection failed: {str(e)}"
+            }
+    
+    async def connect(self) -> Dict[str, Any]:
+        """Connect to Outlook IMAP"""
+        return await self.test_connection()
+    
+    async def disconnect(self) -> None:
+        """Disconnect from IMAP"""
+        if self.imap_client:
+            try:
+                self.imap_client.logout()
+            except:
+                pass
+            self.imap_client = None
+    
+    def _get_imap_client(self) -> imaplib.IMAP4_SSL:
+        """Get IMAP client (cached)"""
+        if self.imap_client is None:
+            self.imap_client = imaplib.IMAP4_SSL(
+                self.config.imap_server,
+                self.config.imap_port
+            )
+            self.imap_client.login(
+                self.credentials.email,
+                self.credentials.password
+            )
+        return self.imap_client
+    
+    async def get_emails(
+        self,
+        folder: str = "INBOX",
+        limit: int = 10,
+        unread_only: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Get emails from folder.
+        
+        Args:
+            folder: Mailbox folder (INBOX, Sent, etc)
+            limit: Max number of emails
+            unread_only: Only unread emails
+        
+        Returns:
+            List of email dicts
+        """
+        mail = self._get_imap_client()
+        mail.select(folder)
+        
+        # Search criteria
+        if unread_only:
+            status, messages = mail.search(None, "UNSEEN")
+        else:
+            status, messages = mail.search(None, "ALL")
+        
+        # Get message IDs
+        message_ids = messages[0].split()
+        
+        # Get last N emails
+        recent_ids = message_ids[-limit:] if len(message_ids) > limit else message_ids
+        
+        emails = []
+        for msg_id in reversed(recent_ids):  # Newest first
+            # Fetch email
+            status, msg_data = mail.fetch(msg_id, "(RFC822)")
+            
+            # Parse email
+            email_body = msg_data[0][1]
+            email_message = email.message_from_bytes(email_body)
+            
+            # Extract data
+            emails.append({
+                "id": msg_id.decode(),
+                "subject": self._decode_header(email_message["Subject"]),
+                "from": self._decode_header(email_message["From"]),
+                "to": self._decode_header(email_message["To"]),
+                "date": email_message["Date"],
+                "body": self._get_email_body(email_message),
+                "has_attachments": self._has_attachments(email_message)
+            })
+        
+        return emails
+    
+    async def search_emails(
+        self,
+        query: str,
+        folder: str = "INBOX",
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        Search emails by subject/from.
+        
+        Args:
+            query: Search query (e.g., "invoice", "from:jan@example.com")
+            folder: Mailbox folder
+            limit: Max results
+        
+        Returns:
+            List of matching emails
+        """
+        mail = self._get_imap_client()
+        mail.select(folder)
+        
+        # IMAP search (simple subject search)
+        status, messages = mail.search(None, f'SUBJECT "{query}"')
+        
+        message_ids = messages[0].split()
+        recent_ids = message_ids[-limit:] if len(message_ids) > limit else message_ids
+        
+        emails = []
+        for msg_id in reversed(recent_ids):
+            status, msg_data = mail.fetch(msg_id, "(RFC822)")
+            email_body = msg_data[0][1]
+            email_message = email.message_from_bytes(email_body)
+            
+            emails.append({
+                "id": msg_id.decode(),
+                "subject": self._decode_header(email_message["Subject"]),
+                "from": self._decode_header(email_message["From"]),
+                "date": email_message["Date"],
+                "body": self._get_email_body(email_message)[:200]  # Preview
+            })
+        
+        return emails
+    
+    async def get_attachments(
+        self,
+        email_id: str
+    ) -> List[Dict[str, Any]]:
+        """
+        Get attachments from email.
+        
+        Args:
+            email_id: Email message ID
+        
+        Returns:
+            List of attachments with filename and data
+        """
+        mail = self._get_imap_client()
+        mail.select("INBOX")
+        
+        status, msg_data = mail.fetch(email_id, "(RFC822)")
+        email_body = msg_data[0][1]
+        email_message = email.message_from_bytes(email_body)
+        
+        attachments = []
+        
+        for part in email_message.walk():
+            if part.get_content_maintype() == 'multipart':
+                continue
+            
+            if part.get('Content-Disposition') is None:
+                continue
+            
+            filename = part.get_filename()
+            if filename:
+                attachments.append({
+                    "filename": filename,
+                    "data": part.get_payload(decode=True),
+                    "content_type": part.get_content_type()
+                })
+        
+        return attachments
+    
+    async def mark_as_read(self, email_id: str):
+        """Mark email as read"""
+        mail = self._get_imap_client()
+        mail.select("INBOX")
+        mail.store(email_id, '+FLAGS', '\\Seen')
+    
+    async def mark_as_unread(self, email_id: str):
+        """Mark email as unread"""
+        mail = self._get_imap_client()
+        mail.select("INBOX")
+        mail.store(email_id, '-FLAGS', '\\Seen')
+    
+    def _decode_header(self, header: str) -> str:
+        """Decode email header"""
+        if not header:
+            return ""
+        
+        decoded = decode_header(header)
+        return "".join([
+            text.decode(encoding or 'utf-8') if isinstance(text, bytes) else text
+            for text, encoding in decoded
+        ])
+    
+    def _get_email_body(self, email_message) -> str:
+        """Extract email body text"""
+        if email_message.is_multipart():
+            for part in email_message.walk():
+                if part.get_content_type() == "text/plain":
+                    return part.get_payload(decode=True).decode()
+        else:
+            return email_message.get_payload(decode=True).decode()
+        
+        return ""
+    
+    def _has_attachments(self, email_message) -> bool:
+        """Check if email has attachments"""
+        for part in email_message.walk():
+            if part.get('Content-Disposition') and 'attachment' in part.get('Content-Disposition'):
+                return True
+        return False
+
+📄 3. FAKTUROWNIA INTEGRATION
+Credentials:
+python# app/integrations/fakturownia/schemas.py
+from pydantic import BaseModel
+from app.integrations.base import IntegrationCredentials
+
+class FakturowniaCredentials(IntegrationCredentials):
+    """Fakturownia API credentials"""
+    api_token: str  # Token from Fakturownia settings
+    domain: str     # e.g., "moja-firma" (from moja-firma.fakturownia.pl)
+
+class FakturowniaConfig(IntegrationConfig):
+    integration_type: str = "fakturownia"
+    base_url_template: str = "https://{domain}.fakturownia.pl"
+Connector:
+python# app/integrations/fakturownia/connector.py
+import httpx
+from typing import Dict, Any, List
+from app.integrations.base import BaseConnector
+from app.integrations.fakturownia.schemas import FakturowniaCredentials, FakturowniaConfig
+
+class FakturowniaConnector(BaseConnector):
+    """
+    Fakturownia API connector.
+    
+    Features:
+    - Create invoices
+    - Get invoices
+    - Send invoices via email
+    - Download PDF
+    - Update invoice status
+    """
+    
+    def __init__(self, credentials: FakturowniaCredentials, config: FakturowniaConfig = None):
+        super().__init__(credentials, config or FakturowniaConfig())
+        self.base_url = self.config.base_url_template.format(domain=credentials.domain)
+        self.client = httpx.AsyncClient(timeout=30.0)
+    
+    def _get_headers(self) -> Dict[str, str]:
+        """Build request headers"""
+        return {
+            "Accept": "application/json",
+            "Content-Type": "application/json"
+        }
+    
+    def _get_params(self) -> Dict[str, str]:
+        """Build auth params"""
+        return {"api_token": self.credentials.api_token}
+    
+    async def test_connection(self) -> Dict[str, Any]:
+        """Test Fakturownia API connection"""
+        try:
+            # Get account info
+            response = await self.client.get(
+                f"{self.base_url}/account.json",
+                headers=self._get_headers(),
+                params=self._get_params()
+            )
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            return {
+                "success": True,
+                "message": "Fakturownia connected successfully",
+                "metadata": {
+                    "company": data.get("company_name"),
+                    "email": data.get("email")
+                }
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Fakturownia connection failed: {str(e)}"
+            }
+    
+    async def connect(self) -> Dict[str, Any]:
+        """Connect to Fakturownia"""
+        return await self.test_connection()
+    
+    async def disconnect(self) -> None:
+        """Disconnect from Fakturownia"""
+        await self.client.aclose()
+    
+    async def create_invoice(
+        self,
+        client_name: str,
+        client_nip: str,
+        items: List[Dict[str, Any]],
+        issue_date: str = None,
+        payment_to: str = None
+    ) -> Dict[str, Any]:
+        """
+        Create invoice in Fakturownia.
+        
+        Args:
+            client_name: Client company name
+            client_nip: Client tax ID (NIP)
+            items: List of invoice items [{name, quantity, price, tax}]
+            issue_date: Invoice issue date (YYYY-MM-DD)
+            payment_to: Payment due date (YYYY-MM-DD)
+        
+        Returns:
+            Created invoice data
+        
+        Example:
+            items = [
+                {
+                    "name": "AutoFlow - Plan Pro",
+                    "quantity": 1,
+                    "total_price_gross": 150.00,
+                    "tax": 23
+                }
+            ]
+        """
+        from datetime import datetime
+        
+        if not issue_date:
+            issue_date = datetime.now().strftime("%Y-%m-%d")
+        
+        if not payment_to:
+            # Default: 14 days
+            from datetime import timedelta
+            payment_date = datetime.now() + timedelta(days=14)
+            payment_to = payment_date.strftime("%Y-%m-%d")
+        
+        payload = {
+            "invoice": {
+                "kind": "vat",  # VAT invoice
+                "buyer_name": client_name,
+                "buyer_tax_no": client_nip,
+                "issue_date": issue_date,
+                "payment_to": payment_to,
+                "positions": items
+            }
+        }
+        
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/invoices.json",
+                headers=self._get_headers(),
+                params=self._get_params(),
+                json=payload
+            )
+            response.raise_for_status()
+            
+            return response.json()
+        except Exception as e:
+            raise Exception(f"Failed to create invoice: {str(e)}")
+    
+    async def get_invoice(self, invoice_id: int) -> Dict[str, Any]:
+        """Get invoice by ID"""
+        try:
+            response = await self.client.get(
+                f"{self.base_url}/invoices/{invoice_id}.json",
+                headers=self._get_headers(),
+                params=self._get_params()
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            raise Exception(f"Failed to get invoice: {str(e)}")
+    
+    async def list_invoices(
+        self,
+        page: int = 1,
+        per_page: int = 25,
+        period: str = None
+    ) -> List[Dict[str, Any]]:
+        """
+        List invoices.
+        
+        Args:
+            page: Page number
+            per_page: Items per page (max 100)
+            period: Filter by period (e.g., "2025-01" for January 2025)
+        
+        Returns:
+            List of invoices
+        """
+        params = self._get_params()
+        params.update({
+            "page": page,
+            "per_page": per_page
+        })
+        
+        if period:
+            params["period"] = period
+        
+        try:
+            response = await self.client.get(
+                f"{self.base_url}/invoices.json",
+                headers=self._get_headers(),
+                params=params
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            raise Exception(f"Failed to list invoices: {str(e)}")
+    
+    async def download_pdf(self, invoice_id: int) -> bytes:
+        """
+        Download invoice PDF.
+        
+        Args:
+            invoice_id: Invoice ID
+        
+        Returns:
+            PDF bytes
+        """
+        try:
+            response = await self.client.get(
+                f"{self.base_url}/invoices/{invoice_id}.pdf",
+                params=self._get_params()
+            )
+            response.raise_for_status()
+            return response.content
+        except Exception as e:
+            raise Exception(f"Failed to download PDF: {str(e)}")
+    
+    async def send_invoice_email(
+        self,
+        invoice_id: int,
+        recipient_email: str
+    ) -> Dict[str, Any]:
+        """
+        Send invoice via email.
+        
+        Args:
+            invoice_id: Invoice ID
+            recipient_email: Recipient email address
+        
+        Returns:
+            Success response
+        """
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/invoices/{invoice_id}/send_by_email.json",
+                headers=self._get_headers(),
+                params=self._get_params(),
+                json={"recipient": recipient_email}
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            raise Exception(f"Failed to send email: {str(e)}")
+    
+    async def mark_as_paid(self, invoice_id: int) -> Dict[str, Any]:
+        """Mark invoice as paid"""
+        try:
+            response = await self.client.post(
+                f"{self.base_url}/invoices/{invoice_id}/change_status.json",
+                headers=self._get_headers(),
+                params=self._get_params(),
+                json={"status": "paid"}
+            )
+            response.raise_for_status()
+            return response.json()
+        except Exception as e:
+            raise Exception(f"Failed to mark as paid: {str(e)}")
+
+🔐 4. GOOGLE OAUTH (Gmail, Drive, Sheets)
+OAuth Flow:
+python# app/integrations/google/schemas.py
+from pydantic import BaseModel
+from app.integrations.base import IntegrationCredentials
+
+class GoogleOAuthCredentials(IntegrationCredentials):
+    """Google OAuth 2.0 credentials"""
+    access_token: str
+    refresh_token: str
+    token_expiry: datetime
+    scopes: List[str]
+
+class GoogleOAuthConfig(IntegrationConfig):
+    integration_type: str = "google"
+    client_id: str
+    client_secret: str
+    redirect_uri: str = "https://autoflow.app/integrations/google/callback"
+OAuth Handler:
+python# app/integrations/google/oauth.py
+from google.oauth2.credentials import Credentials
+from google_auth_oauthlib.flow import Flow
+from googleapiclient.discovery import build
+from typing import Dict, Any
+
+class GoogleOAuthHandler:
+    """
+    Google OAuth 2.0 handler.
+    
+    Flow:
+    1. Get authorization URL
+    2. User authorizes
+    3. Exchange code for tokens
+    4. Save tokens
+    5. Refresh when expired
+    """
+    
+    SCOPES = [
+        'https://www.googleapis.com/auth/gmail.readonly',
+        'https://www.googleapis.com/auth/drive.file',
+        'https://www.googleapis.com/auth/spreadsheets'
+    ]
+    
+    def __init__(self, client_id: str, client_secret: str, redirect_uri: str):
+        self.client_id = client_id
+        self.client_secret = client_secret
+        self.redirect_uri = redirect_uri
+    
+    def get_authorization_url(self, state: str = None) -> str:
+        """
+        Get OAuth authorization URL.
+        
+        Args:
+            state: CSRF token (random string)
+        
+        Returns:
+            Authorization URL to redirect user to
+        """
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [self.redirect_uri]
+                }
+            },
+            scopes=self.SCOPES,
+            redirect_uri=self.redirect_uri
+        )
+        
+        authorization_url, _ = flow.authorization_url(
+            access_type='offline',  # Get refresh token
+            include_granted_scopes='true',
+            state=state,
+            prompt='consent'  # Force consent to get refresh token
+        )
+        
+        return authorization_url
+    
+    def exchange_code_for_tokens(self, code: str) -> Dict[str, Any]:
+        """
+        Exchange authorization code for access tokens.
+        
+        Args:
+            code: Authorization code from callback
+        
+        Returns:
+            {
+                "access_token": str,
+                "refresh_token": str,
+                "token_expiry": datetime,
+                "scopes": list[str]
+            }
+        """
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": self.client_id,
+                    "client_secret": self.client_secret,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [self.redirect_uri]
+                }
+            },
+            scopes=self.SCOPES,
+            redirect_uri=self.redirect_uri
+        )
+        
+        flow.fetch_token(code=code)
+        
+        credentials = flow.credentials
+        
+        return {
+            "access_token": credentials.token,
+            "refresh_token": credentials.refresh_token,
+            "token_expiry": credentials.expiry,
+            "scopes": credentials.scopes
+        }
+    
+    def refresh_access_token(self, refresh_token: str) -> str:
+        """
+        Refresh access token using refresh token.
+        
+        Args:
+            refresh_token: Google refresh token
+        
+        Returns:
+            New access token
+        """
+        from google.auth.transport.requests import Request
+        
+        credentials = Credentials(
+            token=None,
+            refresh_token=refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=self.client_id,
+            client_secret=self.client_secret
+        )
+        
+        credentials.refresh(Request())
+        
+        return credentials.token
+Google API Endpoints:
+python# app/api/v1/endpoints/integrations.py
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+from app.db.session import get_db
+from app.integrations.google.oauth import GoogleOAuthHandler
+from app.core.dependencies import get_current_user
+from app.db.models.user import User
+import secrets
+
+router = APIRouter(prefix="/integrations/google", tags=["integrations"])
+
+@router.get("/authorize")
+async def google_authorize(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Start Google OAuth flow.
+    
+    Returns:
+        Authorization URL to redirect user to
+    """
+    oauth_handler = GoogleOAuthHandler(
+        client_id=settings.GOOGLE_CLIENT_ID,
+        client_secret=settings.GOOGLE_CLIENT_SECRET,
+        redirect_uri=settings.GOOGLE_REDIRECT_URI
+    )
+    
+    # Generate CSRF token
+    state = secrets.token_urlsafe(32)
+    
+    # Save state in session/redis for verification
+    # (in production, store in Redis with expiration)
+    
+    authorization_url = oauth_handler.get_authorization_url(state=state)
+    
+    return {"authorization_url": authorization_url}
+
+@router.get("/callback")
+async def google_callback(
+    code: str,
+    state: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Handle Google OAuth callback.
+    
+    Args:
+        code: Authorization code
+        state: CSRF token
+    
+    Returns:
+        Success message
+    """
+    # Verify state (CSRF protection)
+    # ... verify state from session/redis ...
+    
+    oauth_handler = GoogleOAuthHandler(
+        client_id=settings.GOOGLE_CLIENT_ID,
+        client_secret=settings.GOOGLE_CLIENT_SECRET,
+        redirect_uri=settings.GOOGLE_REDIRECT_URI
+    )
+    
+    # Exchange code for tokens
+    tokens = oauth_handler.exchange_code_for_tokens(code)
+    
+    # Save integration
+    from app.db.models.integration import Integration
+    from app.core.security import encrypt_credentials
+    
+    integration = Integration(
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        type="google",
+        status="active",
+        credentials=encrypt_credentials(tokens)  # Encrypt before saving!
+    )
+    db.add(integration)
+    db.commit()
+    
+    return {"message": "Google connected successfully"}
+Gmail Connector:
+python# app/integrations/google/gmail_connector.py
+from googleapiclient.discovery import build
+from google.oauth2.credentials import Credentials
+from typing import List, Dict, Any
+from app.integrations.base import BaseConnector
+
+class GmailConnector(BaseConnector):
+    """
+    Gmail API connector.
+    
+    Features:
+    - List emails
+    - Search emails
+    - Get email content
+    - Send emails
+    - Get attachments
+    """
+    
+    def __init__(self, credentials: GoogleOAuthCredentials):
+        super().__init__(credentials)
+        
+        # Build Gmail service
+        creds = Credentials(
+            token=credentials.access_token,
+            refresh_token=credentials.refresh_token,
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=settings.GOOGLE_CLIENT_ID,
+            client_secret=settings.GOOGLE_CLIENT_SECRET
+        )
+        
+        self.service = build('gmail', 'v1', credentials=creds)
+    
+    async def test_connection(self) -> Dict[str, Any]:
+        """Test Gmail connection"""
+        try:
+            profile = self.service.users().getProfile(userId='me').execute()
+            
+            return {
+                "success": True,
+                "message": "Gmail connected successfully",
+                "metadata": {
+                    "email": profile['emailAddress'],
+                    "messages_total": profile['messagesTotal']
+                }
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "message": f"Gmail connection failed: {str(e)}"
+            }
+    
+    async def list_emails(
+        self,
+        max_results: int = 10,
+        query: str = None
+    ) -> List[Dict[str, Any]]:
+        """
+        List emails from inbox.
+        
+        Args:
+            max_results: Max number of emails
+            query: Search query (Gmail syntax)
+        
+        Returns:
+            List of emails
+        """
+        try:
+            # List message IDs
+            results = self.service.users().messages().list(
+                userId='me',
+                maxResults=max_results,
+                q=query
+            ).execute()
+            
+            messages = results.get('messages', [])
+            
+            # Get full message details
+            emails = []
+            for msg in messages:
+                email_data = self.service.users().messages().get(
+                    userId='me',
+                    id=msg['id'],
+                    format='full'
+                ).execute()
+                
+                emails.append(self._parse_email(email_data))
+            
+            return emails
+        except Exception as e:
+            raise Exception(f"Failed to list emails: {str(e)}")
+    
+    async def search_emails(self, query: str) -> List[Dict[str, Any]]:
+        """
+        Search emails.
+        
+        Examples:
+            query="subject:invoice"
+            query="from:jan@example.com"
+            query="has:attachment filename:pdf"
+        """
+        return await self.list_emails(query=query)
+    
+    def _parse_email(self, email_data: dict) -> Dict[str, Any]:
+        """Parse Gmail API response to simple dict"""
+        headers = {h['name']: h['value'] for h in email_data['payload']['headers']}
+        
+        return {
+            "id": email_data['id'],
+            "subject": headers.get('Subject', ''),
+            "from": headers.get('From', ''),
+            "to": headers.get('To', ''),
+            "date": headers.get('Date', ''),
+            "snippet": email_data['snippet'],
+            "has_attachments": 'filename' in str(email_data.get('payload', {}))
+        }
+
+📨 5. SENDGRID (EMAIL SERVICE)
+python# app/services/email_service.py
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
+from app.core.config import settings
+
+class EmailService:
+    """
+    Email service using SendGrid.
+    
+    Features:
+    - Send transactional emails
+    - Email templates
+    - Attachment support
+    """
+    
+    def __init__(self):
+        self.client = SendGridAPIClient(settings.SENDGRID_API_KEY)
+        self.from_email = settings.FROM_EMAIL
+    
+    async def send_email(
+        self,
+        to: str,
+        subject: str,
+        body: str,
+        html: str = None
+    ):
+        """Send simple email"""
+        message = Mail(
+            from_email=self.from_email,
+            to_emails=to,
+            subject=subject,
+            plain_text_content=body,
+            html_content=html
+        )
+        
+        try:
+            response = self.client.send(message)
+            return {"success": True, "status_code": response.status_code}
+        except Exception as e:
+            raise Exception(f"Failed to send email: {str(e)}")
+    
+    async def send_verification_email(
+        self,
+        to: str,
+        name: str,
+        verification_url: str
+    ):
+        """Send email verification email"""
+        subject = "Verify your AutoFlow account"
+        html = f"""
+        <h2>Hi {name}!</h2>
+        <p>Welcome to AutoFlow. Please verify your email address:</p>
+        <p><a href="{verification_url}">Verify Email</a></p>
+        """
+        
+        await self.send_email(to, subject, "", html)
+    
+    async def send_password_reset_email(
+        self,
+        to: str,
+        name: str,
+        reset_url: str
+    ):
+        """Send password reset email"""
+        subject = "Reset your AutoFlow password"
+        html = f"""
+        <h2>Hi {name}!</h2>
+        <p>Click below to reset your password:</p>
+        <p><a href="{reset_url}">Reset Password</a></p>
+        <p>This link expires in 1 hour.</p>
+        """
+        
+        await self.send_email(to, subject, "", html)
+    
+    async def send_invoice_email(
+        self,
+        to: str,
+        invoice_number: str,
+        pdf_url: str
+    ):
+        """Send invoice email"""
+        subject = f"Invoice {invoice_number}"
+        html = f"""
+        <h2>Your Invoice</h2>
+        <p>Invoice number: {invoice_number}</p>
+        <p><a href="{pdf_url}">Download PDF</a></p>
+        """
+        
+        await self.send_email(to, subject, "", html)
+
+🔧 6. INTEGRATION MANAGEMENT
+Database Model:
+python# app/db/models/integration.py
+from sqlalchemy import Column, Integer, String, ForeignKey, TIMESTAMP, Boolean
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import relationship
+from app.db.base import BaseModel
+
+class Integration(BaseModel):
+    __tablename__ = "integrations"
+    
+    id = Column(Integer, primary_key=True)
+    organization_id = Column(Integer, ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"))
+    type = Column(String(50), nullable=False)  # stripe, google, outlook, fakturownia
+    status = Column(String(50), default="active")  # active, disconnected, error
+    credentials = Column(JSONB, nullable=False)  # ENCRYPTED!
+    metadata = Column(JSONB, default={})
+    last_sync_at = Column(TIMESTAMP(timezone=True))
+    created_at = Column(TIMESTAMP(timezone=True), default=datetime.utcnow)
+    updated_at = Column(TIMESTAMP(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    # Relationships
+    organization = relationship("Organization", back_populates="integrations")
+    user = relationship("User")
+Encryption Helper:
+python# app/core/security.py (continued)
+from cryptography.fernet import Fernet
+import base64
+
+# Generate key: Fernet.generate_key()
+# Store in .env: ENCRYPTION_KEY=...
+
+def encrypt_credentials(data: dict) -> dict:
+    """Encrypt integration credentials"""
+    import json
+    
+    fernet = Fernet(settings.ENCRYPTION_KEY.encode())
+    
+    json_data = json.dumps(data)
+    encrypted = fernet.encrypt(json_data.encode())
+    
+    return {"encrypted": base64.b64encode(encrypted).decode()}
+
+def decrypt_credentials(encrypted_data: dict) -> dict:
+    """Decrypt integration credentials"""
+    import json
+    
+    fernet = Fernet(settings.ENCRYPTION_KEY.encode())
+    
+    encrypted_bytes = base64.b64decode(encrypted_data["encrypted"])
+    decrypted = fernet.decrypt(encrypted_bytes)
+    
+    return json.loads(decrypted.decode())
+Integration Endpoints:
+python# app/api/v1/endpoints/integrations.py
+from fastapi import APIRouter, Depends, HTTPException
+from app.db.models.integration import Integration
+from app.integrations.stripe.connector import StripeConnector
+from app.integrations.outlook.connector import OutlookConnector
+from app.integrations.fakturownia.connector import FakturowniaConnector
+
+router = APIRouter(prefix="/integrations", tags=["integrations"])
+
+@router.post("/stripe/connect")
+async def connect_stripe(
+    api_key: str,
+    webhook_secret: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Connect Stripe integration"""
+    
+    # Test connection
+    connector = StripeConnector(
+        credentials=StripeCredentials(
+            api_key=api_key,
+            webhook_secret=webhook_secret
+        )
+    )
+    
+    result = await connector.test_connection()
+    
+    if not result["success"]:
+        raise HTTPException(400, result["message"])
+    
+    # Save integration
+    from app.core.security import encrypt_credentials
+    
+    integration = Integration(
+        organization_id=current_user.organization_id,
+        user_id=current_user.id,
+        type="stripe",
+        status="active",
+        credentials=encrypt_credentials({
+            "api_key": api_key,
+            "webhook_secret": webhook_secret
+        }),
+        metadata=result.get("metadata", {})
+    )
+    db.add(integration)
+    db.commit()
+    
+    return {"message": "Stripe connected successfully", "metadata": result["metadata"]}
+
+@router.get("/")
+async def list_integrations(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List all integrations for organization"""
+    
+    integrations = db.query(Integration).filter(
+        Integration.organization_id == current_user.organization_id
+    ).all()
+    
+    return [
+        {
+            "id": i.id,
+            "type": i.type,
+            "status": i.status,
+            "metadata": i.metadata,
+            "created_at": i.created_at
+        }
+        for i in integrations
+    ]
+
+@router.delete("/{integration_id}")
+async def disconnect_integration(
+    integration_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Disconnect integration"""
+    
+    integration = db.query(Integration).filter(
+        Integration.id == integration_id,
+        Integration.organization_id == current_user.organization_id
+    ).first()
+    
+    if not integration:
+        raise HTTPException(404, "Integration not found")
+    
+    db.delete(integration)
+    db.commit()
+    
+    return {"message": f"{integration.type} disconnected"}
+
+✅ PODSUMOWANIE
+✅ Integracje kompletne:
+
+Stripe - płatności, subskrypcje, webhooks
+Outlook - IMAP email (bez OAuth)
+Fakturownia - faktury API
+Google OAuth - Gmail, Drive, Sheets
+SendGrid - email service
+Base Connector - template dla innych
+
+📋 Checklist dla Manusa:
+
+ Implementuj app/integrations/base.py (BaseConnector)
+ Stripe connector + webhooks
+ Outlook IMAP connector
+ Fakturownia connector
+ Google OAuth handler
+ Gmail connector
+ SendGrid email service
+ Integration management endpoints
+ Encryption dla credentials (Fernet)
+ Tests dla każdej integracji
+
+🔗 Następna sekcja:
+Sekcja 5: Asynchroniczne zadania (Celery + Redis)
+
+Celery setup
+Task queues
+Scheduled tasks (cron)
+Email tasks
+Integration sync tasks
+Monitoring & retries

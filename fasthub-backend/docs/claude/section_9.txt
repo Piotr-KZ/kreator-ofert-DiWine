@@ -1,0 +1,1549 @@
+📋 SEKCJA 8: PERFORMANCE OPTIMIZATION
+
+🎯 CEL
+Zoptymalizować wydajność AutoFlow dla obsługi tysięcy użytkowników:
+
+Database optimization - indexy, query optimization
+Caching - Redis cache layers
+Connection pooling - efektywne zarządzanie połączeniami
+Async operations - non-blocking I/O
+Query optimization - N+1 problem, eager loading
+API performance - pagination, compression
+Monitoring - performance metrics
+
+
+📊 PERFORMANCE TARGETS
+CELE WYDAJNOŚCIOWE:
+├── API Response Time: < 200ms (p95)
+├── Database Queries: < 50ms (p95)
+├── Cache Hit Rate: > 80%
+├── Concurrent Users: 10,000+
+├── Requests/sec: 1,000+
+└── Memory Usage: < 512MB per worker
+
+📄 PLIK 1: Database Indexes & Optimization
+Optimized database schema with indexes
+sql-- database/indexes.sql
+-- Performance indexes for AutoFlow
+
+-- ============================================
+-- USERS TABLE INDEXES
+-- ============================================
+
+-- Email lookup (login)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_email 
+ON users(email);
+
+-- Organization + email (multi-tenant queries)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_org_email 
+ON users(organization_id, email);
+
+-- Active users lookup
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_active 
+ON users(is_active) 
+WHERE is_active = true;
+
+-- Email verification lookup
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_verification_token 
+ON users(email_verification_token) 
+WHERE email_verification_token IS NOT NULL;
+
+-- Password reset lookup
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_reset_token 
+ON users(password_reset_token, password_reset_expires) 
+WHERE password_reset_token IS NOT NULL;
+
+-- ============================================
+-- ORGANIZATIONS TABLE INDEXES
+-- ============================================
+
+-- Slug lookup (URL routing)
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_organizations_slug 
+ON organizations(slug);
+
+-- Stripe customer lookup
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_organizations_stripe 
+ON organizations(stripe_customer_id) 
+WHERE stripe_customer_id IS NOT NULL;
+
+-- ============================================
+-- SUBSCRIPTIONS TABLE INDEXES
+-- ============================================
+
+-- Organization lookup
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_subscriptions_org 
+ON subscriptions(organization_id);
+
+-- Stripe subscription lookup
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_subscriptions_stripe 
+ON subscriptions(stripe_subscription_id);
+
+-- Active subscriptions
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_subscriptions_active 
+ON subscriptions(status, current_period_end) 
+WHERE status = 'active';
+
+-- Expiring soon (for renewal reminders)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_subscriptions_expiring 
+ON subscriptions(current_period_end, status) 
+WHERE status = 'active' AND cancel_at_period_end = true;
+
+-- ============================================
+-- API TOKENS TABLE INDEXES
+-- ============================================
+
+-- Token hash lookup (authentication)
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS idx_api_tokens_hash 
+ON api_tokens(token_hash);
+
+-- User tokens lookup
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_api_tokens_user 
+ON api_tokens(user_id, expires_at) 
+WHERE expires_at IS NULL OR expires_at > NOW();
+
+-- ============================================
+-- INTEGRATIONS TABLE INDEXES
+-- ============================================
+
+-- Organization + type lookup
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_integrations_org_type 
+ON integrations(organization_id, type, status);
+
+-- Active integrations
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_integrations_active 
+ON integrations(type, status) 
+WHERE status = 'active';
+
+-- Last sync lookup (for scheduled tasks)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_integrations_sync 
+ON integrations(type, last_sync_at) 
+WHERE status = 'active';
+
+-- ============================================
+-- PROCESSES TABLE INDEXES
+-- ============================================
+
+-- Organization processes
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_processes_org 
+ON processes(organization_id, is_active);
+
+-- Active processes
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_processes_active 
+ON processes(is_active, trigger_type) 
+WHERE is_active = true;
+
+-- Trigger lookup
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_processes_trigger 
+ON processes(trigger_type, trigger_config) 
+USING GIN;
+
+-- ============================================
+-- PROCESS EXECUTIONS TABLE INDEXES
+-- ============================================
+
+-- Process + created_at (history)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_executions_process_created 
+ON process_executions(process_id, started_at DESC);
+
+-- Status + created (monitoring)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_executions_status_created 
+ON process_executions(status, started_at DESC);
+
+-- Organization executions (for reports)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_executions_org 
+ON process_executions(organization_id, started_at DESC);
+
+-- Failed executions (for retry)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_executions_failed 
+ON process_executions(status, started_at) 
+WHERE status = 'failed';
+
+-- Cleanup old executions (partial index)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_executions_old 
+ON process_executions(completed_at) 
+WHERE completed_at < NOW() - INTERVAL '90 days';
+
+-- ============================================
+-- INVOICES TABLE INDEXES
+-- ============================================
+
+-- Organization invoices
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_invoices_org 
+ON invoices(organization_id, created_at DESC);
+
+-- Stripe invoice lookup
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_invoices_stripe 
+ON invoices(stripe_invoice_id);
+
+-- Unpaid invoices
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_invoices_unpaid 
+ON invoices(status, due_date) 
+WHERE status IN ('draft', 'open', 'past_due');
+
+-- ============================================
+-- COMPOSITE INDEXES FOR COMMON QUERIES
+-- ============================================
+
+-- User dashboard (org + active + role)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_users_dashboard 
+ON users(organization_id, is_active, role, last_login_at DESC) 
+WHERE is_active = true;
+
+-- Process execution stats
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_executions_stats 
+ON process_executions(organization_id, status, started_at DESC);
+
+-- Integration health monitoring
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_integrations_health 
+ON integrations(organization_id, status, last_sync_at DESC);
+
+-- ============================================
+-- FULL TEXT SEARCH INDEXES
+-- ============================================
+
+-- Process search (name + description)
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_processes_search 
+ON processes USING GIN(to_tsvector('english', name || ' ' || COALESCE(description, '')));
+
+-- Organization search
+CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_organizations_search 
+ON organizations USING GIN(to_tsvector('english', name));
+
+-- ============================================
+-- ANALYZE TABLES
+-- ============================================
+
+ANALYZE users;
+ANALYZE organizations;
+ANALYZE subscriptions;
+ANALYZE api_tokens;
+ANALYZE integrations;
+ANALYZE processes;
+ANALYZE process_executions;
+ANALYZE invoices;
+
+📄 PLIK 2: Redis Caching Layer
+Multi-layer caching strategy
+python# app/core/cache.py
+"""
+Redis caching layer with multiple strategies.
+
+Cache Layers:
+1. Query cache (database queries)
+2. Session cache (user sessions)
+3. Rate limiting cache
+4. Application cache (computed results)
+"""
+
+import json
+import pickle
+from typing import Any, Optional, Callable
+from functools import wraps
+import redis
+from app.core.config import settings
+import hashlib
+
+# Redis client
+redis_client = redis.from_url(
+    settings.REDIS_URL,
+    decode_responses=False,  # Binary for pickle
+    socket_connect_timeout=5,
+    socket_keepalive=True,
+    health_check_interval=30
+)
+
+# Redis client for JSON (strings)
+redis_json_client = redis.from_url(
+    settings.REDIS_URL,
+    decode_responses=True,  # Strings for JSON
+    socket_connect_timeout=5
+)
+
+
+class CacheNamespace:
+    """Cache key namespaces for organization"""
+    
+    USER = "user"
+    ORG = "org"
+    SUBSCRIPTION = "sub"
+    PROCESS = "proc"
+    EXECUTION = "exec"
+    INTEGRATION = "int"
+    QUERY = "query"
+    SESSION = "session"
+    RATE_LIMIT = "ratelimit"
+
+
+def make_cache_key(*parts: str) -> str:
+    """
+    Generate cache key from parts.
+    
+    Args:
+        *parts: Key components
+    
+    Returns:
+        Cache key string
+    
+    Example:
+        make_cache_key("user", "123", "profile") -> "user:123:profile"
+    """
+    return ":".join(str(p) for p in parts)
+
+
+def cache_get(key: str) -> Optional[Any]:
+    """
+    Get value from cache.
+    
+    Args:
+        key: Cache key
+    
+    Returns:
+        Cached value or None
+    """
+    try:
+        value = redis_client.get(key)
+        if value:
+            return pickle.loads(value)
+        return None
+    except Exception as e:
+        # Log error but don't fail
+        print(f"Cache get error: {e}")
+        return None
+
+
+def cache_set(key: str, value: Any, ttl: int = 3600) -> bool:
+    """
+    Set value in cache.
+    
+    Args:
+        key: Cache key
+        value: Value to cache
+        ttl: Time to live in seconds (default 1 hour)
+    
+    Returns:
+        Success status
+    """
+    try:
+        pickled = pickle.dumps(value)
+        redis_client.setex(key, ttl, pickled)
+        return True
+    except Exception as e:
+        print(f"Cache set error: {e}")
+        return False
+
+
+def cache_delete(key: str) -> bool:
+    """Delete key from cache"""
+    try:
+        redis_client.delete(key)
+        return True
+    except Exception as e:
+        print(f"Cache delete error: {e}")
+        return False
+
+
+def cache_delete_pattern(pattern: str) -> int:
+    """
+    Delete all keys matching pattern.
+    
+    Args:
+        pattern: Key pattern (e.g., "user:123:*")
+    
+    Returns:
+        Number of deleted keys
+    """
+    try:
+        keys = redis_client.keys(pattern)
+        if keys:
+            return redis_client.delete(*keys)
+        return 0
+    except Exception as e:
+        print(f"Cache delete pattern error: {e}")
+        return 0
+
+
+def cached(
+    namespace: str,
+    key_func: Optional[Callable] = None,
+    ttl: int = 3600,
+    cache_none: bool = False
+):
+    """
+    Decorator for caching function results.
+    
+    Args:
+        namespace: Cache namespace
+        key_func: Function to generate cache key from args
+        ttl: Time to live in seconds
+        cache_none: Whether to cache None results
+    
+    Example:
+        @cached(namespace="user", ttl=300)
+        def get_user_profile(user_id: int):
+            # Expensive database query
+            return db.query(User).filter(User.id == user_id).first()
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            # Generate cache key
+            if key_func:
+                cache_key = key_func(*args, **kwargs)
+            else:
+                # Default: hash function name + args
+                key_parts = [func.__name__]
+                key_parts.extend(str(arg) for arg in args)
+                key_parts.extend(f"{k}={v}" for k, v in sorted(kwargs.items()))
+                key_str = ":".join(key_parts)
+                key_hash = hashlib.md5(key_str.encode()).hexdigest()[:16]
+                cache_key = make_cache_key(namespace, key_hash)
+            
+            # Try to get from cache
+            cached_value = cache_get(cache_key)
+            if cached_value is not None:
+                return cached_value
+            
+            # Execute function
+            result = func(*args, **kwargs)
+            
+            # Cache result
+            if result is not None or cache_none:
+                cache_set(cache_key, result, ttl)
+            
+            return result
+        
+        return wrapper
+    return decorator
+
+
+def invalidate_cache(namespace: str, *key_parts: str):
+    """
+    Invalidate cache for specific namespace/key.
+    
+    Example:
+        invalidate_cache("user", "123", "*")  # Delete all user:123:* keys
+    """
+    pattern = make_cache_key(namespace, *key_parts)
+    return cache_delete_pattern(pattern)
+
+
+# ============================================
+# SPECIFIC CACHE FUNCTIONS
+# ============================================
+
+def cache_user(user_id: int, user_data: dict, ttl: int = 900):
+    """Cache user data (15 min TTL)"""
+    key = make_cache_key(CacheNamespace.USER, str(user_id))
+    cache_set(key, user_data, ttl)
+
+
+def get_cached_user(user_id: int) -> Optional[dict]:
+    """Get cached user data"""
+    key = make_cache_key(CacheNamespace.USER, str(user_id))
+    return cache_get(key)
+
+
+def invalidate_user_cache(user_id: int):
+    """Invalidate all user cache"""
+    invalidate_cache(CacheNamespace.USER, str(user_id), "*")
+
+
+def cache_organization(org_id: int, org_data: dict, ttl: int = 1800):
+    """Cache organization data (30 min TTL)"""
+    key = make_cache_key(CacheNamespace.ORG, str(org_id))
+    cache_set(key, org_data, ttl)
+
+
+def get_cached_organization(org_id: int) -> Optional[dict]:
+    """Get cached organization data"""
+    key = make_cache_key(CacheNamespace.ORG, str(org_id))
+    return cache_get(key)
+
+
+def invalidate_organization_cache(org_id: int):
+    """Invalidate all organization cache"""
+    invalidate_cache(CacheNamespace.ORG, str(org_id), "*")
+
+
+# ============================================
+# RATE LIMITING
+# ============================================
+
+def check_rate_limit(
+    identifier: str,
+    max_requests: int,
+    window_seconds: int
+) -> tuple[bool, int]:
+    """
+    Check if request is within rate limit.
+    
+    Args:
+        identifier: Unique identifier (user_id, IP, etc)
+        max_requests: Max requests allowed
+        window_seconds: Time window in seconds
+    
+    Returns:
+        (allowed: bool, remaining: int)
+    
+    Example:
+        allowed, remaining = check_rate_limit("user:123", 100, 60)
+        if not allowed:
+            raise HTTPException(429, "Too many requests")
+    """
+    key = make_cache_key(CacheNamespace.RATE_LIMIT, identifier)
+    
+    try:
+        # Increment counter
+        current = redis_json_client.incr(key)
+        
+        # Set expiry on first request
+        if current == 1:
+            redis_json_client.expire(key, window_seconds)
+        
+        # Check limit
+        allowed = current <= max_requests
+        remaining = max(0, max_requests - current)
+        
+        return allowed, remaining
+    
+    except Exception as e:
+        print(f"Rate limit error: {e}")
+        # On error, allow request (fail open)
+        return True, max_requests
+
+
+# ============================================
+# CACHE WARMING
+# ============================================
+
+def warm_cache_for_organization(org_id: int):
+    """
+    Pre-warm cache for organization.
+    
+    Called on login or scheduled task.
+    """
+    from app.db.session import SessionLocal
+    from app.db.models.organization import Organization
+    from app.db.models.user import User
+    from app.db.models.subscription import Subscription
+    
+    db = SessionLocal()
+    
+    try:
+        # Cache organization
+        org = db.query(Organization).filter(Organization.id == org_id).first()
+        if org:
+            cache_organization(org_id, {
+                "id": org.id,
+                "name": org.name,
+                "slug": org.slug
+            })
+        
+        # Cache active users
+        users = db.query(User).filter(
+            User.organization_id == org_id,
+            User.is_active == True
+        ).all()
+        
+        for user in users:
+            cache_user(user.id, {
+                "id": user.id,
+                "email": user.email,
+                "role": user.role
+            })
+        
+        # Cache subscription
+        subscription = db.query(Subscription).filter(
+            Subscription.organization_id == org_id
+        ).first()
+        
+        if subscription:
+            key = make_cache_key(CacheNamespace.SUBSCRIPTION, str(org_id))
+            cache_set(key, {
+                "status": subscription.status,
+                "plan": subscription.plan,
+                "current_period_end": subscription.current_period_end.isoformat()
+            }, ttl=1800)
+    
+    finally:
+        db.close()
+
+
+# ============================================
+# CACHE STATISTICS
+# ============================================
+
+def get_cache_stats() -> dict:
+    """
+    Get cache statistics.
+    
+    Returns:
+        {
+            "keys": 1234,
+            "memory_used": "15MB",
+            "hit_rate": 0.85
+        }
+    """
+    try:
+        info = redis_client.info("stats")
+        memory_info = redis_client.info("memory")
+        
+        hits = int(info.get("keyspace_hits", 0))
+        misses = int(info.get("keyspace_misses", 0))
+        total = hits + misses
+        hit_rate = hits / total if total > 0 else 0
+        
+        return {
+            "keys": redis_client.dbsize(),
+            "memory_used_bytes": memory_info.get("used_memory", 0),
+            "memory_used_human": memory_info.get("used_memory_human", "0B"),
+            "hit_rate": round(hit_rate, 3),
+            "total_requests": total,
+            "hits": hits,
+            "misses": misses
+        }
+    
+    except Exception as e:
+        print(f"Cache stats error: {e}")
+        return {}
+
+📄 PLIK 3: Database Connection Pooling
+Optimized SQLAlchemy session management
+python# app/db/session.py
+"""
+Optimized database session management with connection pooling.
+"""
+
+from sqlalchemy import create_engine, event
+from sqlalchemy.orm import sessionmaker, Session
+from sqlalchemy.pool import QueuePool
+from app.core.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
+
+# ============================================
+# ENGINE WITH OPTIMIZED POOL
+# ============================================
+
+engine = create_engine(
+    settings.DATABASE_URL,
+    
+    # Connection Pool Settings
+    poolclass=QueuePool,
+    pool_size=20,              # Number of permanent connections
+    max_overflow=10,           # Additional connections when needed
+    pool_timeout=30,           # Timeout waiting for connection
+    pool_recycle=3600,         # Recycle connections after 1 hour
+    pool_pre_ping=True,        # Verify connection before using
+    
+    # Performance Settings
+    echo=False,                # Don't log SQL (use in debug only)
+    echo_pool=False,           # Don't log pool checkouts
+    future=True,               # Use SQLAlchemy 2.0 behavior
+    
+    # Connection Arguments
+    connect_args={
+        "connect_timeout": 10,
+        "options": "-c timezone=utc",
+        "application_name": "autoflow_backend",
+    }
+)
+
+# ============================================
+# SESSION FACTORY
+# ============================================
+
+SessionLocal = sessionmaker(
+    autocommit=False,
+    autoflush=False,
+    bind=engine,
+    expire_on_commit=False  # Don't expire objects after commit
+)
+
+
+# ============================================
+# SESSION DEPENDENCY (FastAPI)
+# ============================================
+
+def get_db():
+    """
+    Database session dependency for FastAPI.
+    
+    Usage:
+        @router.get("/users")
+        def get_users(db: Session = Depends(get_db)):
+            return db.query(User).all()
+    """
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
+# ============================================
+# CONNECTION POOL MONITORING
+# ============================================
+
+@event.listens_for(engine, "connect")
+def receive_connect(dbapi_conn, connection_record):
+    """Log new database connections"""
+    logger.debug(f"New DB connection established")
+
+
+@event.listens_for(engine, "checkout")
+def receive_checkout(dbapi_conn, connection_record, connection_proxy):
+    """Log connection checkouts from pool"""
+    logger.debug(f"Connection checked out from pool")
+
+
+@event.listens_for(engine, "checkin")
+def receive_checkin(dbapi_conn, connection_record):
+    """Log connection returns to pool"""
+    logger.debug(f"Connection returned to pool")
+
+
+# ============================================
+# POOL STATISTICS
+# ============================================
+
+def get_pool_stats() -> dict:
+    """
+    Get connection pool statistics.
+    
+    Returns:
+        {
+            "size": 20,
+            "checked_in": 18,
+            "checked_out": 2,
+            "overflow": 0,
+            "total": 20
+        }
+    """
+    pool = engine.pool
+    
+    return {
+        "size": pool.size(),
+        "checked_in": pool.checkedin(),
+        "checked_out": pool.checkedout(),
+        "overflow": pool.overflow(),
+        "total": pool.size() + pool.overflow()
+    }
+
+
+# ============================================
+# QUERY PERFORMANCE MONITORING
+# ============================================
+
+if settings.DEBUG:
+    @event.listens_for(engine, "before_cursor_execute")
+    def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        conn.info.setdefault("query_start_time", []).append(time.time())
+    
+    @event.listens_for(engine, "after_cursor_execute")
+    def after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+        total = time.time() - conn.info["query_start_time"].pop(-1)
+        
+        # Log slow queries (> 100ms)
+        if total > 0.1:
+            logger.warning(
+                f"Slow query ({total:.3f}s): {statement[:200]}..."
+            )
+
+📄 PLIK 4: Query Optimization Patterns
+Best practices for efficient database queries
+python# app/db/optimizations.py
+"""
+Database query optimization patterns.
+
+Common problems:
+1. N+1 queries
+2. Missing indexes
+3. Unoptimized joins
+4. Large result sets
+"""
+
+from sqlalchemy.orm import joinedload, selectinload, contains_eager
+from sqlalchemy import func, and_, or_
+from typing import List, Optional
+from app.db.models.user import User
+from app.db.models.organization import Organization
+from app.db.models.subscription import Subscription
+from app.db.models.process import Process
+
+
+# ============================================
+# PROBLEM: N+1 QUERIES
+# ============================================
+
+def get_users_with_organizations_BAD(db):
+    """
+    ❌ BAD - N+1 queries
+    
+    Executes:
+    1. SELECT * FROM users (1 query)
+    2. SELECT * FROM organizations WHERE id = ? (N queries)
+    
+    Total: N+1 queries
+    """
+    users = db.query(User).all()
+    
+    for user in users:
+        print(user.organization.name)  # Triggers separate query!
+    
+    return users
+
+
+def get_users_with_organizations_GOOD(db):
+    """
+    ✅ GOOD - Single query with JOIN
+    
+    Executes:
+    1. SELECT users.*, organizations.* FROM users JOIN organizations (1 query)
+    
+    Total: 1 query
+    """
+    users = db.query(User).options(
+        joinedload(User.organization)  # Eager load organization
+    ).all()
+    
+    for user in users:
+        print(user.organization.name)  # No additional query!
+    
+    return users
+
+
+# ============================================
+# PROBLEM: MULTIPLE RELATIONSHIPS
+# ============================================
+
+def get_organizations_with_details_BAD(db):
+    """
+    ❌ BAD - Multiple N+1 queries
+    
+    For each organization:
+    - Query users
+    - Query subscription
+    - Query processes
+    
+    Total: 1 + N + N + N queries
+    """
+    orgs = db.query(Organization).all()
+    
+    for org in orgs:
+        print(len(org.users))  # N queries
+        print(org.subscription.status)  # N queries
+        print(len(org.processes))  # N queries
+    
+    return orgs
+
+
+def get_organizations_with_details_GOOD(db):
+    """
+    ✅ GOOD - Eager load all relationships
+    
+    Uses selectinload for collections (better than joinedload for collections).
+    
+    Total: 4 queries (1 main + 3 for relationships)
+    """
+    orgs = db.query(Organization).options(
+        selectinload(Organization.users),
+        joinedload(Organization.subscription),
+        selectinload(Organization.processes)
+    ).all()
+    
+    for org in orgs:
+        print(len(org.users))  # No query
+        print(org.subscription.status)  # No query
+        print(len(org.processes))  # No query
+    
+    return orgs
+
+
+# ============================================
+# PAGINATION (AVOID LARGE RESULT SETS)
+# ============================================
+
+def get_all_executions_BAD(db):
+    """
+    ❌ BAD - Loads all records into memory
+    
+    Problems:
+    - High memory usage
+    - Slow response
+    - Database load
+    """
+    executions = db.query(ProcessExecution).all()  # Could be millions!
+    return executions
+
+
+def get_all_executions_GOOD(db, page: int = 1, per_page: int = 50):
+    """
+    ✅ GOOD - Paginated results
+    
+    Benefits:
+    - Low memory usage
+    - Fast response
+    - Reduced database load
+    """
+    offset = (page - 1) * per_page
+    
+    executions = db.query(ProcessExecution)\
+        .order_by(ProcessExecution.started_at.desc())\
+        .limit(per_page)\
+        .offset(offset)\
+        .all()
+    
+    # Get total count (for pagination metadata)
+    total = db.query(func.count(ProcessExecution.id)).scalar()
+    
+    return {
+        "items": executions,
+        "page": page,
+        "per_page": per_page,
+        "total": total,
+        "pages": (total + per_page - 1) // per_page
+    }
+
+
+# ============================================
+# AGGREGATIONS (COUNT, SUM, etc)
+# ============================================
+
+def count_user_processes_BAD(db, user_id: int):
+    """
+    ❌ BAD - Loads all processes to count
+    
+    Memory usage: O(N) where N = number of processes
+    """
+    processes = db.query(Process).filter(Process.user_id == user_id).all()
+    return len(processes)
+
+
+def count_user_processes_GOOD(db, user_id: int):
+    """
+    ✅ GOOD - Database-level count
+    
+    Memory usage: O(1)
+    """
+    return db.query(func.count(Process.id))\
+        .filter(Process.user_id == user_id)\
+        .scalar()
+
+
+# ============================================
+# FILTERING WITH INDEXES
+# ============================================
+
+def search_users_BAD(db, email_contains: str):
+    """
+    ❌ BAD - Full table scan
+    
+    LIKE '%text%' cannot use index
+    """
+    return db.query(User).filter(
+        User.email.like(f"%{email_contains}%")
+    ).all()
+
+
+def search_users_GOOD(db, email_starts: str):
+    """
+    ✅ GOOD - Index-friendly search
+    
+    LIKE 'text%' can use index
+    """
+    return db.query(User).filter(
+        User.email.like(f"{email_starts}%")
+    ).all()
+
+
+def search_users_BEST(db, search_term: str):
+    """
+    ✅✅ BEST - Full-text search
+    
+    Uses PostgreSQL full-text search with GIN index
+    """
+    from sqlalchemy import func
+    
+    return db.query(User).filter(
+        func.to_tsvector('english', User.email).match(search_term)
+    ).all()
+
+
+# ============================================
+# BATCH OPERATIONS
+# ============================================
+
+def create_users_BAD(db, user_data_list: List[dict]):
+    """
+    ❌ BAD - Individual inserts
+    
+    N separate INSERT statements
+    """
+    for user_data in user_data_list:
+        user = User(**user_data)
+        db.add(user)
+        db.commit()  # Commit each one
+
+
+def create_users_GOOD(db, user_data_list: List[dict]):
+    """
+    ✅ GOOD - Bulk insert
+    
+    Single INSERT with multiple rows
+    """
+    users = [User(**data) for data in user_data_list]
+    db.bulk_save_objects(users)
+    db.commit()  # Single commit
+
+
+# ============================================
+# SELECTIVE COLUMN LOADING
+# ============================================
+
+def get_user_emails_BAD(db):
+    """
+    ❌ BAD - Loads entire User objects
+    
+    Loads all columns unnecessarily
+    """
+    users = db.query(User).all()
+    return [user.email for user in users]
+
+
+def get_user_emails_GOOD(db):
+    """
+    ✅ GOOD - Load only needed columns
+    
+    Loads only email column
+    """
+    emails = db.query(User.email).all()
+    return [email[0] for email in emails]
+
+
+# ============================================
+# OPTIMIZED REPOSITORY PATTERNS
+# ============================================
+
+class OptimizedUserRepository:
+    """Example of optimized repository"""
+    
+    def __init__(self, db):
+        self.db = db
+    
+    def find_by_id_with_org(self, user_id: int) -> Optional[User]:
+        """Get user with organization (single query)"""
+        return self.db.query(User)\
+            .options(joinedload(User.organization))\
+            .filter(User.id == user_id)\
+            .first()
+    
+    def find_active_by_organization(
+        self, 
+        org_id: int, 
+        page: int = 1, 
+        per_page: int = 50
+    ):
+        """Get active users for organization (paginated)"""
+        offset = (page - 1) * per_page
+        
+        users = self.db.query(User)\
+            .filter(
+                User.organization_id == org_id,
+                User.is_active == True
+            )\
+            .order_by(User.created_at.desc())\
+            .limit(per_page)\
+            .offset(offset)\
+            .all()
+        
+        total = self.db.query(func.count(User.id))\
+            .filter(
+                User.organization_id == org_id,
+                User.is_active == True
+            )\
+            .scalar()
+        
+        return {
+            "items": users,
+            "total": total,
+            "page": page,
+            "per_page": per_page
+        }
+    
+    def get_user_stats(self, user_id: int) -> dict:
+        """Get user statistics (single query with aggregations)"""
+        from app.db.models.process_execution import ProcessExecution
+        
+        result = self.db.query(
+            func.count(Process.id).label('total_processes'),
+            func.count(ProcessExecution.id).label('total_executions'),
+            func.sum(
+                func.case([(ProcessExecution.status == 'success', 1)], else_=0)
+            ).label('successful_executions')
+        ).outerjoin(Process.executions)\
+         .filter(Process.user_id == user_id)\
+         .first()
+        
+        return {
+            "total_processes": result.total_processes or 0,
+            "total_executions": result.total_executions or 0,
+            "successful_executions": result.successful_executions or 0
+        }
+
+📄 PLIK 5: API Performance Optimizations
+FastAPI performance patterns
+python# app/api/optimizations.py
+"""
+API-level performance optimizations.
+"""
+
+from fastapi import Response, Request
+from fastapi.responses import StreamingResponse
+from starlette.middleware.gzip import GZipMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+import time
+import gzip
+from typing import Callable
+import json
+
+
+# ============================================
+# RESPONSE COMPRESSION
+# ============================================
+
+def add_compression_middleware(app):
+    """
+    Add GZIP compression middleware.
+    
+    Compresses responses > 500 bytes.
+    Reduces bandwidth by ~70% for JSON responses.
+    """
+    app.add_middleware(
+        GZipMiddleware,
+        minimum_size=500,  # Only compress if > 500 bytes
+        compresslevel=6    # Balance between speed and compression
+    )
+
+
+# ============================================
+# RESPONSE CACHING
+# ============================================
+
+class CacheControlMiddleware(BaseHTTPMiddleware):
+    """
+    Add Cache-Control headers for static/cacheable responses.
+    """
+    
+    async def dispatch(self, request: Request, call_next: Callable):
+        response = await call_next(request)
+        
+        # Cache static endpoints
+        if request.url.path.startswith("/api/v1/public/"):
+            response.headers["Cache-Control"] = "public, max-age=3600"
+        
+        # Don't cache authenticated endpoints
+        elif "Authorization" in request.headers:
+            response.headers["Cache-Control"] = "private, no-cache, no-store, must-revalidate"
+        
+        # Cache GET requests for 5 minutes
+        elif request.method == "GET":
+            response.headers["Cache-Control"] = "public, max-age=300"
+        
+        return response
+
+
+# ============================================
+# PAGINATION HELPER
+# ============================================
+
+from pydantic import BaseModel
+from typing import List, Generic, TypeVar
+
+T = TypeVar('T')
+
+class PaginatedResponse(BaseModel, Generic[T]):
+    """
+    Standard paginated response.
+    
+    Example:
+        return PaginatedResponse(
+            items=users,
+            total=100,
+            page=1,
+            per_page=20
+        )
+    """
+    items: List[T]
+    total: int
+    page: int
+    per_page: int
+    pages: int
+    
+    @classmethod
+    def create(cls, items: List[T], total: int, page: int, per_page: int):
+        """Create paginated response with calculated pages"""
+        return cls(
+            items=items,
+            total=total,
+            page=page,
+            per_page=per_page,
+            pages=(total + per_page - 1) // per_page
+        )
+
+
+# ============================================
+# STREAMING LARGE RESPONSES
+# ============================================
+
+def stream_large_dataset(db_query):
+    """
+    Stream large dataset instead of loading all into memory.
+    
+    Use for exports, reports, etc.
+    
+    Example:
+        @router.get("/export/users")
+        def export_users(db: Session = Depends(get_db)):
+            query = db.query(User).yield_per(100)
+            return StreamingResponse(
+                stream_large_dataset(query),
+                media_type="application/x-ndjson"
+            )
+    """
+    def generate():
+        for item in db_query:
+            yield json.dumps(item.to_dict()) + "\n"
+    
+    return generate()
+
+
+# ============================================
+# CONDITIONAL REQUESTS (ETags)
+# ============================================
+
+import hashlib
+
+def generate_etag(content: str) -> str:
+    """Generate ETag from content"""
+    return hashlib.md5(content.encode()).hexdigest()
+
+
+def handle_conditional_request(
+    request: Request,
+    content: str,
+    last_modified: str = None
+) -> Response:
+    """
+    Handle conditional GET requests (304 Not Modified).
+    
+    Example:
+        @router.get("/users/{user_id}")
+        def get_user(user_id: int, request: Request):
+            user = get_user_from_db(user_id)
+            content = user.json()
+            
+            return handle_conditional_request(
+                request,
+                content,
+                last_modified=user.updated_at.isoformat()
+            )
+    """
+    etag = generate_etag(content)
+    
+    # Check If-None-Match header
+    if request.headers.get("If-None-Match") == etag:
+        return Response(status_code=304)  # Not Modified
+    
+    # Check If-Modified-Since header
+    if last_modified and request.headers.get("If-Modified-Since") == last_modified:
+        return Response(status_code=304)
+    
+    # Return full response with ETag
+    return Response(
+        content=content,
+        headers={
+            "ETag": etag,
+            "Last-Modified": last_modified or "",
+            "Cache-Control": "private, must-revalidate"
+        }
+    )
+
+
+# ============================================
+# PERFORMANCE MONITORING
+# ============================================
+
+class PerformanceMonitoringMiddleware(BaseHTTPMiddleware):
+    """
+    Monitor API performance.
+    
+    Logs slow requests and adds timing headers.
+    """
+    
+    async def dispatch(self, request: Request, call_next: Callable):
+        start_time = time.time()
+        
+        response = await call_next(request)
+        
+        process_time = time.time() - start_time
+        
+        # Add timing header
+        response.headers["X-Process-Time"] = str(process_time)
+        
+        # Log slow requests (> 1 second)
+        if process_time > 1.0:
+            logger.warning(
+                f"Slow request: {request.method} {request.url.path} "
+                f"took {process_time:.3f}s"
+            )
+        
+        return response
+
+📄 PLIK 6: Background Task Optimization
+Async task optimization patterns
+python# app/workers/optimizations.py
+"""
+Celery task optimization patterns.
+"""
+
+from celery import group, chord, chain
+from app.workers.celery_app import celery_app
+from typing import List
+
+
+# ============================================
+# BATCH PROCESSING
+# ============================================
+
+@celery_app.task
+def process_single_email(email_id: str):
+    """Process single email (slow)"""
+    # ... process email ...
+    pass
+
+
+@celery_app.task
+def process_emails_batch(email_ids: List[str]):
+    """
+    ✅ Process emails in batch (fast).
+    
+    Instead of:
+        for email_id in email_ids:
+            process_single_email.delay(email_id)  # 1000 tasks
+    
+    Do:
+        process_emails_batch.delay(email_ids)  # 1 task
+    """
+    # ... batch process all emails ...
+    pass
+
+
+# ============================================
+# PARALLEL PROCESSING (GROUP)
+# ============================================
+
+@celery_app.task
+def generate_monthly_report_parallel(organization_id: int):
+    """
+    Generate report using parallel tasks.
+    
+    Splits work across multiple workers.
+    """
+    # Split work into chunks
+    user_chunks = get_user_chunks(organization_id, chunk_size=100)
+    
+    # Execute in parallel
+    job = group(
+        process_user_chunk.s(chunk) 
+        for chunk in user_chunks
+    )
+    
+    results = job.apply_async()
+    
+    # Wait for all results
+    return results.get(timeout=300)
+
+
+# ============================================
+# TASK CHAINING
+# ============================================
+
+@celery_app.task
+def fetch_invoices(org_id: int):
+    """Step 1: Fetch invoices from Fakturownia"""
+    # ... fetch invoices ...
+    return invoices
+
+
+@celery_app.task
+def process_invoices(invoices):
+    """Step 2: Process invoices"""
+    # ... process ...
+    return processed_data
+
+
+@celery_app.task
+def send_report(processed_data):
+    """Step 3: Send report"""
+    # ... send email ...
+    pass
+
+
+def generate_invoice_report(org_id: int):
+    """
+    Chain tasks sequentially.
+    
+    Step 1 → Step 2 → Step 3
+    """
+    workflow = chain(
+        fetch_invoices.s(org_id),
+        process_invoices.s(),
+        send_report.s()
+    )
+    
+    workflow.apply_async()
+
+
+# ============================================
+# RESULT AGGREGATION (CHORD)
+# ============================================
+
+@celery_app.task
+def aggregate_results(results):
+    """Callback to aggregate parallel task results"""
+    total = sum(results)
+    # ... send final report ...
+    return total
+
+
+def process_all_organizations():
+    """
+    Process all organizations in parallel, then aggregate.
+    
+    Uses chord: group of tasks → callback
+    """
+    org_ids = get_all_organization_ids()
+    
+    # Execute in parallel, then aggregate
+    workflow = chord(
+        process_organization.s(org_id) 
+        for org_id in org_ids
+    )(aggregate_results.s())
+    
+    workflow.apply_async()
+
+📄 PLIK 7: Performance Monitoring Dashboard
+Monitor performance metrics
+python# app/api/v1/endpoints/performance.py
+"""
+Performance monitoring endpoints.
+"""
+
+from fastapi import APIRouter, Depends
+from app.core.dependencies import get_current_user, require_admin
+from app.core.cache import get_cache_stats
+from app.db.session import get_pool_stats
+from app.db.models.user import User
+
+router = APIRouter(prefix="/performance", tags=["performance"])
+
+
+@router.get("/stats")
+async def get_performance_stats(
+    current_user: User = Depends(require_admin())
+):
+    """
+    Get system performance statistics.
+    
+    Requires: Admin role
+    
+    Returns:
+        {
+            "cache": {...},
+            "database": {...},
+            "celery": {...}
+        }
+    """
+    # Cache stats
+    cache_stats = get_cache_stats()
+    
+    # Database pool stats
+    db_stats = get_pool_stats()
+    
+    # Celery stats
+    from app.workers.celery_app import celery_app
+    
+    inspector = celery_app.control.inspect()
+    active_tasks = inspector.active()
+    
+    celery_stats = {
+        "workers": len(active_tasks) if active_tasks else 0,
+        "active_tasks": sum(len(tasks) for tasks in (active_tasks or {}).values())
+    }
+    
+    return {
+        "cache": cache_stats,
+        "database": db_stats,
+        "celery": celery_stats
+    }
+
+✅ PERFORMANCE CHECKLIST
+markdown## Database
+- [ ] Add indexes for all foreign keys
+- [ ] Add indexes for frequently queried columns
+- [ ] Add composite indexes for multi-column queries
+- [ ] Enable query logging in development
+- [ ] Use EXPLAIN ANALYZE for slow queries
+- [ ] Implement connection pooling
+- [ ] Set appropriate pool size (20-30 for most apps)
+- [ ] Enable pool pre-ping
+- [ ] Monitor connection pool usage
+
+## Caching
+- [ ] Setup Redis cache
+- [ ] Cache user sessions
+- [ ] Cache frequently accessed data
+- [ ] Implement cache warming
+- [ ] Set appropriate TTLs
+- [ ] Monitor cache hit rate (target 80%+)
+- [ ] Implement cache invalidation
+- [ ] Use cache for rate limiting
+
+## Queries
+- [ ] Fix all N+1 queries (use joinedload/selectinload)
+- [ ] Paginate large result sets
+- [ ] Use database-level aggregations (COUNT, SUM)
+- [ ] Avoid LIKE '%text%' (can't use index)
+- [ ] Use batch operations for bulk inserts
+- [ ] Load only needed columns
+- [ ] Optimize JOINs
+
+## API
+- [ ] Enable GZIP compression
+- [ ] Add cache headers
+- [ ] Implement pagination
+- [ ] Use streaming for large responses
+- [ ] Add ETags for conditional requests
+- [ ] Monitor slow endpoints (> 1s)
+- [ ] Implement rate limiting
+- [ ] Use async endpoints where possible
+
+## Tasks
+- [ ] Batch similar operations
+- [ ] Use parallel processing (group)
+- [ ] Chain dependent tasks
+- [ ] Set appropriate timeouts
+- [ ] Monitor task queue size
+- [ ] Implement task retries
+- [ ] Use task priorities
+
+## Monitoring
+- [ ] Setup Sentry for error tracking
+- [ ] Monitor cache hit rate
+- [ ] Monitor database pool usage
+- [ ] Monitor API response times
+- [ ] Monitor Celery queue size
+- [ ] Setup alerts for slow queries
+- [ ] Setup alerts for high error rates

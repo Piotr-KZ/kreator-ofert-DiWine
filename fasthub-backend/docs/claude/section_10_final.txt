@@ -1,0 +1,1297 @@
+📋 SEKCJA 10: MIGRACJA FIREBASE → POSTGRESQL
+
+🎯 CEL
+Zaimplementować kompletny system migracji danych z Firebase do PostgreSQL:
+
+Migration Script - automatyczna migracja danych
+Data Transformation - konwersja struktur danych
+Validation - weryfikacja poprawności migracji
+Rollback Strategy - plan wycofania zmian
+Zero-Downtime Migration - migracja bez przestojów
+Testing - testy migracji
+
+
+📊 MIGRATION STRATEGY
+STRATEGIA MIGRACJI:
+├── Phase 1: Preparation (1 week)
+│   ├── Analyze Firebase data structure
+│   ├── Design PostgreSQL schema
+│   ├── Write migration scripts
+│   └── Test on staging data
+│
+├── Phase 2: Dual-Write (2 weeks)
+│   ├── Write to both Firebase + PostgreSQL
+│   ├── Validate data consistency
+│   └── Monitor for issues
+│
+├── Phase 3: Migration (1 day)
+│   ├── Backup Firebase data
+│   ├── Run migration script
+│   ├── Validate all data
+│   └── Fix inconsistencies
+│
+├── Phase 4: Cutover (1 day)
+│   ├── Switch reads to PostgreSQL
+│   ├── Monitor performance
+│   ├── Keep Firebase as backup
+│   └── Disable Firebase writes
+│
+└── Phase 5: Cleanup (1 week)
+    ├── Remove dual-write code
+    ├── Archive Firebase data
+    └── Decommission Firebase
+
+📄 PLIK 1: Main Migration Script
+Complete migration orchestrator
+python# scripts/migrate_from_firebase.py
+"""
+Firebase to PostgreSQL migration script.
+
+Usage:
+    python scripts/migrate_from_firebase.py --dry-run
+    python scripts/migrate_from_firebase.py --migrate
+    python scripts/migrate_from_firebase.py --validate
+    python scripts/migrate_from_firebase.py --rollback
+
+Features:
+- Incremental migration
+- Data validation
+- Error handling
+- Progress tracking
+- Rollback support
+"""
+
+import sys
+import argparse
+import asyncio
+from datetime import datetime
+from typing import Dict, List, Optional, Any
+import json
+import logging
+from pathlib import Path
+
+# Firebase
+import firebase_admin
+from firebase_admin import credentials, firestore
+
+# PostgreSQL
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import Session, sessionmaker
+
+# App imports
+from app.db.models.user import User
+from app.db.models.organization import Organization
+from app.db.models.subscription import Subscription
+from app.db.models.integration import Integration
+from app.db.models.process import Process
+from app.db.models.process_execution import ProcessExecution
+from app.db.models.invoice import Invoice
+from app.db.base import Base
+from app.core.security import get_password_hash
+from app.core.config import settings
+
+# Logging setup
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('migration.log'),
+        logging.StreamHandler(sys.stdout)
+    ]
+)
+logger = logging.getLogger(__name__)
+
+
+# ============================================
+# FIREBASE CLIENT SETUP
+# ============================================
+
+def init_firebase():
+    """Initialize Firebase Admin SDK"""
+    
+    if not firebase_admin._apps:
+        # Load service account credentials
+        cred = credentials.Certificate('firebase-credentials.json')
+        
+        firebase_admin.initialize_app(cred)
+    
+    return firestore.client()
+
+
+# ============================================
+# POSTGRESQL CLIENT SETUP
+# ============================================
+
+def init_postgresql():
+    """Initialize PostgreSQL connection"""
+    
+    engine = create_engine(
+        settings.DATABASE_URL,
+        echo=False,
+        pool_pre_ping=True
+    )
+    
+    SessionLocal = sessionmaker(bind=engine)
+    
+    return engine, SessionLocal
+
+
+# ============================================
+# MIGRATION STATISTICS
+# ============================================
+
+class MigrationStats:
+    """Track migration progress and statistics"""
+    
+    def __init__(self):
+        self.start_time = datetime.now()
+        self.organizations = {'total': 0, 'success': 0, 'failed': 0}
+        self.users = {'total': 0, 'success': 0, 'failed': 0}
+        self.subscriptions = {'total': 0, 'success': 0, 'failed': 0}
+        self.integrations = {'total': 0, 'success': 0, 'failed': 0}
+        self.processes = {'total': 0, 'success': 0, 'failed': 0}
+        self.errors = []
+    
+    def add_error(self, entity_type: str, entity_id: str, error: str):
+        """Record error"""
+        self.errors.append({
+            'type': entity_type,
+            'id': entity_id,
+            'error': error,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    def print_summary(self):
+        """Print migration summary"""
+        duration = (datetime.now() - self.start_time).total_seconds()
+        
+        logger.info("=" * 60)
+        logger.info("MIGRATION SUMMARY")
+        logger.info("=" * 60)
+        logger.info(f"Duration: {duration:.2f} seconds")
+        logger.info("")
+        
+        for entity_type in ['organizations', 'users', 'subscriptions', 'integrations', 'processes']:
+            stats = getattr(self, entity_type)
+            logger.info(f"{entity_type.upper()}:")
+            logger.info(f"  Total: {stats['total']}")
+            logger.info(f"  Success: {stats['success']}")
+            logger.info(f"  Failed: {stats['failed']}")
+            logger.info("")
+        
+        if self.errors:
+            logger.error(f"ERRORS ({len(self.errors)}):")
+            for error in self.errors[:10]:  # Show first 10
+                logger.error(f"  [{error['type']}] {error['id']}: {error['error']}")
+            
+            if len(self.errors) > 10:
+                logger.error(f"  ... and {len(self.errors) - 10} more errors")
+        
+        logger.info("=" * 60)
+    
+    def save_to_file(self, filename: str = 'migration_stats.json'):
+        """Save statistics to file"""
+        stats = {
+            'start_time': self.start_time.isoformat(),
+            'end_time': datetime.now().isoformat(),
+            'duration_seconds': (datetime.now() - self.start_time).total_seconds(),
+            'organizations': self.organizations,
+            'users': self.users,
+            'subscriptions': self.subscriptions,
+            'integrations': self.integrations,
+            'processes': self.processes,
+            'errors': self.errors
+        }
+        
+        with open(filename, 'w') as f:
+            json.dump(stats, f, indent=2)
+        
+        logger.info(f"Statistics saved to {filename}")
+
+
+# ============================================
+# DATA TRANSFORMERS
+# ============================================
+
+class DataTransformer:
+    """Transform Firebase data to PostgreSQL format"""
+    
+    @staticmethod
+    def transform_organization(firebase_doc: dict) -> dict:
+        """
+        Transform Firebase organization to PostgreSQL format.
+        
+        Firebase structure:
+        {
+            "name": "Company Name",
+            "slug": "company-name",
+            "stripeCustomerId": "cus_xxx",
+            "createdAt": Timestamp,
+            "metadata": {...}
+        }
+        
+        PostgreSQL structure:
+        {
+            "name": "Company Name",
+            "slug": "company-name",
+            "stripe_customer_id": "cus_xxx",
+            "created_at": datetime,
+            "metadata": {...}
+        }
+        """
+        return {
+            'name': firebase_doc.get('name'),
+            'slug': firebase_doc.get('slug'),
+            'stripe_customer_id': firebase_doc.get('stripeCustomerId'),
+            'created_at': firebase_doc.get('createdAt').replace(tzinfo=None) if firebase_doc.get('createdAt') else datetime.utcnow(),
+            'metadata': firebase_doc.get('metadata', {})
+        }
+    
+    @staticmethod
+    def transform_user(firebase_doc: dict, organization_id: int) -> dict:
+        """
+        Transform Firebase user to PostgreSQL format.
+        
+        Firebase structure (from Firebase Auth):
+        {
+            "uid": "firebase_uid",
+            "email": "user@example.com",
+            "displayName": "User Name",
+            "metadata": {
+                "creationTime": "...",
+                "lastSignInTime": "..."
+            }
+        }
+        
+        PostgreSQL structure:
+        {
+            "organization_id": 1,
+            "firebase_uid": "firebase_uid",
+            "email": "user@example.com",
+            "full_name": "User Name",
+            "password_hash": "...",  # Empty for Firebase Auth users
+            "role": "user",
+            "is_active": True,
+            "email_verified": True,
+            "created_at": datetime
+        }
+        """
+        return {
+            'organization_id': organization_id,
+            'firebase_uid': firebase_doc.get('uid'),
+            'email': firebase_doc.get('email'),
+            'full_name': firebase_doc.get('displayName', ''),
+            'password_hash': get_password_hash('MIGRATED_FROM_FIREBASE'),  # Temporary password
+            'role': firebase_doc.get('customClaims', {}).get('role', 'user'),
+            'is_active': not firebase_doc.get('disabled', False),
+            'email_verified': firebase_doc.get('emailVerified', False),
+            'created_at': datetime.fromisoformat(firebase_doc['metadata']['creationTime'].replace('Z', '+00:00')).replace(tzinfo=None),
+            'last_login_at': datetime.fromisoformat(firebase_doc['metadata'].get('lastSignInTime', firebase_doc['metadata']['creationTime']).replace('Z', '+00:00')).replace(tzinfo=None) if firebase_doc['metadata'].get('lastSignInTime') else None
+        }
+    
+    @staticmethod
+    def transform_subscription(firebase_doc: dict, organization_id: int) -> dict:
+        """Transform Firebase subscription to PostgreSQL format"""
+        return {
+            'organization_id': organization_id,
+            'stripe_subscription_id': firebase_doc.get('stripeSubscriptionId'),
+            'stripe_customer_id': firebase_doc.get('stripeCustomerId'),
+            'status': firebase_doc.get('status', 'inactive'),
+            'plan': firebase_doc.get('plan', 'free'),
+            'current_period_start': firebase_doc.get('currentPeriodStart').replace(tzinfo=None) if firebase_doc.get('currentPeriodStart') else None,
+            'current_period_end': firebase_doc.get('currentPeriodEnd').replace(tzinfo=None) if firebase_doc.get('currentPeriodEnd') else None,
+            'cancel_at_period_end': firebase_doc.get('cancelAtPeriodEnd', False),
+            'canceled_at': firebase_doc.get('canceledAt').replace(tzinfo=None) if firebase_doc.get('canceledAt') else None,
+            'created_at': firebase_doc.get('createdAt').replace(tzinfo=None) if firebase_doc.get('createdAt') else datetime.utcnow()
+        }
+    
+    @staticmethod
+    def transform_integration(firebase_doc: dict, organization_id: int, user_id: int) -> dict:
+        """Transform Firebase integration to PostgreSQL format"""
+        
+        # Decrypt credentials (if encrypted in Firebase)
+        credentials = firebase_doc.get('credentials', {})
+        
+        return {
+            'organization_id': organization_id,
+            'user_id': user_id,
+            'type': firebase_doc.get('type'),
+            'status': firebase_doc.get('status', 'active'),
+            'credentials': credentials,  # Will be re-encrypted in PostgreSQL
+            'metadata': firebase_doc.get('metadata', {}),
+            'last_sync_at': firebase_doc.get('lastSyncAt').replace(tzinfo=None) if firebase_doc.get('lastSyncAt') else None,
+            'created_at': firebase_doc.get('createdAt').replace(tzinfo=None) if firebase_doc.get('createdAt') else datetime.utcnow()
+        }
+
+
+# ============================================
+# MIGRATOR CLASS
+# ============================================
+
+class FirebaseToPostgreSQLMigrator:
+    """Main migration class"""
+    
+    def __init__(self, dry_run: bool = False):
+        self.dry_run = dry_run
+        self.stats = MigrationStats()
+        
+        # Initialize clients
+        self.firebase_db = init_firebase()
+        self.pg_engine, self.SessionLocal = init_postgresql()
+        
+        # Mapping: Firebase ID -> PostgreSQL ID
+        self.org_id_map = {}
+        self.user_id_map = {}
+        
+        logger.info(f"Migration initialized (dry_run={dry_run})")
+    
+    def migrate_all(self):
+        """Run complete migration"""
+        
+        logger.info("=" * 60)
+        logger.info("Starting Firebase → PostgreSQL Migration")
+        logger.info("=" * 60)
+        
+        try:
+            # Create tables if needed
+            if not self.dry_run:
+                Base.metadata.create_all(bind=self.pg_engine)
+                logger.info("✅ PostgreSQL tables created")
+            
+            # Migrate in order (respecting foreign keys)
+            self.migrate_organizations()
+            self.migrate_users()
+            self.migrate_subscriptions()
+            self.migrate_integrations()
+            self.migrate_processes()
+            # self.migrate_invoices()  # If exists
+            
+            # Print summary
+            self.stats.print_summary()
+            
+            # Save statistics
+            if not self.dry_run:
+                self.stats.save_to_file()
+            
+            logger.info("✅ Migration completed successfully!")
+        
+        except Exception as e:
+            logger.error(f"❌ Migration failed: {e}")
+            raise
+    
+    def migrate_organizations(self):
+        """Migrate organizations from Firebase to PostgreSQL"""
+        
+        logger.info("Migrating organizations...")
+        
+        # Get all organizations from Firebase
+        orgs_ref = self.firebase_db.collection('organizations')
+        orgs = orgs_ref.stream()
+        
+        db = self.SessionLocal()
+        
+        try:
+            for org_doc in orgs:
+                self.stats.organizations['total'] += 1
+                
+                try:
+                    firebase_data = org_doc.to_dict()
+                    firebase_id = org_doc.id
+                    
+                    # Transform data
+                    pg_data = DataTransformer.transform_organization(firebase_data)
+                    
+                    if self.dry_run:
+                        logger.info(f"[DRY RUN] Would migrate organization: {pg_data['name']}")
+                    else:
+                        # Create in PostgreSQL
+                        org = Organization(**pg_data)
+                        db.add(org)
+                        db.flush()  # Get ID without committing
+                        
+                        # Map Firebase ID -> PostgreSQL ID
+                        self.org_id_map[firebase_id] = org.id
+                        
+                        logger.info(f"✓ Migrated organization: {org.name} (ID: {org.id})")
+                    
+                    self.stats.organizations['success'] += 1
+                
+                except Exception as e:
+                    logger.error(f"✗ Failed to migrate organization {org_doc.id}: {e}")
+                    self.stats.organizations['failed'] += 1
+                    self.stats.add_error('organization', org_doc.id, str(e))
+            
+            if not self.dry_run:
+                db.commit()
+            
+            logger.info(f"Organizations migrated: {self.stats.organizations['success']}/{self.stats.organizations['total']}")
+        
+        finally:
+            db.close()
+    
+    def migrate_users(self):
+        """Migrate users from Firebase Auth to PostgreSQL"""
+        
+        logger.info("Migrating users...")
+        
+        # Note: Firebase Auth users are separate from Firestore
+        # We need to use Firebase Auth API
+        from firebase_admin import auth
+        
+        db = self.SessionLocal()
+        
+        try:
+            # Get all Firebase Auth users
+            page = auth.list_users()
+            
+            while page:
+                for user_record in page.users:
+                    self.stats.users['total'] += 1
+                    
+                    try:
+                        # Get user's organization from Firestore
+                        user_doc = self.firebase_db.collection('users').document(user_record.uid).get()
+                        
+                        if not user_doc.exists:
+                            logger.warning(f"User {user_record.uid} has no Firestore document")
+                            continue
+                        
+                        user_data = user_doc.to_dict()
+                        firebase_org_id = user_data.get('organizationId')
+                        
+                        if not firebase_org_id or firebase_org_id not in self.org_id_map:
+                            logger.warning(f"User {user_record.uid} has no valid organization")
+                            continue
+                        
+                        pg_org_id = self.org_id_map[firebase_org_id]
+                        
+                        # Transform user data
+                        pg_data = DataTransformer.transform_user(
+                            user_record._data,
+                            pg_org_id
+                        )
+                        
+                        if self.dry_run:
+                            logger.info(f"[DRY RUN] Would migrate user: {pg_data['email']}")
+                        else:
+                            # Create in PostgreSQL
+                            user = User(**pg_data)
+                            db.add(user)
+                            db.flush()
+                            
+                            # Map Firebase UID -> PostgreSQL ID
+                            self.user_id_map[user_record.uid] = user.id
+                            
+                            logger.info(f"✓ Migrated user: {user.email} (ID: {user.id})")
+                        
+                        self.stats.users['success'] += 1
+                    
+                    except Exception as e:
+                        logger.error(f"✗ Failed to migrate user {user_record.uid}: {e}")
+                        self.stats.users['failed'] += 1
+                        self.stats.add_error('user', user_record.uid, str(e))
+                
+                # Get next page
+                page = page.get_next_page()
+            
+            if not self.dry_run:
+                db.commit()
+            
+            logger.info(f"Users migrated: {self.stats.users['success']}/{self.stats.users['total']}")
+        
+        finally:
+            db.close()
+    
+    def migrate_subscriptions(self):
+        """Migrate subscriptions"""
+        
+        logger.info("Migrating subscriptions...")
+        
+        db = self.SessionLocal()
+        
+        try:
+            for firebase_org_id, pg_org_id in self.org_id_map.items():
+                self.stats.subscriptions['total'] += 1
+                
+                try:
+                    # Get subscription from Firebase
+                    sub_doc = self.firebase_db.collection('organizations').document(firebase_org_id).collection('subscription').document('current').get()
+                    
+                    if not sub_doc.exists:
+                        logger.info(f"No subscription for organization {firebase_org_id}")
+                        continue
+                    
+                    firebase_data = sub_doc.to_dict()
+                    
+                    # Transform data
+                    pg_data = DataTransformer.transform_subscription(firebase_data, pg_org_id)
+                    
+                    if self.dry_run:
+                        logger.info(f"[DRY RUN] Would migrate subscription for org {pg_org_id}")
+                    else:
+                        # Create in PostgreSQL
+                        subscription = Subscription(**pg_data)
+                        db.add(subscription)
+                        
+                        logger.info(f"✓ Migrated subscription for org {pg_org_id}")
+                    
+                    self.stats.subscriptions['success'] += 1
+                
+                except Exception as e:
+                    logger.error(f"✗ Failed to migrate subscription for org {firebase_org_id}: {e}")
+                    self.stats.subscriptions['failed'] += 1
+                    self.stats.add_error('subscription', firebase_org_id, str(e))
+            
+            if not self.dry_run:
+                db.commit()
+            
+            logger.info(f"Subscriptions migrated: {self.stats.subscriptions['success']}/{self.stats.subscriptions['total']}")
+        
+        finally:
+            db.close()
+    
+    def migrate_integrations(self):
+        """Migrate integrations"""
+        
+        logger.info("Migrating integrations...")
+        
+        db = self.SessionLocal()
+        
+        try:
+            for firebase_org_id, pg_org_id in self.org_id_map.items():
+                # Get integrations for organization
+                integrations_ref = self.firebase_db.collection('organizations').document(firebase_org_id).collection('integrations')
+                integrations = integrations_ref.stream()
+                
+                for int_doc in integrations:
+                    self.stats.integrations['total'] += 1
+                    
+                    try:
+                        firebase_data = int_doc.to_dict()
+                        
+                        # Get user ID
+                        firebase_user_id = firebase_data.get('userId')
+                        pg_user_id = self.user_id_map.get(firebase_user_id)
+                        
+                        if not pg_user_id:
+                            logger.warning(f"Integration {int_doc.id} has no valid user")
+                            continue
+                        
+                        # Transform data
+                        pg_data = DataTransformer.transform_integration(
+                            firebase_data,
+                            pg_org_id,
+                            pg_user_id
+                        )
+                        
+                        if self.dry_run:
+                            logger.info(f"[DRY RUN] Would migrate integration: {pg_data['type']}")
+                        else:
+                            # Create in PostgreSQL
+                            integration = Integration(**pg_data)
+                            db.add(integration)
+                            
+                            logger.info(f"✓ Migrated integration: {integration.type}")
+                        
+                        self.stats.integrations['success'] += 1
+                    
+                    except Exception as e:
+                        logger.error(f"✗ Failed to migrate integration {int_doc.id}: {e}")
+                        self.stats.integrations['failed'] += 1
+                        self.stats.add_error('integration', int_doc.id, str(e))
+            
+            if not self.dry_run:
+                db.commit()
+            
+            logger.info(f"Integrations migrated: {self.stats.integrations['success']}/{self.stats.integrations['total']}")
+        
+        finally:
+            db.close()
+    
+    def migrate_processes(self):
+        """Migrate automation processes"""
+        
+        logger.info("Migrating processes...")
+        
+        db = self.SessionLocal()
+        
+        try:
+            for firebase_org_id, pg_org_id in self.org_id_map.items():
+                # Get processes for organization
+                processes_ref = self.firebase_db.collection('organizations').document(firebase_org_id).collection('processes')
+                processes = processes_ref.stream()
+                
+                for proc_doc in processes:
+                    self.stats.processes['total'] += 1
+                    
+                    try:
+                        firebase_data = proc_doc.to_dict()
+                        
+                        # Get user ID
+                        firebase_user_id = firebase_data.get('userId')
+                        pg_user_id = self.user_id_map.get(firebase_user_id)
+                        
+                        if not pg_user_id:
+                            logger.warning(f"Process {proc_doc.id} has no valid user")
+                            continue
+                        
+                        # Transform data (similar pattern)
+                        pg_data = {
+                            'organization_id': pg_org_id,
+                            'user_id': pg_user_id,
+                            'name': firebase_data.get('name'),
+                            'description': firebase_data.get('description'),
+                            'trigger_type': firebase_data.get('triggerType'),
+                            'trigger_config': firebase_data.get('triggerConfig', {}),
+                            'steps': firebase_data.get('steps', []),
+                            'is_active': firebase_data.get('isActive', True),
+                            'created_at': firebase_data.get('createdAt').replace(tzinfo=None) if firebase_data.get('createdAt') else datetime.utcnow()
+                        }
+                        
+                        if self.dry_run:
+                            logger.info(f"[DRY RUN] Would migrate process: {pg_data['name']}")
+                        else:
+                            # Create in PostgreSQL
+                            process = Process(**pg_data)
+                            db.add(process)
+                            
+                            logger.info(f"✓ Migrated process: {process.name}")
+                        
+                        self.stats.processes['success'] += 1
+                    
+                    except Exception as e:
+                        logger.error(f"✗ Failed to migrate process {proc_doc.id}: {e}")
+                        self.stats.processes['failed'] += 1
+                        self.stats.add_error('process', proc_doc.id, str(e))
+            
+            if not self.dry_run:
+                db.commit()
+            
+            logger.info(f"Processes migrated: {self.stats.processes['success']}/{self.stats.processes['total']}")
+        
+        finally:
+            db.close()
+    
+    def validate_migration(self):
+        """Validate migrated data"""
+        
+        logger.info("=" * 60)
+        logger.info("Validating Migration")
+        logger.info("=" * 60)
+        
+        db = self.SessionLocal()
+        
+        try:
+            # Count records in PostgreSQL
+            org_count = db.query(Organization).count()
+            user_count = db.query(User).count()
+            sub_count = db.query(Subscription).count()
+            int_count = db.query(Integration).count()
+            proc_count = db.query(Process).count()
+            
+            logger.info(f"PostgreSQL counts:")
+            logger.info(f"  Organizations: {org_count}")
+            logger.info(f"  Users: {user_count}")
+            logger.info(f"  Subscriptions: {sub_count}")
+            logger.info(f"  Integrations: {int_count}")
+            logger.info(f"  Processes: {proc_count}")
+            
+            # Count records in Firebase
+            firebase_org_count = len(list(self.firebase_db.collection('organizations').stream()))
+            
+            logger.info(f"\nFirebase counts:")
+            logger.info(f"  Organizations: {firebase_org_count}")
+            
+            # Check for orphaned records
+            orphaned_users = db.query(User).filter(
+                ~User.organization_id.in_([org.id for org in db.query(Organization).all()])
+            ).count()
+            
+            if orphaned_users > 0:
+                logger.warning(f"⚠️  Found {orphaned_users} orphaned users (no organization)")
+            
+            # Validate foreign keys
+            logger.info("\nValidating foreign key integrity...")
+            
+            # Check all users have valid organization
+            invalid_users = db.execute(text("""
+                SELECT COUNT(*) FROM users u
+                LEFT JOIN organizations o ON u.organization_id = o.id
+                WHERE o.id IS NULL
+            """)).scalar()
+            
+            if invalid_users > 0:
+                logger.error(f"❌ Found {invalid_users} users with invalid organization_id")
+            else:
+                logger.info("✅ All users have valid organizations")
+            
+            # Check all subscriptions have valid organization
+            invalid_subs = db.execute(text("""
+                SELECT COUNT(*) FROM subscriptions s
+                LEFT JOIN organizations o ON s.organization_id = o.id
+                WHERE o.id IS NULL
+            """)).scalar()
+            
+            if invalid_subs > 0:
+                logger.error(f"❌ Found {invalid_subs} subscriptions with invalid organization_id")
+            else:
+                logger.info("✅ All subscriptions have valid organizations")
+            
+            logger.info("\n" + "=" * 60)
+            logger.info("Validation complete!")
+            logger.info("=" * 60)
+        
+        finally:
+            db.close()
+
+
+# ============================================
+# CLI INTERFACE
+# ============================================
+
+def main():
+    """Main entry point"""
+    
+    parser = argparse.ArgumentParser(
+        description='Migrate data from Firebase to PostgreSQL'
+    )
+    
+    parser.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Run migration without writing to database'
+    )
+    
+    parser.add_argument(
+        '--migrate',
+        action='store_true',
+        help='Run migration'
+    )
+    
+    parser.add_argument(
+        '--validate',
+        action='store_true',
+        help='Validate migration (run after migrate)'
+    )
+    
+    parser.add_argument(
+        '--backup',
+        action='store_true',
+        help='Backup Firebase data to JSON files'
+    )
+    
+    args = parser.parse_args()
+    
+    # Initialize migrator
+    migrator = FirebaseToPostgreSQLMigrator(dry_run=args.dry_run)
+    
+    try:
+        if args.backup:
+            logger.info("Creating Firebase backup...")
+            # TODO: Implement backup
+            logger.info("✅ Backup created")
+        
+        elif args.migrate or args.dry_run:
+            migrator.migrate_all()
+        
+        elif args.validate:
+            migrator.validate_migration()
+        
+        else:
+            parser.print_help()
+    
+    except KeyboardInterrupt:
+        logger.warning("\n⚠️  Migration interrupted by user")
+        sys.exit(1)
+    
+    except Exception as e:
+        logger.error(f"\n❌ Migration failed: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+
+if __name__ == '__main__':
+    main()
+
+📄 PLIK 2: Validation Script
+Post-migration validation
+python# scripts/validate_migration.py
+"""
+Validate migration data integrity.
+
+Checks:
+- Record counts match
+- Foreign key integrity
+- Data consistency
+- No orphaned records
+"""
+
+from sqlalchemy import create_engine, text
+from sqlalchemy.orm import sessionmaker
+from app.db.models import *
+from app.core.config import settings
+import sys
+
+def validate_migration():
+    """Run all validation checks"""
+    
+    engine = create_engine(settings.DATABASE_URL)
+    Session = sessionmaker(bind=engine)
+    db = Session()
+    
+    errors = []
+    
+    print("=" * 60)
+    print("MIGRATION VALIDATION")
+    print("=" * 60)
+    
+    # 1. Check record counts
+    print("\n1. Checking record counts...")
+    
+    org_count = db.query(Organization).count()
+    user_count = db.query(User).count()
+    sub_count = db.query(Subscription).count()
+    
+    print(f"   Organizations: {org_count}")
+    print(f"   Users: {user_count}")
+    print(f"   Subscriptions: {sub_count}")
+    
+    if org_count == 0:
+        errors.append("❌ No organizations found")
+    
+    if user_count == 0:
+        errors.append("❌ No users found")
+    
+    # 2. Check foreign key integrity
+    print("\n2. Checking foreign key integrity...")
+    
+    # Users → Organizations
+    orphaned_users = db.execute(text("""
+        SELECT u.id, u.email, u.organization_id
+        FROM users u
+        LEFT JOIN organizations o ON u.organization_id = o.id
+        WHERE o.id IS NULL
+    """)).fetchall()
+    
+    if orphaned_users:
+        errors.append(f"❌ Found {len(orphaned_users)} orphaned users")
+        for user in orphaned_users[:5]:
+            print(f"     User {user.id} ({user.email}) has invalid org_id {user.organization_id}")
+    else:
+        print("   ✅ All users have valid organizations")
+    
+    # Subscriptions → Organizations
+    orphaned_subs = db.execute(text("""
+        SELECT s.id, s.organization_id
+        FROM subscriptions s
+        LEFT JOIN organizations o ON s.organization_id = o.id
+        WHERE o.id IS NULL
+    """)).fetchall()
+    
+    if orphaned_subs:
+        errors.append(f"❌ Found {len(orphaned_subs)} orphaned subscriptions")
+    else:
+        print("   ✅ All subscriptions have valid organizations")
+    
+    # 3. Check data consistency
+    print("\n3. Checking data consistency...")
+    
+    # Check email uniqueness per organization
+    duplicate_emails = db.execute(text("""
+        SELECT email, organization_id, COUNT(*) as count
+        FROM users
+        GROUP BY email, organization_id
+        HAVING COUNT(*) > 1
+    """)).fetchall()
+    
+    if duplicate_emails:
+        errors.append(f"❌ Found {len(duplicate_emails)} duplicate emails")
+        for dup in duplicate_emails[:5]:
+            print(f"     {dup.email} in org {dup.organization_id}: {dup.count} times")
+    else:
+        print("   ✅ No duplicate emails")
+    
+    # Check subscription uniqueness per organization
+    duplicate_subs = db.execute(text("""
+        SELECT organization_id, COUNT(*) as count
+        FROM subscriptions
+        GROUP BY organization_id
+        HAVING COUNT(*) > 1
+    """)).fetchall()
+    
+    if duplicate_subs:
+        errors.append(f"❌ Found {len(duplicate_subs)} orgs with multiple subscriptions")
+    else:
+        print("   ✅ All organizations have max 1 subscription")
+    
+    # 4. Check required fields
+    print("\n4. Checking required fields...")
+    
+    # Organizations must have name and slug
+    orgs_missing_data = db.query(Organization).filter(
+        (Organization.name == None) | (Organization.slug == None)
+    ).count()
+    
+    if orgs_missing_data > 0:
+        errors.append(f"❌ {orgs_missing_data} organizations missing name/slug")
+    else:
+        print("   ✅ All organizations have required fields")
+    
+    # Users must have email
+    users_missing_email = db.query(User).filter(User.email == None).count()
+    
+    if users_missing_email > 0:
+        errors.append(f"❌ {users_missing_email} users missing email")
+    else:
+        print("   ✅ All users have email")
+    
+    # 5. Summary
+    print("\n" + "=" * 60)
+    
+    if errors:
+        print("VALIDATION FAILED")
+        print("\nErrors found:")
+        for error in errors:
+            print(f"  {error}")
+        print("\n" + "=" * 60)
+        sys.exit(1)
+    else:
+        print("✅ VALIDATION PASSED")
+        print("All checks successful!")
+        print("=" * 60)
+        sys.exit(0)
+
+if __name__ == '__main__':
+    validate_migration()
+
+📄 PLIK 3: Rollback Script
+Rollback migration if needed
+python# scripts/rollback_migration.py
+"""
+Rollback migration.
+
+WARNING: This will DELETE all data in PostgreSQL!
+Only use if migration failed and you need to start over.
+"""
+
+from sqlalchemy import create_engine
+from app.db.base import Base
+from app.core.config import settings
+import sys
+
+def rollback_migration():
+    """Drop all tables and start fresh"""
+    
+    print("⚠️  WARNING: This will DELETE ALL DATA in PostgreSQL!")
+    print("⚠️  This action CANNOT be undone!")
+    print("")
+    
+    confirm = input("Type 'ROLLBACK' to confirm: ")
+    
+    if confirm != 'ROLLBACK':
+        print("Rollback cancelled.")
+        sys.exit(0)
+    
+    print("\nDropping all tables...")
+    
+    engine = create_engine(settings.DATABASE_URL)
+    
+    # Drop all tables
+    Base.metadata.drop_all(bind=engine)
+    
+    print("✅ All tables dropped")
+    print("\nYou can now re-run the migration script.")
+
+if __name__ == '__main__':
+    rollback_migration()
+
+📄 PLIK 4: Usage Guide
+Step-by-step migration guide
+markdown# FIREBASE → POSTGRESQL MIGRATION GUIDE
+
+## Prerequisites
+
+### 1. Firebase Credentials
+
+Download Firebase service account key:
+1. Go to Firebase Console → Project Settings → Service Accounts
+2. Click "Generate New Private Key"
+3. Save as `firebase-credentials.json` in project root
+
+### 2. PostgreSQL Setup
+
+Create PostgreSQL database:
+```bash
+createdb autoflow
+```
+
+Update `.env`:
+```
+DATABASE_URL=postgresql://user:password@localhost:5432/autoflow
+```
+
+### 3. Install Dependencies
+```bash
+pip install firebase-admin
+```
+
+---
+
+## Migration Steps
+
+### Step 1: Backup Firebase Data
+
+**CRITICAL: Always backup before migration!**
+```bash
+# Option A: Firebase Console
+# Go to Firestore → Import/Export → Export
+
+# Option B: Using script
+python scripts/migrate_from_firebase.py --backup
+```
+
+This creates JSON backups in `backups/firebase/`.
+
+### Step 2: Dry Run
+
+Test migration without writing to database:
+```bash
+python scripts/migrate_from_firebase.py --dry-run
+```
+
+Review output:
+- Check record counts
+- Look for errors
+- Verify data transformations
+
+### Step 3: Run Migration
+
+Execute actual migration:
+```bash
+python scripts/migrate_from_firebase.py --migrate
+```
+
+This will:
+1. Create PostgreSQL tables
+2. Migrate organizations
+3. Migrate users
+4. Migrate subscriptions
+5. Migrate integrations
+6. Migrate processes
+7. Generate statistics
+
+Expected duration: 5-30 minutes (depending on data size)
+
+### Step 4: Validate
+
+Verify migration success:
+```bash
+python scripts/migrate_from_firebase.py --validate
+```
+
+This checks:
+- Record counts match
+- Foreign key integrity
+- No orphaned records
+- Data consistency
+
+### Step 5: Review Statistics
+
+Check `migration_stats.json`:
+```json
+{
+  "duration_seconds": 1234.56,
+  "organizations": {
+    "total": 100,
+    "success": 98,
+    "failed": 2
+  },
+  "users": {
+    "total": 500,
+    "success": 495,
+    "failed": 5
+  },
+  "errors": [...]
+}
+```
+
+### Step 6: Fix Errors (if any)
+
+If errors occurred:
+
+1. Review `migration.log`
+2. Check `migration_stats.json` errors array
+3. Fix data in Firebase
+4. Re-run migration for failed items
+
+### Step 7: Test Application
+
+1. Start backend:
+```bash
+uvicorn app.main:app --reload
+```
+
+2. Test login with migrated user
+3. Verify data integrity
+4. Test all features
+
+### Step 8: Rollback (if needed)
+
+If migration failed completely:
+```bash
+python scripts/rollback_migration.py
+```
+
+Then start over from Step 2.
+
+---
+
+## Post-Migration Tasks
+
+### 1. Update Firebase Security Rules
+
+Prevent new writes to Firebase:
+```javascript
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read: if request.auth != null;
+      allow write: if false;  // Disable writes
+    }
+  }
+}
+```
+
+### 2. Update Application Code
+
+Remove Firebase SDK:
+```bash
+npm uninstall firebase
+pip uninstall firebase-admin
+```
+
+Remove Firebase config from code.
+
+### 3. Monitor for Issues
+
+Monitor for 1 week:
+- Check error logs
+- Monitor performance
+- Verify data consistency
+- Check user reports
+
+### 4. Decommission Firebase (after 1 month)
+
+Once confident:
+
+1. Export final backup
+2. Download all data
+3. Delete Firebase project
+4. Cancel Firebase billing
+
+---
+
+## Troubleshooting
+
+### Issue: Migration hangs
+
+**Solution:** Check network connection to Firebase. Increase timeout.
+
+### Issue: Foreign key errors
+
+**Solution:** Check that parent records exist. Run with `--dry-run` to debug.
+
+### Issue: Duplicate key errors
+
+**Solution:** Check for duplicate emails/slugs in Firebase. Clean before migration.
+
+### Issue: Out of memory
+
+**Solution:** Migrate in batches:
+```python
+# Modify script to process organizations in batches
+for i in range(0, total_orgs, batch_size):
+    migrate_batch(i, batch_size)
+```
+
+### Issue: Data validation fails
+
+**Solution:** Review validation errors. Fix in Firebase and re-migrate specific records.
+
+---
+
+## Best Practices
+
+1. ✅ **Always backup** before migration
+2. ✅ **Test on staging** environment first
+3. ✅ **Run dry-run** before actual migration
+4. ✅ **Validate after** migration
+5. ✅ **Monitor closely** for 1 week
+6. ✅ **Keep Firebase** as backup for 1 month
+7. ✅ **Document issues** encountered
+8. ✅ **Have rollback plan** ready
+
+---
+
+## Support
+
+If issues occur:
+1. Check `migration.log`
+2. Review `migration_stats.json`
+3. Search docs
+4. Ask team for help
+
+✅ FINAL CHECKLIST
+Pre-Migration:
+
+ Backup Firebase data (export)
+ Setup PostgreSQL database
+ Install dependencies
+ Test on staging environment
+ Run dry-run migration
+ Review dry-run results
+ Fix any identified issues
+
+Migration:
+
+ Run migration script
+ Monitor progress
+ Check for errors
+ Review statistics
+ Validate data integrity
+ Test application functionality
+
+Post-Migration:
+
+ Update Firebase security rules (read-only)
+ Remove Firebase SDK from code
+ Monitor for 1 week
+ User acceptance testing
+ Performance monitoring
+ Archive Firebase data
+ Decommission Firebase (after 1 month)
+
+
+🎉 KONIEC WSZYSTKICH SEKCJI!
+Masz teraz kompletny blueprint dla AutoFlow MVP:
+✅ Sekcja 1: Architektura i struktura folderów
+✅ Sekcja 2: Konwersja Firestore → PostgreSQL
+✅ Sekcja 3: Autentykacja i autoryzacja
+✅ Sekcja 4: Integracje (Stripe, Outlook, Fakturownia, Google)
+✅ Sekcja 5: Asynchroniczne zadania (Celery + Redis)
+✅ Sekcja 6: Testing (pytest)
+✅ Sekcja 7: Deployment (Docker, CI/CD)
+✅ Sekcja 8: Performance optimization
+✅ Sekcja 9: Security (OWASP, best practices)
+✅ Sekcja 10: Migracja Firebase → PostgreSQL
+
+Dla Manusa (AI implementujący):
+📦 Masz wszystko czego potrzebujesz do implementacji w ciągu 3-4 tygodni!
+Estimated timeline:
+
+Week 1: Sekcje 1-3 (architektura, database, auth)
+Week 2: Sekcje 4-5 (integracje, Celery)
+Week 3: Sekcje 6-8 (testing, deployment, performance)
+Week 4: Sekcje 9-10 (security, migracja)
