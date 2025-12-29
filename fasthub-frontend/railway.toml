@@ -1,0 +1,8 @@
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "Dockerfile"
+
+[deploy]
+startCommand = "npm run dev -- --host 0.0.0.0 --port $PORT"
+healthcheckTimeout = 100
+restartPolicyType = "ON_FAILURE"
