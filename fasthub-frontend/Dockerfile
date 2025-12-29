@@ -1,20 +1,28 @@
-# Obraz bazowy - Node.js 20 na lekkim Alpine Linux
-FROM node:20-alpine
+# Stage 1: Build
+FROM node:20-alpine AS builder
 
-# Ustawienie katalogu roboczego
 WORKDIR /app
 
-# Kopiowanie package.json i package-lock.json (lista zależności)
+# Kopiowanie package.json i instalacja zależności
 COPY package*.json ./
+RUN npm ci
 
-# Instalacja zależności Node
-RUN npm install
-
-# Kopiowanie całego kodu frontendu
+# Kopiowanie kodu i budowanie
 COPY . .
+RUN npm run build
 
-# Port na którym działa frontend
-EXPOSE 3000
+# Stage 2: Production
+FROM nginx:alpine
 
-# Komenda uruchamiająca Vite dev server
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+# Kopiowanie zbudowanych plików do Nginx
+COPY --from=builder /app/dist /usr/share/nginx/html
+
+# Kopiowanie konfiguracji Nginx
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+# Port 80 dla Nginx
+EXPOSE 80
+
+# Uruchomienie Nginx
+CMD ["nginx", "-g", "daemon off;"]
+
