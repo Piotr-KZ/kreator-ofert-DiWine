@@ -1,8 +1,19 @@
-# 🚀 Railway Deployment Guide
+# 🚀 Railway Deployment Guide (CORRECTED)
+
+## ⚠️ Important Note
+
+**Railway does NOT support `docker-compose.yml` directly.**
+
+**Solution:** Deploy 3 separate services:
+1. Backend (from `fasthub-backend/`)
+2. Frontend (from `fasthub-frontend/`)
+3. PostgreSQL (managed database)
+
+---
 
 ## 📋 Overview
 
-Deploy FastHub to Railway in **10 minutes** with automatic CI/CD from GitHub.
+Deploy FastHub to Railway in **15 minutes** with automatic CI/CD from GitHub.
 
 **What you'll get:**
 - ✅ Live backend API
@@ -35,38 +46,60 @@ Deploy FastHub to Railway in **10 minutes** with automatic CI/CD from GitHub.
 
 ---
 
-### **STEP 2: Connect GitHub Repository**
+### **STEP 2: Remove Failed Deployment (if exists)**
 
-1. Railway Dashboard → **"New Project"**
-2. Choose: **"Deploy from GitHub repo"**
-3. Railway will ask for access → Click **"Authorize Railway"**
-4. Select: **"Only select repositories"**
-5. Check: **`Fasthub`**
-6. Click: **"Install"**
+If you already tried to deploy and it failed:
+
+1. Railway Dashboard → Your project
+2. Click **"..."** (3 dots menu)
+3. **"Remove Service"**
+4. Confirm
 
 ---
 
 ### **STEP 3: Deploy Backend**
 
-#### **3.1. Select Backend Service:**
+#### **3.1. Create Backend Service:**
 
-1. Railway will detect `fasthub-backend/` folder
-2. Click on **"fasthub-backend"** service
+1. Railway Dashboard → **"+ New"**
+2. Choose: **"GitHub Repo"**
+3. Select: **`Fasthub`** repository
+4. **IMPORTANT:** Click **"Configure"** (before deploy)
+5. Set **"Root Directory"**: `fasthub-backend`
+6. Set **"Builder"**: `Dockerfile`
+7. Click **"Deploy"**
+
+Railway will:
+- ✅ Detect `fasthub-backend/Dockerfile`
+- ✅ Build Docker image
+- ✅ Deploy backend
+
+**Wait 3-5 minutes** for build + deploy.
+
+---
+
+### **STEP 4: Add PostgreSQL Database**
+
+1. In the same project → **"+ New"**
+2. Choose: **"Database"** → **"Add PostgreSQL"**
 3. Railway will automatically:
-   - ✅ Detect `Dockerfile`
-   - ✅ Build Docker image
-   - ✅ Start deployment
+   - ✅ Create database
+   - ✅ Set `DATABASE_URL` variable in backend
 
-#### **3.2. Add Environment Variables:**
+**That's it!** Database is ready.
 
-Click on **"fasthub-backend"** → **"Variables"** tab
+---
 
-**Add these variables:**
+### **STEP 5: Configure Backend Environment Variables**
+
+1. Click on **"backend"** service
+2. Go to **"Variables"** tab
+3. Railway already added `DATABASE_URL` ✅
+
+**Add manually:**
 
 ```
-DATABASE_URL=postgresql://postgres:postgres@postgres.railway.internal:5432/fasthub
 SECRET_KEY=<generate-random-32-character-string>
-BACKEND_CORS_ORIGINS=https://<your-frontend-domain>.railway.app
 ENVIRONMENT=production
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
@@ -80,110 +113,126 @@ python -c "import secrets; print(secrets.token_urlsafe(32))"
 
 # Option 2: OpenSSL
 openssl rand -base64 32
+
+# Option 3: Online
+# Use: https://randomkeygen.com/ (256-bit key)
 ```
 
-#### **3.3. Generate Backend Domain:**
-
-1. **"fasthub-backend"** service → **"Settings"** → **"Networking"**
-2. Click: **"Generate Domain"**
-3. Copy URL: `https://fasthub-backend-production.railway.app`
-4. **Save this URL** - you'll need it for frontend!
+4. Click **"Add"** for each variable
+5. Railway will auto-redeploy
 
 ---
 
-### **STEP 4: Deploy PostgreSQL Database**
+### **STEP 6: Run Database Migrations**
 
-1. In Railway project → Click **"+ New"**
-2. Choose: **"Database"** → **"PostgreSQL"**
-3. Railway will automatically:
-   - ✅ Create database
-   - ✅ Connect to backend
-   - ✅ Set `DATABASE_URL` variable
+Backend needs to run migrations before starting:
 
-**That's it!** Database is ready.
-
----
-
-### **STEP 5: Deploy Frontend**
-
-#### **5.1. Select Frontend Service:**
-
-1. Railway will detect `fasthub-frontend/` folder
-2. Click on **"fasthub-frontend"** service
-
-#### **5.2. Add Environment Variables:**
-
-Click **"Variables"** tab
-
-**Add:**
-
-```
-VITE_API_URL=https://fasthub-backend-production.railway.app/api/v1
-```
-
-**Replace** `fasthub-backend-production.railway.app` with **your actual backend URL** from Step 3.3!
-
-#### **5.3. Generate Frontend Domain:**
-
-1. **"fasthub-frontend"** service → **"Settings"** → **"Networking"**
-2. Click: **"Generate Domain"**
-3. Copy URL: `https://fasthub-frontend-production.railway.app`
-
----
-
-### **STEP 6: Update Backend CORS**
-
-**Important!** Backend needs to allow frontend domain.
-
-1. Go back to **"fasthub-backend"** service
-2. **"Variables"** tab
-3. Update `BACKEND_CORS_ORIGINS`:
-
-```
-BACKEND_CORS_ORIGINS=https://fasthub-frontend-production.railway.app
-```
-
-**Replace** with **your actual frontend URL** from Step 5.3!
-
-4. Click **"Save"**
-5. Backend will auto-redeploy
-
----
-
-### **STEP 7: Run Database Migrations**
-
-**Option A: Automatic (already configured)**
-
-Migrations run automatically on startup (see `Procfile`).
-
-**Option B: Manual (if needed)**
-
-1. **"fasthub-backend"** service → **"Settings"** → **"Deploy"**
-2. **"Custom Start Command":**
+1. **"backend"** service → **"Settings"**
+2. Scroll to **"Deploy"** section
+3. **"Custom Start Command"**:
 
 ```bash
 alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ```
 
-3. Click **"Redeploy"**
+4. Click **"Save"**
+5. Railway will redeploy
+
+**Migrations will run automatically** before backend starts ✅
 
 ---
 
-### **STEP 8: Verify Deployment**
+### **STEP 7: Generate Backend Domain**
 
-#### **Backend:**
+1. **"backend"** service → **"Settings"**
+2. **"Networking"** → **"Generate Domain"**
+3. Copy URL: `https://fasthub-backend-production-xxx.up.railway.app`
 
-1. Open: `https://fasthub-backend-production.railway.app/docs`
-2. Should show: **Swagger API documentation** ✅
+**⚠️ SAVE THIS URL!** You'll need it for frontend.
+
+---
+
+### **STEP 8: Deploy Frontend**
+
+#### **8.1. Create Frontend Service:**
+
+1. In the project → **"+ New"**
+2. **"GitHub Repo"**
+3. Select: **`Fasthub`** (same repo!)
+4. Click **"Configure"**
+5. Set **"Root Directory"**: `fasthub-frontend`
+6. Set **"Builder"**: `Dockerfile`
+
+#### **8.2. Add Frontend Environment Variables:**
+
+Before clicking "Deploy", go to **"Variables"** tab:
+
+```
+VITE_API_URL=https://[BACKEND-URL-FROM-STEP-7]/api/v1
+```
+
+**⚠️ Replace `[BACKEND-URL-FROM-STEP-7]`** with your actual backend URL!
+
+**Example:**
+```
+VITE_API_URL=https://fasthub-backend-production-abc123.up.railway.app/api/v1
+```
+
+7. Click **"Deploy"**
+
+Railway will build frontend with `fasthub-frontend/Dockerfile` ✅
+
+---
+
+### **STEP 9: Generate Frontend Domain**
+
+1. **"frontend"** service → **"Settings"**
+2. **"Networking"** → **"Generate Domain"**
+3. Copy URL: `https://fasthub-frontend-production-xxx.up.railway.app`
+
+**⚠️ SAVE THIS URL!** You'll need it for CORS.
+
+---
+
+### **STEP 10: Update Backend CORS**
+
+Backend must accept requests from frontend:
+
+1. Go back to **"backend"** service
+2. **"Variables"** tab
+3. Add:
+
+```
+BACKEND_CORS_ORIGINS=https://[FRONTEND-URL-FROM-STEP-9]
+```
+
+**⚠️ Replace `[FRONTEND-URL-FROM-STEP-9]`** with your actual frontend URL!
+
+**Example:**
+```
+BACKEND_CORS_ORIGINS=https://fasthub-frontend-production-xyz789.up.railway.app
+```
+
+4. Click **"Add"**
+5. Railway will auto-redeploy backend
+
+---
+
+### **STEP 11: Verify Deployment**
 
 #### **Frontend:**
 
-1. Open: `https://fasthub-frontend-production.railway.app`
+1. Open: `https://[your-frontend-url].up.railway.app`
 2. Should show: **Login page** ✅
+
+#### **Backend API:**
+
+1. Open: `https://[your-backend-url].up.railway.app/docs`
+2. Should show: **Swagger API documentation** ✅
 
 #### **Test Registration:**
 
-1. Click **"Sign up"**
+1. Go to frontend → Click **"Sign up"**
 2. Fill 3 fields: Full Name, Email, Password
 3. Click **"Create Account"**
 4. Should redirect to Dashboard ✅
@@ -194,9 +243,27 @@ alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
 ## 🎉 Success! FastHub is LIVE!
 
 **Your URLs:**
-- **Backend:** `https://fasthub-backend-production.railway.app`
-- **Frontend:** `https://fasthub-frontend-production.railway.app`
-- **API Docs:** `https://fasthub-backend-production.railway.app/docs`
+- **Backend:** `https://fasthub-backend-production-xxx.up.railway.app`
+- **Frontend:** `https://fasthub-frontend-production-xxx.up.railway.app`
+- **API Docs:** `https://fasthub-backend-production-xxx.up.railway.app/docs`
+
+---
+
+## 📊 Railway Project Structure
+
+```
+Railway Project: Fasthub
+├─ Service: backend
+│  └─ Source: github.com/Piotr-KZ/Fasthub/fasthub-backend
+│  └─ Dockerfile: fasthub-backend/Dockerfile
+│
+├─ Service: frontend
+│  └─ Source: github.com/Piotr-KZ/Fasthub/fasthub-frontend
+│  └─ Dockerfile: fasthub-frontend/Dockerfile
+│
+└─ Database: PostgreSQL
+   └─ Auto-connected to backend (DATABASE_URL)
+```
 
 ---
 
@@ -213,8 +280,8 @@ git push
 
 **Railway automatically:**
 1. ✅ Detects push to GitHub
-2. ✅ Rebuilds Docker images
-3. ✅ Deploys new version
+2. ✅ Rebuilds backend + frontend Docker images
+3. ✅ Deploys new versions
 4. ✅ **Live in 2-3 minutes!**
 
 **Zero manual deployment!** 🎉
@@ -262,44 +329,26 @@ git push
 
 ## 🐛 Troubleshooting
 
-### **Error: "Build failed"**
+### **Error: "No Dockerfile found"**
 
 **Solution:**
-1. Check Railway logs → Find error
-2. Most common: Missing `Dockerfile`
-3. Verify: `fasthub-backend/Dockerfile` and `fasthub-frontend/Dockerfile` exist
+1. Check **"Root Directory"** in service Settings
+2. Backend: `fasthub-backend`
+3. Frontend: `fasthub-frontend`
 
 ---
 
 ### **Error: "Database connection failed"**
 
 **Solution:**
-1. Check `DATABASE_URL` variable
-2. Format: `postgresql://user:password@host:5432/database`
-3. Verify PostgreSQL service is running
+1. Check `DATABASE_URL` variable in backend
+2. Railway should auto-set this when you add PostgreSQL
+3. Format: `postgresql://user:password@host:5432/database`
+4. Verify PostgreSQL service is running
 
 ---
 
-### **Error: "CORS policy"**
-
-**Solution:**
-1. Backend `BACKEND_CORS_ORIGINS` must include frontend URL
-2. Format: `https://your-frontend.railway.app`
-3. No trailing slash!
-
----
-
-### **Frontend can't connect to backend**
-
-**Solution:**
-1. Check frontend `VITE_API_URL` variable
-2. Must point to backend Railway URL
-3. Format: `https://your-backend.railway.app/api/v1`
-4. Include `/api/v1` at the end!
-
----
-
-### **Migrations not running**
+### **Error: "Migrations failed"**
 
 **Solution:**
 1. Backend service → Settings → Deploy
@@ -307,7 +356,28 @@ git push
    ```bash
    alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port $PORT
    ```
-3. Redeploy
+3. Check logs for migration errors
+
+---
+
+### **Frontend: "Network Error" / "API not responding"**
+
+**Solution:**
+1. Check frontend `VITE_API_URL` variable
+2. Must point to backend Railway URL
+3. Format: `https://your-backend.up.railway.app/api/v1`
+4. Include `/api/v1` at the end!
+5. Check if backend is running: `https://[backend-url]/health`
+
+---
+
+### **Error: "CORS policy"**
+
+**Solution:**
+1. Backend `BACKEND_CORS_ORIGINS` must include frontend URL
+2. Format: `https://your-frontend.up.railway.app`
+3. No trailing slash!
+4. Exact match required
 
 ---
 
@@ -351,13 +421,15 @@ git push
 ## ✅ Deployment Checklist
 
 - [ ] Railway account created
-- [ ] GitHub repo connected
-- [ ] Backend deployed
+- [ ] Backend service deployed (Root Directory: `fasthub-backend`)
 - [ ] PostgreSQL added
-- [ ] Frontend deployed
-- [ ] Environment variables set
-- [ ] CORS configured
-- [ ] Migrations run
+- [ ] Backend environment variables set (SECRET_KEY, ENVIRONMENT)
+- [ ] Database migrations configured (Custom Start Command)
+- [ ] Backend domain generated
+- [ ] Frontend service deployed (Root Directory: `fasthub-frontend`)
+- [ ] Frontend environment variables set (VITE_API_URL)
+- [ ] Frontend domain generated
+- [ ] Backend CORS configured (BACKEND_CORS_ORIGINS)
 - [ ] Backend `/docs` works
 - [ ] Frontend loads
 - [ ] Registration tested
@@ -369,7 +441,7 @@ git push
 
 **What Railway does automatically:**
 
-- ✅ Detects `Dockerfile`
+- ✅ Detects `Dockerfile` in root directory
 - ✅ Builds Docker images
 - ✅ Runs containers
 - ✅ Assigns domains
@@ -379,16 +451,19 @@ git push
 
 **What you did:**
 
-- ✅ Connected GitHub
-- ✅ Added environment variables
+- ✅ Deployed backend (from `fasthub-backend/`)
+- ✅ Deployed frontend (from `fasthub-frontend/`)
+- ✅ Added PostgreSQL
+- ✅ Configured environment variables
+- ✅ Set up CORS
 - ✅ Generated domains
 
-**Time spent:** ~10 minutes
+**Time spent:** ~15 minutes
 
 ---
 
 **FastHub is now LIVE on Railway!** 🚀
 
 **Share your URLs:**
-- Backend: `https://your-backend.railway.app`
-- Frontend: `https://your-frontend.railway.app`
+- Backend: `https://your-backend.up.railway.app`
+- Frontend: `https://your-frontend.up.railway.app`
