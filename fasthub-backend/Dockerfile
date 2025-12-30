@@ -19,9 +19,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Kopiowanie całego kodu backendu
 COPY . .
 
+# Kopiowanie i ustawienie entrypoint
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Port na którym działa backend (Railway automatycznie ustawi $PORT)
 EXPOSE 8000
 
-# Debug: Check if Railway passes DATABASE_URL
-# Skip alembic temporarily to test if backend can start
-CMD ["sh", "-c", "echo '=== DEBUG ===' && echo 'DATABASE_URL='$DATABASE_URL && echo 'SECRET_KEY='$SECRET_KEY && echo 'ENVIRONMENT='$ENVIRONMENT && echo 'BACKEND_CORS_ORIGINS='$BACKEND_CORS_ORIGINS && echo '============' && uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}"]
+# Use entrypoint to generate .env and start app
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
