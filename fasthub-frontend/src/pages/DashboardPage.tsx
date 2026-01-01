@@ -24,7 +24,7 @@ export default function DashboardPage() {
     if (user) {
       fetchDashboardData();
     }
-  }, [user]);
+  }, [user?.id]); // Only re-fetch when user ID changes, not on every user object change
 
   const fetchDashboardData = async () => {
     setLoading(true);
