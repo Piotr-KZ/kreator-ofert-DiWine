@@ -1,0 +1,16 @@
+name: Keep Backend Alive
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping health endpoint
+        run: |
+          echo "Pinging backend health endpoint..."
+          curl -f https://fasthub-backend.onrender.com/health || echo "Health check failed"
+          echo "Ping completed at $(date )"
