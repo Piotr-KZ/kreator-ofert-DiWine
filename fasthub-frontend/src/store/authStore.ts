@@ -16,7 +16,7 @@ interface AuthState {
   clearError: () => void;
 }
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isAuthenticated: false,
   isLoading: false,
@@ -100,11 +100,18 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ isLoading: true });
     try {
       const { data: user } = await authApi.getCurrentUser();
-      set({ 
-        user, 
-        isAuthenticated: true, 
-        isLoading: false 
-      });
+      const currentUser = get().user;
+      
+      // Only update if user actually changed (prevent unnecessary re-renders)
+      if (!currentUser || currentUser.id !== user.id) {
+        set({ 
+          user, 
+          isAuthenticated: true, 
+          isLoading: false 
+        });
+      } else {
+        set({ isLoading: false });
+      }
     } catch (error) {
       // Token invalid, clear auth
       localStorage.removeItem('access_token');
