@@ -4,6 +4,7 @@ import { UserOutlined, LockOutlined, BankOutlined, MailOutlined, PhoneOutlined }
 import { useAuthStore } from '../store/authStore';
 import { useOrgStore } from '../store/orgStore';
 import { authApi } from '../api/auth';
+import PasswordRequirements from '../components/PasswordRequirements';
 
 const { Title, Paragraph } = Typography;
 
@@ -14,6 +15,7 @@ export default function SettingsPage() {
   const [passwordForm] = Form.useForm();
   const [orgForm] = Form.useForm();
   const [loading, setLoading] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
 
   useEffect(() => {
     fetchOrganization();
@@ -157,11 +159,20 @@ export default function SettingsPage() {
               label="New Password"
               rules={[
                 { required: true, message: 'Please input your new password!' },
-                { min: 8, message: 'Password must be at least 8 characters!' }
+                { min: 8, message: 'Password must be at least 8 characters!' },
+                {
+                  pattern: /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).+$/,
+                  message: 'Password must contain uppercase, lowercase, and number!'
+                }
               ]}
             >
-              <Input.Password prefix={<LockOutlined />} />
+              <Input.Password 
+                prefix={<LockOutlined />} 
+                onChange={(e) => setNewPassword(e.target.value)}
+              />
             </Form.Item>
+            
+            {newPassword && <PasswordRequirements password={newPassword} />}
 
             <Form.Item
               name="confirm_password"
