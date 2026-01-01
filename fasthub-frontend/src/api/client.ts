@@ -22,6 +22,20 @@ apiClient.interceptors.request.use(
 );
 
 // Response interceptor - handle token refresh
+let isRefreshing = false;
+let failedQueue: any[] = [];
+
+const processQueue = (error: any, token: string | null = null) => {
+  failedQueue.forEach(prom => {
+    if (error) {
+      prom.reject(error);
+    } else {
+      prom.resolve(token);
+    }
+  });
+  failedQueue = [];
+};
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {
@@ -29,7 +43,18 @@ apiClient.interceptors.response.use(
 
     // 401 = token expired, try to refresh
     if (error.response?.status === 401 && !originalRequest._retry) {
+      if (isRefreshing) {
+        // Already refreshing, queue this request
+        return new Promise((resolve, reject) => {
+          failedQueue.push({ resolve, reject });
+        }).then(token => {
+          originalRequest.headers.Authorization = `Bearer ${token}`;
+          return apiClient(originalRequest);
+        }).catch(err => Promise.reject(err));
+      }
+
       originalRequest._retry = true;
+      isRefreshing = true;
 
       try {
         const refreshToken = localStorage.getItem('refresh_token');
@@ -44,9 +69,14 @@ apiClient.interceptors.response.use(
         localStorage.setItem('access_token', data.access_token);
         
         originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
+        processQueue(null, data.access_token);
+        isRefreshing = false;
+        
         return apiClient(originalRequest);
       } catch (refreshError) {
         // Refresh failed - logout
+        processQueue(refreshError, null);
+        isRefreshing = false;
         localStorage.removeItem('access_token');
         localStorage.removeItem('refresh_token');
         window.location.href = '/login';
