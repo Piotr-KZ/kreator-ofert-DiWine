@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Form, Input, Button, Card, Typography, Alert, Divider } from 'antd';
-import { UserOutlined, LockOutlined, MailOutlined } from '@ant-design/icons';
+import { UserOutlined, LockOutlined, MailOutlined, BankOutlined } from '@ant-design/icons';
 import { useAuthStore } from '../../store/authStore';
 
 const { Title, Text } = Typography;
@@ -20,6 +20,7 @@ export default function RegisterPage() {
         email: values.email,
         password: values.password,
         full_name: values.full_name,
+        organization_name: values.organization_name,
       };
 
       await register(registerData);
@@ -68,6 +69,17 @@ export default function RegisterPage() {
             <Input 
               prefix={<UserOutlined />} 
               placeholder="Full Name" 
+              size="large"
+            />
+          </Form.Item>
+
+          <Form.Item
+            name="organization_name"
+            rules={[{ required: true, message: 'Please input your organization name!' }]}
+          >
+            <Input 
+              prefix={<BankOutlined />} 
+              placeholder="Organization Name" 
               size="large"
             />
           </Form.Item>
