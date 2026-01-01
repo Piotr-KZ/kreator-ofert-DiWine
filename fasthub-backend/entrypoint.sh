@@ -32,5 +32,10 @@ echo "ENVIRONMENT=${ENVIRONMENT}"
 echo "BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}"
 echo "============"
 
+# Run database migrations
+echo "Running database migrations..."
+alembic upgrade head
+echo "Migrations completed!"
+
 # Execute the command passed to the script
 exec "$@"
