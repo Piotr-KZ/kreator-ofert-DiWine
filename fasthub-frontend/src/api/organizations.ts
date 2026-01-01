@@ -16,4 +16,7 @@ export const organizationsApi = {
 
   transferOwnership: (id: string, newOwnerId: string) =>
     apiClient.post(`/organizations/${id}/transfer-ownership`, { new_owner_id: newOwnerId }),
+
+  delete: (id: string) =>
+    apiClient.delete(`/organizations/${id}`),
 };

@@ -10,6 +10,7 @@ interface OrgState {
   // Actions
   fetchOrganization: () => Promise<void>;
   updateOrganization: (data: Partial<Organization>) => Promise<void>;
+  deleteOrganization: () => Promise<void>;
   clearError: () => void;
 }
 
@@ -48,6 +49,26 @@ export const useOrgStore = create<OrgState>((set, get) => ({
     } catch (error: any) {
       set({ 
         error: error.response?.data?.detail || 'Failed to update organization',
+        isLoading: false 
+      });
+      throw error;
+    }
+  },
+
+  deleteOrganization: async () => {
+    const { organization } = get();
+    if (!organization) return;
+
+    set({ isLoading: true, error: null });
+    try {
+      await organizationsApi.delete(organization.id);
+      set({ 
+        organization: null, 
+        isLoading: false 
+      });
+    } catch (error: any) {
+      set({ 
+        error: error.response?.data?.detail || 'Failed to delete organization',
         isLoading: false 
       });
       throw error;

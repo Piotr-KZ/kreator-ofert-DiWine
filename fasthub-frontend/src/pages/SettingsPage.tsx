@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Tabs, Card, Form, Input, Button, message, Typography, Divider, Space } from 'antd';
-import { UserOutlined, LockOutlined, BankOutlined, MailOutlined, PhoneOutlined } from '@ant-design/icons';
+import { Tabs, Card, Form, Input, Button, message, Typography, Divider, Space, Modal } from 'antd';
+import { UserOutlined, LockOutlined, BankOutlined, MailOutlined, PhoneOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { useAuthStore } from '../store/authStore';
 import { useOrgStore } from '../store/orgStore';
 import { authApi } from '../api/auth';
@@ -10,7 +10,7 @@ const { Title, Paragraph } = Typography;
 
 export default function SettingsPage() {
   const { user, fetchCurrentUser } = useAuthStore();
-  const { organization, fetchOrganization, updateOrganization } = useOrgStore();
+  const { organization, fetchOrganization, updateOrganization, deleteOrganization } = useOrgStore();
   const [profileForm] = Form.useForm();
   const [passwordForm] = Form.useForm();
   const [orgForm] = Form.useForm();
@@ -88,6 +88,37 @@ export default function SettingsPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleDeleteOrganization = () => {
+    Modal.confirm({
+      title: 'Delete Organization',
+      icon: <ExclamationCircleOutlined />,
+      content: (
+        <div>
+          <p>Are you sure you want to delete this organization?</p>
+          <p style={{ color: '#ff4d4f', fontWeight: 'bold' }}>
+            This action cannot be undone. All data, users, and subscriptions will be permanently deleted.
+          </p>
+        </div>
+      ),
+      okText: 'Delete',
+      okType: 'danger',
+      cancelText: 'Cancel',
+      onOk: async () => {
+        setLoading(true);
+        try {
+          await deleteOrganization();
+          message.success('Organization deleted successfully');
+          // Redirect to login after deletion
+          window.location.href = '/login';
+        } catch (error: any) {
+          message.error(error.response?.data?.detail || 'Failed to delete organization');
+        } finally {
+          setLoading(false);
+        }
+      },
+    });
   };
 
   const items = [
@@ -276,6 +307,21 @@ export default function SettingsPage() {
               </Button>
             </Form.Item>
           </Form>
+
+          <Divider />
+
+          <Title level={4} style={{ color: '#ff4d4f' }}>Danger Zone</Title>
+          <Paragraph type="secondary">
+            Once you delete your organization, there is no going back. Please be certain.
+          </Paragraph>
+          <Button 
+            danger 
+            type="primary" 
+            onClick={handleDeleteOrganization}
+            loading={loading}
+          >
+            Delete Organization
+          </Button>
         </Card>
       ),
     },
