@@ -7,8 +7,14 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm ci
 
-# Kopiowanie kodu i budowanie
+# Kopiowanie kodu
 COPY . .
+
+# Build argument for API URL
+ARG VITE_API_URL
+ENV VITE_API_URL=$VITE_API_URL
+
+# Budowanie z przekazaną zmienną
 RUN npm run build
 
 # Stage 2: Production
