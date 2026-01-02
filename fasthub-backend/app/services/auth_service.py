@@ -21,10 +21,12 @@ from app.core.security import (
     decode_verification_token,
     verify_password,
 )
-from app.models.user import User, UserRole
+from app.models.member import Member, MemberRole
+from app.models.user import User
 from app.services.email_service import EmailService
 from app.services.organization_repository import OrganizationRepository
 from app.services.user_repository import UserRepository
+from uuid import UUID
 
 
 class AuthService:
@@ -35,6 +37,16 @@ class AuthService:
         self.user_repo = UserRepository(db)
         self.org_repo = OrganizationRepository(db)
         self.email_service = EmailService()
+    
+    async def _get_user_primary_org_id(self, user_id: UUID) -> Optional[UUID]:
+        """Get user's primary organization ID (first membership)"""
+        result = await self.db.execute(
+            select(Member.organization_id)
+            .where(Member.user_id == user_id)
+            .order_by(Member.joined_at)
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
 
     async def register(
         self,
@@ -71,16 +83,21 @@ class AuthService:
             email=email,
             password=password,
             full_name=full_name,
-            organization_id=organization_id,
-            role=UserRole.admin if organization_name else UserRole.user,
             is_verified=True,  # Auto-verify for boilerplate (change to False in production)
         )
 
         # Create organization if needed
         if organization_name:
             organization = await self.org_repo.create(name=organization_name, owner_id=user.id)
-            user.organization_id = organization.id
-            await self.user_repo.update(user)
+            # Create member record (owner gets admin role)
+            member = Member(
+                user_id=user.id,
+                organization_id=organization.id,
+                role=MemberRole.ADMIN
+            )
+            self.db.add(member)
+            await self.db.flush()  # Ensure member is created
+            organization_id = organization.id
 
         # Generate email verification token
         verification_token = create_email_verification_token(user.id)
@@ -94,11 +111,14 @@ class AuthService:
             frontend_url=settings.FRONTEND_URL,
         )
 
+        # Get user's primary organization for JWT
+        primary_org_id = await self._get_user_primary_org_id(user.id)
+        
         # Generate tokens
         access_token = create_access_token(
             data={
                 "sub": str(user.id),
-                "org": str(user.organization_id) if user.organization_id else None,
+                "org": str(primary_org_id) if primary_org_id else None,
             }
         )
         refresh_token = create_refresh_token(data={"sub": str(user.id)})
@@ -155,11 +175,14 @@ class AuthService:
         # Update last login
         await self.user_repo.update_last_login(user.id)
 
+        # Get user's primary organization for JWT
+        primary_org_id = await self._get_user_primary_org_id(user.id)
+        
         # Generate tokens
         access_token = create_access_token(
             data={
                 "sub": str(user.id),
-                "org": str(user.organization_id) if user.organization_id else None,
+                "org": str(primary_org_id) if primary_org_id else None,
             }
         )
         refresh_token = create_refresh_token(data={"sub": str(user.id)})
@@ -198,11 +221,14 @@ class AuthService:
                 status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found or inactive"
             )
 
+        # Get user's primary organization for JWT
+        primary_org_id = await self._get_user_primary_org_id(user.id)
+        
         # Generate new access token
         access_token = create_access_token(
             data={
                 "sub": str(user.id),
-                "org": str(user.organization_id) if user.organization_id else None,
+                "org": str(primary_org_id) if primary_org_id else None,
             }
         )
 

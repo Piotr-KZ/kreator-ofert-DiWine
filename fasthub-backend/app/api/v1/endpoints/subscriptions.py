@@ -12,7 +12,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.dependencies import get_current_active_user, require_organization_owner
 from app.db.session import get_db
+from app.models.member import Member
 from app.models.user import User
+from sqlalchemy import select
+from uuid import UUID
+
+
+async def get_user_primary_org_id(user: User, db: AsyncSession) -> UUID:
+    """Get user's primary organization ID (first membership)"""
+    result = await db.execute(
+        select(Member.organization_id)
+        .where(Member.user_id == user.id)
+        .order_by(Member.joined_at)
+        .limit(1)
+    )
+    org_id = result.scalar_one_or_none()
+    if not org_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User has no organization"
+        )
+    return org_id
 from app.schemas.subscription import SubscriptionCreate, SubscriptionResponse, SubscriptionUpdate
 from app.services.stripe_service import StripeService
 from app.services.subscription_service import SubscriptionService
@@ -76,21 +96,36 @@ async def get_current_subscription(
     """
     Get current user's organization subscription
 
-    Returns active subscription details.
+    Returns active subscription details or default free plan.
     """
-    if not current_user.organization_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, detail="User has no organization"
-        )
+    from app.models.subscription import Subscription, SubscriptionStatus
+    from datetime import datetime, timedelta
+    
+    org_id = await get_user_primary_org_id(current_user, db)
 
-    subscription_service = SubscriptionService(db)
-    subscription = await subscription_service.get_subscription_by_organization(
-        current_user.organization_id
+    # Query subscription directly without SubscriptionService (to avoid Stripe init)
+    result = await db.execute(
+        select(Subscription)
+        .where(Subscription.organization_id == org_id)
+        .where(Subscription.status == SubscriptionStatus.active)
     )
+    subscription = result.scalar_one_or_none()
 
     if not subscription:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="No active subscription found"
+        # Return default free plan (mock)
+        return SubscriptionResponse(
+            id=None,
+            organization_id=org_id,
+            plan="free",
+            status="active",
+            current_period_start=datetime.utcnow(),
+            current_period_end=datetime.utcnow() + timedelta(days=365),
+            cancel_at_period_end=False,
+            stripe_subscription_id=None,
+            stripe_price_id=None,
+            canceled_at=None,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
         )
 
     return subscription
@@ -134,7 +169,7 @@ async def change_subscription_plan(
 
     subscription_service = SubscriptionService(db)
     subscription = await subscription_service.change_subscription_plan(
-        organization_id=current_user.organization_id,
+        organization_id=await get_user_primary_org_id(current_user, db),
         new_price_id=new_price_id,
         current_user=current_user,
     )
@@ -157,7 +192,7 @@ async def cancel_subscription(
     """
     subscription_service = SubscriptionService(db)
     subscription = await subscription_service.cancel_subscription(
-        organization_id=current_user.organization_id,
+        organization_id=await get_user_primary_org_id(current_user, db),
         at_period_end=at_period_end,
         current_user=current_user,
     )
@@ -175,14 +210,14 @@ async def check_subscription_invoice(
     Firebase equivalent: checkSubscriptionInvoice
     Returns latest invoice details from Stripe.
     """
-    if not current_user.organization_id:
+    if not await get_user_primary_org_id(current_user, db):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="User has no organization"
         )
 
     subscription_service = SubscriptionService(db)
     invoice_data = await subscription_service.check_subscription_invoice(
-        organization_id=current_user.organization_id
+        organization_id=await get_user_primary_org_id(current_user, db)
     )
 
     return invoice_data
@@ -202,7 +237,7 @@ async def create_billing_portal(
     """
     subscription_service = SubscriptionService(db)
     result = await subscription_service.create_billing_portal_session(
-        organization_id=current_user.organization_id,
+        organization_id=await get_user_primary_org_id(current_user, db),
         return_url=return_url,
         current_user=current_user,
     )

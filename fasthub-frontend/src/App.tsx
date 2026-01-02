@@ -13,6 +13,7 @@ function App() {
     if (token) {
       fetchCurrentUser();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   
   // Show global loading spinner during initial auth check

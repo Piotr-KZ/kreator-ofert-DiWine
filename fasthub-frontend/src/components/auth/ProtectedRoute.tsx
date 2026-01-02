@@ -4,10 +4,10 @@ import { Spin } from 'antd';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  requiredRole?: string[];
+  requireSuperuser?: boolean;  // Require superuser access
 }
 
-export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) => {
+export const ProtectedRoute = ({ children, requireSuperuser }: ProtectedRouteProps) => {
   const { isAuthenticated, isLoading, user } = useAuthStore();
 
   if (isLoading) {
@@ -27,8 +27,8 @@ export const ProtectedRoute = ({ children, requiredRole }: ProtectedRouteProps) 
     return <Navigate to="/login" replace />;
   }
 
-  // Check role if required
-  if (requiredRole && user && !requiredRole.includes(user.role)) {
+  // Check superuser access if required
+  if (requireSuperuser && user && !user.is_superuser) {
     return <Navigate to="/dashboard" replace />;
   }
 

@@ -54,7 +54,7 @@ class SubscriptionUpdate(BaseModel):
 class SubscriptionResponse(SubscriptionBase):
     """Schema for subscription response"""
 
-    id: UUID
+    id: Optional[UUID] = None
     organization_id: UUID
     stripe_subscription_id: Optional[str]
     stripe_price_id: Optional[str]

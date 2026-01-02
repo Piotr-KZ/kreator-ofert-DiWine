@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Table, Typography, Card, Tag, Space, Button, message } from 'antd';
+import { Table, Typography, Card, Tag, Space, Button, message, Alert } from 'antd';
 import { BankOutlined, SearchOutlined } from '@ant-design/icons';
-import { usersApi } from '../../api/users';
+import { superadminApi } from '../../api/superadmin';
+import { Organization } from '../../types/models';
 
 const { Title, Paragraph } = Typography;
 
+interface OrganizationWithStats extends Organization {
+  users_count?: number;
+  subscriptions_count?: number;
+}
+
 export default function OrganizationsPage() {
-  const [organizations, setOrganizations] = useState<any[]>([]);
+  const [organizations, setOrganizations] = useState<OrganizationWithStats[]>([]);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -16,27 +22,11 @@ export default function OrganizationsPage() {
   const fetchOrganizations = async () => {
     setLoading(true);
     try {
-      // Note: Backend doesn't have /admin/organizations endpoint
-      // Using users as placeholder
-      const { data } = await usersApi.list({ per_page: 100 });
-      
-      // Group users by organization_id
-      const orgMap = new Map();
-      data.items?.forEach((user: any) => {
-        if (!orgMap.has(user.organization_id)) {
-          orgMap.set(user.organization_id, {
-            id: user.organization_id,
-            name: `Organization ${user.organization_id.slice(0, 8)}`,
-            users_count: 0,
-            created_at: user.created_at,
-          });
-        }
-        const org = orgMap.get(user.organization_id);
-        org.users_count++;
-      });
-      
-      setOrganizations(Array.from(orgMap.values()));
+      // Use superadmin API to list all organizations
+      const { data } = await superadminApi.listOrganizations();
+      setOrganizations(data.items || []);
     } catch (error: any) {
+      console.error('Failed to fetch organizations:', error);
       message.error(error.response?.data?.detail || 'Failed to fetch organizations');
     } finally {
       setLoading(false);
@@ -45,26 +35,45 @@ export default function OrganizationsPage() {
 
   const columns = [
     {
-      title: 'Organization ID',
-      dataIndex: 'id',
-      key: 'id',
-      render: (id: string) => (
-        <Space>
-          <BankOutlined />
-          <span>{id.slice(0, 12)}...</span>
-        </Space>
+      title: 'Organization',
+      dataIndex: 'name',
+      key: 'name',
+      render: (name: string, record: OrganizationWithStats) => (
+        <div>
+          <div>
+            <BankOutlined style={{ marginRight: 8 }} />
+            <strong>{name}</strong>
+          </div>
+          <div style={{ fontSize: 12, color: '#999' }}>
+            {record.slug}
+          </div>
+        </div>
       ),
     },
     {
-      title: 'Name',
-      dataIndex: 'name',
-      key: 'name',
+      title: 'Type',
+      dataIndex: 'type',
+      key: 'type',
+      render: (type: string) => (
+        <Tag color={type === 'business' ? 'blue' : 'green'}>
+          {type.toUpperCase()}
+        </Tag>
+      ),
     },
     {
-      title: 'Users',
+      title: 'Members',
       dataIndex: 'users_count',
       key: 'users_count',
-      render: (count: number) => <Tag color="blue">{count} users</Tag>,
+      render: (count?: number) => (
+        <Tag color="blue">{count || 0} members</Tag>
+      ),
+    },
+    {
+      title: 'Location',
+      key: 'location',
+      render: (_: any, record: OrganizationWithStats) => (
+        <span>{record.billing_city}, {record.billing_country}</span>
+      ),
     },
     {
       title: 'Created',
@@ -75,8 +84,12 @@ export default function OrganizationsPage() {
     {
       title: 'Actions',
       key: 'actions',
-      render: () => (
-        <Button type="link" icon={<SearchOutlined />}>
+      render: (_: any, record: OrganizationWithStats) => (
+        <Button 
+          type="link" 
+          icon={<SearchOutlined />}
+          onClick={() => message.info('View details feature coming soon')}
+        >
           View Details
         </Button>
       ),
@@ -89,6 +102,14 @@ export default function OrganizationsPage() {
       <Paragraph type="secondary">
         Manage all organizations in the system
       </Paragraph>
+
+      <Alert
+        message="Super Admin View"
+        description="You are viewing all organizations across the entire platform. This view is only available to Super Admins."
+        type="info"
+        showIcon
+        style={{ marginBottom: 16 }}
+      />
 
       <Card>
         <Table

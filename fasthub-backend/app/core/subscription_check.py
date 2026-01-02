@@ -11,8 +11,10 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.member import Member
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.user import User
+from uuid import UUID
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +40,17 @@ class SubscriptionChecker:
         "/redoc",  # API docs
         "/openapi.json",  # OpenAPI spec
     ]
+    
+    @classmethod
+    async def _get_user_primary_org_id(cls, user: User, db: AsyncSession) -> Optional[UUID]:
+        """Get user's primary organization ID (first membership)"""
+        result = await db.execute(
+            select(Member.organization_id)
+            .where(Member.user_id == user.id)
+            .order_by(Member.joined_at)
+            .limit(1)
+        )
+        return result.scalar_one_or_none()
 
     @classmethod
     async def check_subscription(cls, user: User, db: AsyncSession, path: str) -> None:
@@ -57,14 +70,15 @@ class SubscriptionChecker:
             return
 
         # Get user's organization subscription
-        if not user.organization_id:
+        org_id = await cls._get_user_primary_org_id(user, db)
+        if not org_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="No organization found. Please contact support.",
             )
 
         # Get active subscription
-        subscription = await cls._get_subscription(user.organization_id, db)
+        subscription = await cls._get_subscription(org_id, db)
 
         if not subscription:
             raise HTTPException(
@@ -89,7 +103,7 @@ class SubscriptionChecker:
 
     @classmethod
     async def _get_subscription(
-        cls, organization_id: int, db: AsyncSession
+        cls, organization_id: UUID, db: AsyncSession
     ) -> Optional[Subscription]:
         """Get active subscription for organization"""
         query = select(Subscription).where(

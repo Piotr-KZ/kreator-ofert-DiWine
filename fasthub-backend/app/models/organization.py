@@ -43,7 +43,7 @@ class Organization(BaseModel):
     stripe_customer_id = Column(String(255), unique=True, nullable=True)
 
     # Relationships
-    users = relationship("User", back_populates="organization", foreign_keys="User.organization_id")
+    members = relationship("Member", back_populates="organization", cascade="all, delete-orphan")
     subscriptions = relationship("Subscription", back_populates="organization")
     invoices = relationship("Invoice", back_populates="organization")
 

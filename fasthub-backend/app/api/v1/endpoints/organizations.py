@@ -12,6 +12,7 @@ from app.core.dependencies import (
     require_organization_owner,
 )
 from app.db.session import get_db
+from app.models.member import Member, MemberRole
 from app.models.organization import Organization
 from app.models.user import User
 from app.schemas.organization import OrganizationComplete, OrganizationCreate, OrganizationResponse, OrganizationUpdate, OrganizationWithStats
@@ -29,24 +30,21 @@ async def create_organization(
     """
     Create organization for current user
 
-    User must not already have an organization.
-    User becomes the owner of the new organization.
+    User becomes the owner and first admin member of the new organization.
     """
-    if current_user.organization_id:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User already has an organization"
-        )
-
     org_service = OrganizationService(db)
     org = await org_service.create_organization(
         name=org_data.name,
         owner_id=current_user.id,
     )
     
-    # Update user's organization_id
-    current_user.organization_id = org.id
-    db.add(current_user)
+    # Create owner membership as admin
+    owner_member = Member(
+        user_id=current_user.id,
+        organization_id=org.id,
+        role=MemberRole.ADMIN,
+    )
+    db.add(owner_member)
     await db.commit()
     await db.refresh(org)
     
@@ -79,7 +77,17 @@ async def get_organization(
 
     Only accessible if user is member of the organization.
     """
-    if current_user.organization_id != org_id:
+    # Check if user is member
+    from sqlalchemy import select
+    result = await db.execute(
+        select(Member).where(
+            Member.user_id == current_user.id,
+            Member.organization_id == org_id
+        )
+    )
+    member = result.scalar_one_or_none()
+    
+    if not member:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to view this organization"
         )
@@ -142,7 +150,17 @@ async def complete_organization(
     Updates organization with billing details and marks as complete.
     Only organization members can complete their organization.
     """
-    if current_user.organization_id != org_id:
+    # Check if user is member
+    from sqlalchemy import select
+    result = await db.execute(
+        select(Member).where(
+            Member.user_id == current_user.id,
+            Member.organization_id == org_id
+        )
+    )
+    member = result.scalar_one_or_none()
+    
+    if not member:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to update this organization"
         )

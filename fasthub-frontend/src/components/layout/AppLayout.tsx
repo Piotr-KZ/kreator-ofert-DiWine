@@ -56,12 +56,13 @@ export default function AppLayout() {
       label: 'Dashboard',
       onClick: () => navigate('/dashboard'),
     },
-    {
+    // Users page only for SuperAdmin
+    ...(user?.is_superuser ? [{
       key: '/users',
       icon: <UserOutlined />,
       label: 'Users',
       onClick: () => navigate('/users'),
-    },
+    }] : []),
     {
       key: '/team',
       icon: <TeamOutlined />,

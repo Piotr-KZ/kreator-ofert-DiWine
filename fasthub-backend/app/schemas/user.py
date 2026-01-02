@@ -9,7 +9,7 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, EmailStr
 
-from app.models.user import UserRole
+# UserRole removed - roles are now in Member model
 
 
 class UserBase(BaseModel):
@@ -23,8 +23,6 @@ class UserCreate(UserBase):
     """Schema for creating user"""
 
     password: str
-    organization_id: Optional[UUID] = None
-    role: UserRole = UserRole.user
 
 
 class UserUpdate(BaseModel):
@@ -32,7 +30,6 @@ class UserUpdate(BaseModel):
 
     full_name: Optional[str] = None
     email: Optional[EmailStr] = None
-    role: Optional[UserRole] = None
     is_active: Optional[bool] = None
 
 
@@ -40,17 +37,15 @@ class UserResponse(UserBase):
     """Schema for user response (public data)"""
 
     id: UUID
-    role: UserRole
     is_active: bool
     is_verified: bool
-    organization_id: Optional[UUID]
+    is_superuser: bool
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
 
 
-class UserWithOrganization(UserResponse):
-    """Schema for user with organization data"""
+class UserWithMemberships(UserResponse):
+    """Schema for user with their organization memberships"""
 
-    organization_name: Optional[str] = None
-    organization_slug: Optional[str] = None
+    memberships: list = []  # Will be populated with MemberResponse

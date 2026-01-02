@@ -12,8 +12,22 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
 from app.db.session import get_db
+from app.models.member import Member
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.user import User
+from uuid import UUID
+from fastapi import HTTPException, status
+
+
+async def get_user_primary_org_id(user: User, db: AsyncSession) -> Optional[UUID]:
+    """Get user's primary organization ID (first membership), returns None if no org"""
+    result = await db.execute(
+        select(Member.organization_id)
+        .where(Member.user_id == user.id)
+        .order_by(Member.joined_at)
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
 
 router = APIRouter()
 
@@ -32,7 +46,8 @@ async def get_subscription_status(
     - Trial information (if applicable)
     - Plan details
     """
-    if not current_user.organization_id:
+    org_id = await get_user_primary_org_id(current_user, db)
+    if not org_id:
         return {
             "has_subscription": False,
             "status": "no_organization",
@@ -40,7 +55,7 @@ async def get_subscription_status(
         }
 
     # Get subscription
-    query = select(Subscription).where(Subscription.organization_id == current_user.organization_id)
+    query = select(Subscription).where(Subscription.organization_id == org_id)
     result = await db.execute(query)
     subscription = result.scalar_one_or_none()
 

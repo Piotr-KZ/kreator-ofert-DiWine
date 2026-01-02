@@ -12,8 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import decode_access_token
 from app.db.session import get_db
+from app.models.member import Member
 from app.models.organization import Organization
-from app.models.user import User, UserRole
+from app.models.user import User
 
 security = HTTPBearer()
 
@@ -103,16 +104,16 @@ async def get_current_active_user(current_user: User = Depends(get_current_user)
     return current_user
 
 
-async def get_current_admin_user(current_user: User = Depends(get_current_active_user)) -> User:
+async def get_current_superuser(current_user: User = Depends(get_current_active_user)) -> User:
     """
-    Get current admin user (must be admin role)
+    Get current superuser (must have is_superuser=True)
 
     Raises:
-        HTTPException 403 if user not admin
+        HTTPException 403 if user not superuser
     """
-    if current_user.role != UserRole.admin:
+    if not current_user.is_superuser:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Admin privileges required"
+            status_code=status.HTTP_403_FORBIDDEN, detail="Superuser privileges required"
         )
 
     return current_user
@@ -122,21 +123,45 @@ async def get_current_organization(
     current_user: User = Depends(get_current_active_user), db: AsyncSession = Depends(get_db)
 ) -> Organization:
     """
-    Get current user's organization
+    Get current user's primary organization
+    
+    Priority:
+    1. Organization where user is owner (organizations.owner_id)
+    2. First organization from memberships (members table)
 
     Raises:
-        HTTPException 404 if organization not found
+        HTTPException 404 if user has no organization
     """
-    if not current_user.organization_id:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="User has no organization"
-        )
-
+    # Priority 1: Check if user is owner of any organization
     result = await db.execute(
-        select(Organization).where(Organization.id == current_user.organization_id)
+        select(Organization)
+        .where(Organization.owner_id == current_user.id)
+        .order_by(Organization.created_at)
+        .limit(1)
     )
     organization = result.scalar_one_or_none()
-
+    
+    # Priority 2: If not owner, get first membership
+    if not organization:
+        result = await db.execute(
+            select(Member)
+            .where(Member.user_id == current_user.id)
+            .order_by(Member.joined_at)
+            .limit(1)
+        )
+        membership = result.scalar_one_or_none()
+        
+        if not membership:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail="User has no organization"
+            )
+        
+        # Get organization from membership
+        result = await db.execute(
+            select(Organization).where(Organization.id == membership.organization_id)
+        )
+        organization = result.scalar_one_or_none()
+    
     if not organization:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found")
 
@@ -161,8 +186,8 @@ async def require_organization_owner(
     return current_user
 
 
-# Alias for admin dependency
-require_admin = get_current_admin_user
+# Alias for superuser dependency
+require_superuser = get_current_superuser
 
 
 async def get_current_user_from_api_token(
@@ -231,3 +256,11 @@ async def get_current_user_with_subscription(
 
 # Alias for subscription check
 require_subscription = get_current_user_with_subscription
+
+
+# Alias for admin/superuser dependency
+require_admin = get_current_superuser
+
+
+# Alias for admin user dependency
+get_current_admin_user = get_current_superuser

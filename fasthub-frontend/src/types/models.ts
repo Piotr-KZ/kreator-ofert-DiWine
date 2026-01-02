@@ -2,14 +2,34 @@ export interface User {
   id: string;
   email: string;
   full_name: string;
-  role: 'superadmin' | 'admin' | 'user' | 'viewer';
   is_active: boolean;
   is_verified: boolean;
-  organization_id: string;
+  is_superuser: boolean;  // Global SuperAdmin flag
   position?: string;
   last_login_at?: string;
   created_at: string;
   updated_at: string;
+}
+
+// Member role within an organization
+export type MemberRole = 'admin' | 'viewer';
+
+// Member represents user's membership in an organization
+export interface Member {
+  id: string;
+  user_id: string;
+  organization_id: string;
+  role: MemberRole;
+  joined_at: string;
+  created_at: string;
+  updated_at: string;
+  // Populated fields
+  user?: User;
+}
+
+// Member with user details for display
+export interface MemberWithUser extends Member {
+  user: User;
 }
 
 export interface Organization {
@@ -60,15 +80,18 @@ export interface Invoice {
   created_at: string;
 }
 
+// TeamMember for display (combines User + Member)
 export interface TeamMember {
-  id: string;
+  id: string;  // user_id
   email: string;
   full_name: string;
-  role: string;
+  role: MemberRole;  // Role in organization
   position?: string;
   is_active: boolean;
   is_verified: boolean;
+  is_superuser: boolean;
   last_login_at?: string;
+  joined_at: string;  // When joined organization
   created_at: string;
 }
 

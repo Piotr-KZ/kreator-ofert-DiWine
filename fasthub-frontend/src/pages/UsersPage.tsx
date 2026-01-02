@@ -46,7 +46,7 @@ export default function UsersPage() {
     form.setFieldsValue({
       full_name: user.full_name,
       email: user.email,
-      role: user.role,
+      is_superuser: user.is_superuser,
       position: user.position,
     });
     setEditModalVisible(true);
@@ -90,18 +90,14 @@ export default function UsersPage() {
       ),
     },
     {
-      title: 'Role',
-      dataIndex: 'role',
-      key: 'role',
-      render: (role: string) => {
-        const colors: Record<string, string> = {
-          superadmin: 'red',
-          admin: 'orange',
-          user: 'blue',
-          viewer: 'green',
-        };
-        return <Tag color={colors[role] || 'default'}>{role.toUpperCase()}</Tag>;
-      },
+      title: 'Super Admin',
+      dataIndex: 'is_superuser',
+      key: 'is_superuser',
+      render: (isSuperuser: boolean) => (
+        <Tag color={isSuperuser ? 'red' : 'default'}>
+          {isSuperuser ? 'YES' : 'NO'}
+        </Tag>
+      ),
     },
     {
       title: 'Position',
@@ -226,15 +222,13 @@ export default function UsersPage() {
           </Form.Item>
 
           <Form.Item
-            name="role"
-            label="Role"
-            rules={[{ required: true, message: 'Please select role!' }]}
+            name="is_superuser"
+            label="Super Admin"
+            valuePropName="checked"
           >
             <Select>
-              <Option value="viewer">Viewer</Option>
-              <Option value="user">User</Option>
-              <Option value="admin">Admin</Option>
-              <Option value="superadmin">SuperAdmin</Option>
+              <Option value={false}>No - Regular User</Option>
+              <Option value={true}>Yes - Super Admin (Global Access)</Option>
             </Select>
           </Form.Item>
 

@@ -6,6 +6,7 @@ Pydantic models for organization data
 import re
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -96,8 +97,8 @@ class OrganizationComplete(BaseModel):
 class OrganizationResponse(OrganizationBase):
     """Schema for organization response"""
 
-    id: int
-    owner_id: int
+    id: UUID
+    owner_id: UUID
     stripe_customer_id: Optional[str]
     type: Optional[str]
     nip: Optional[str]

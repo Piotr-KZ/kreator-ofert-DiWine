@@ -98,3 +98,76 @@ async def get_recent_subscriptions(
     subscriptions = await admin_service.get_recent_subscriptions(limit=limit)
 
     return subscriptions
+
+
+@router.get("/organizations")
+async def list_organizations(
+    page: int = 1,
+    per_page: int = 100,
+    current_user: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """
+    List all organizations in the system
+    
+    **Super Admin only**
+    
+    Returns paginated list of all organizations with member counts.
+    """
+    from sqlalchemy import select, func
+    from app.models.organization import Organization
+    from app.models.member import Member
+    from app.schemas.organization import OrganizationResponse
+    
+    # Calculate offset
+    offset = (page - 1) * per_page
+    
+    # Get total count
+    count_query = select(func.count(Organization.id))
+    total_result = await db.execute(count_query)
+    total = total_result.scalar_one()
+    
+    # Get organizations with member counts
+    query = (
+        select(
+            Organization,
+            func.count(Member.id).label('users_count')
+        )
+        .outerjoin(Member, Organization.id == Member.organization_id)
+        .group_by(Organization.id)
+        .order_by(Organization.created_at.desc())
+        .limit(per_page)
+        .offset(offset)
+    )
+    
+    result = await db.execute(query)
+    rows = result.all()
+    
+    # Build response
+    items = []
+    for org, users_count in rows:
+        org_dict = {
+            "id": str(org.id),
+            "name": org.name,
+            "slug": org.slug,
+            "type": org.type,
+            "owner_id": str(org.owner_id) if org.owner_id else None,
+            "billing_street": org.billing_street,
+            "billing_city": org.billing_city,
+            "billing_postal_code": org.billing_postal_code,
+            "billing_country": org.billing_country,
+            "email": org.email,
+            "phone": org.phone,
+            "logo_url": org.logo_url,
+            "created_at": org.created_at.isoformat() if org.created_at else None,
+            "updated_at": org.updated_at.isoformat() if org.updated_at else None,
+            "users_count": users_count,
+        }
+        items.append(org_dict)
+    
+    return {
+        "items": items,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+    }

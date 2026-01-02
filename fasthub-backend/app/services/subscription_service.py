@@ -11,12 +11,14 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.member import Member
 from app.models.organization import Organization
 from app.models.subscription import Subscription, SubscriptionStatus
 from app.models.user import User
 from app.services.email_service import EmailService
 from app.services.organization_repository import OrganizationRepository
 from app.services.stripe_service import StripeService
+from uuid import UUID
 
 
 class SubscriptionService:
@@ -27,6 +29,31 @@ class SubscriptionService:
         self.stripe_service = StripeService()
         self.org_repo = OrganizationRepository(db)
         self.email_service = EmailService()
+    
+    async def _get_user_primary_org_id(self, user: User) -> UUID:
+        """Get user's primary organization ID (first membership)"""
+        result = await self.db.execute(
+            select(Member.organization_id)
+            .where(Member.user_id == user.id)
+            .order_by(Member.joined_at)
+            .limit(1)
+        )
+        org_id = result.scalar_one_or_none()
+        if not org_id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User has no organization"
+            )
+        return org_id
+    
+    async def _check_user_org_membership(self, user: User, organization_id: UUID) -> bool:
+        """Check if user is member of organization"""
+        result = await self.db.execute(
+            select(Member)
+            .where(Member.user_id == user.id)
+            .where(Member.organization_id == organization_id)
+        )
+        return result.scalar_one_or_none() is not None
 
     async def get_subscription_by_organization(
         self, organization_id: int
@@ -50,12 +77,8 @@ class SubscriptionService:
         Create subscription for user's organization
         Firebase equivalent: CreateSubscriptionForUserUseCase
         """
-        if not user.organization_id:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST, detail="User has no organization"
-            )
-
-        org = await self.org_repo.get_by_id(user.organization_id)
+        org_id = await self._get_user_primary_org_id(user)
+        org = await self.org_repo.get_by_id(org_id)
         if not org:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND, detail="Organization not found"
@@ -186,8 +209,9 @@ class SubscriptionService:
         Create Stripe billing portal session
         Firebase equivalent: CreateBillingCustomerPortalUseCase
         """
-        # Check permissions
-        if current_user.organization_id != organization_id:
+        # Check permissions - user must be member of organization
+        is_member = await self._check_user_org_membership(current_user, organization_id)
+        if not is_member:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
         org = await self.org_repo.get_by_id(organization_id)

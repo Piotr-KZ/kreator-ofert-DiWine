@@ -85,7 +85,7 @@ export const router = createBrowserRouter([
       {
         path: '/superadmin/organizations',
         element: (
-          <ProtectedRoute requiredRole={['superadmin']}>
+          <ProtectedRoute requireSuperuser={true}>
             <OrganizationsPage />
           </ProtectedRoute>
         ),
@@ -93,7 +93,7 @@ export const router = createBrowserRouter([
       {
         path: '/superadmin/metrics',
         element: (
-          <ProtectedRoute requiredRole={['superadmin']}>
+          <ProtectedRoute requireSuperuser={true}>
             <MetricsPage />
           </ProtectedRoute>
         ),

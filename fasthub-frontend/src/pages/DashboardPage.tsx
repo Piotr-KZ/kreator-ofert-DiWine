@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Row, Col, Card, Statistic, Typography, Spin, Alert } from 'antd';
-import { UserOutlined, TeamOutlined, CreditCardOutlined, RiseOutlined } from '@ant-design/icons';
+import { Row, Col, Card, Statistic, Typography, Spin, Alert, Button, Empty } from 'antd';
+import { UserOutlined, TeamOutlined, CreditCardOutlined, RiseOutlined, PlusOutlined } from '@ant-design/icons';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useAuthStore } from '../store/authStore';
+import { useNavigate } from 'react-router-dom';
 import { superadminApi } from '../api/superadmin';
 import { usersApi } from '../api/users';
 import { organizationsApi } from '../api/organizations';
@@ -12,6 +13,7 @@ const { Title } = Typography;
 
 export default function DashboardPage() {
   const { user } = useAuthStore();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [stats, setStats] = useState<any>(null);
@@ -41,15 +43,30 @@ export default function DashboardPage() {
         setStats(statsRes.data);
         setRecentUsers(usersRes.data);
       } else {
-        // Regular user dashboard - show basic welcome screen
-        // Note: /api/v1/users/ requires admin permissions
-        // Note: /api/v1/organizations/me endpoint doesn't exist yet
-        setStats({
-          total_users: 0,
-          total_organizations: 0,
-          total_subscriptions: 0,
-          active_subscriptions: 0,
-        });
+        // Regular user dashboard
+        try {
+          const orgRes = await organizationsApi.getCurrent();
+          setOrganization(orgRes.data);
+          setStats({
+            total_users: orgRes.data.member_count || 0,
+            total_organizations: 1,
+            total_subscriptions: orgRes.data.subscription_status === 'active' ? 1 : 0,
+            active_subscriptions: orgRes.data.subscription_status === 'active' ? 1 : 0,
+          });
+        } catch (err: any) {
+          // User has no organization
+          if (err.response?.status === 404) {
+            setOrganization(null);
+            setStats({
+              total_users: 0,
+              total_organizations: 0,
+              total_subscriptions: 0,
+              active_subscriptions: 0,
+            });
+          } else {
+            throw err;
+          }
+        }
         setRecentUsers([]);
       }
     } catch (err: any) {
@@ -105,6 +122,29 @@ export default function DashboardPage() {
       <p style={{ color: '#666', marginBottom: 24 }}>
         Welcome back, {user?.full_name}! Here's what's happening with your account.
       </p>
+
+      {/* Orphan User Empty State */}
+      {!user?.is_superuser && stats?.total_organizations === 0 && (
+        <Alert
+          message="Welcome to AutoFlow!"
+          description={
+            <div>
+              <p style={{ marginBottom: 16 }}>You're not part of any organization yet. Create your first organization to get started!</p>
+              <Button 
+                type="primary" 
+                icon={<PlusOutlined />}
+                onClick={() => navigate('/onboarding')}
+                size="large"
+              >
+                Create Your First Organization
+              </Button>
+            </div>
+          }
+          type="info"
+          showIcon
+          style={{ marginBottom: 24 }}
+        />
+      )}
 
       {/* Stats Cards */}
       <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>

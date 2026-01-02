@@ -11,7 +11,27 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user
 from app.db.session import get_db
+from app.models.member import Member
 from app.models.user import User
+from sqlalchemy import select
+from uuid import UUID
+
+
+async def get_user_primary_org_id(user: User, db: AsyncSession) -> UUID:
+    """Get user's primary organization ID (first membership)"""
+    result = await db.execute(
+        select(Member.organization_id)
+        .where(Member.user_id == user.id)
+        .order_by(Member.joined_at)
+        .limit(1)
+    )
+    org_id = result.scalar_one_or_none()
+    if not org_id:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User has no organization"
+        )
+    return org_id
 from app.schemas.invoice import InvoiceListResponse, InvoiceResponse
 from app.services.invoice_service import InvoiceService
 
@@ -30,14 +50,14 @@ async def list_invoices(
 
     Returns paginated list of invoices.
     """
-    if not current_user.organization_id:
+    if not await get_user_primary_org_id(current_user, db):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="User has no organization"
         )
 
     invoice_service = InvoiceService(db)
     invoices = await invoice_service.list_invoices_by_organization(
-        organization_id=current_user.organization_id, skip=skip, limit=limit
+        organization_id=await get_user_primary_org_id(current_user, db), skip=skip, limit=limit
     )
 
     return invoices
@@ -61,7 +81,7 @@ async def get_invoice(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
 
     # Check if user has access to this invoice
-    if invoice.organization_id != current_user.organization_id:
+    if invoice.organization_id != await get_user_primary_org_id(current_user, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this invoice"
         )
@@ -87,7 +107,7 @@ async def download_invoice_pdf(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invoice not found")
 
     # Check if user has access to this invoice
-    if invoice.organization_id != current_user.organization_id:
+    if invoice.organization_id != await get_user_primary_org_id(current_user, db):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized to access this invoice"
         )

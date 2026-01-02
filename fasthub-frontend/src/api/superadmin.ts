@@ -1,5 +1,12 @@
 import { apiClient } from './client';
-import { AdminStats, User, Subscription } from '../types/models';
+import { AdminStats, User, Subscription, Organization } from '../types/models';
+
+interface PaginatedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  per_page: number;
+}
 
 export const superadminApi = {
   // Adjusted endpoint name based on backend
@@ -27,4 +34,8 @@ export const superadminApi = {
 
   revokeToken: (token: string) =>
     apiClient.post('/admin/tokens/revoke-token', { token }),
+
+  // List all organizations (Super Admin only)
+  listOrganizations: () =>
+    apiClient.get<PaginatedResponse<Organization>>('/admin/organizations'),
 };

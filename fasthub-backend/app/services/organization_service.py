@@ -23,6 +23,10 @@ class OrganizationService:
         self.org_repo = OrganizationRepository(db)
         self.user_service = UserService(db)
 
+    async def create_organization(self, name: str, owner_id: int) -> Organization:
+        """Create new organization"""
+        return await self.org_repo.create(name=name, owner_id=owner_id)
+
     async def get_organization_by_id(self, org_id: int) -> Optional[Organization]:
         """Get organization by ID"""
         return await self.org_repo.get_by_id(org_id)
@@ -47,6 +51,14 @@ class OrganizationService:
             slug=org.slug,
             owner_id=org.owner_id,
             stripe_customer_id=org.stripe_customer_id,
+            type=org.type,
+            nip=org.nip,
+            phone=org.phone,
+            billing_street=org.billing_street,
+            billing_city=org.billing_city,
+            billing_postal_code=org.billing_postal_code,
+            billing_country=org.billing_country,
+            is_complete=org.is_complete,
             created_at=org.created_at,
             updated_at=org.updated_at,
             user_count=user_count,

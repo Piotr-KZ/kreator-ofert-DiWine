@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import get_password_hash
 from app.models.organization import Organization
-from app.models.user import User, UserRole
+from app.models.user import User
 
 
 class UserRepository:
@@ -43,8 +43,6 @@ class UserRepository:
         email: str,
         password: str,
         full_name: Optional[str] = None,
-        organization_id: Optional[int] = None,
-        role: UserRole = UserRole.user,
         is_verified: bool = False,
     ) -> User:
         """Create new user"""
@@ -52,8 +50,6 @@ class UserRepository:
             email=email,
             hashed_password=get_password_hash(password),
             full_name=full_name,
-            organization_id=organization_id,
-            role=role,
             is_verified=is_verified,
             is_active=True,
         )
