@@ -1,0 +1,32 @@
+services:
+  # Backend API
+  - type: web
+    name: fasthub-backend
+    env: python
+    region: frankfurt
+    plan: free
+    buildCommand: cd fasthub-backend && pip install -r requirements.txt
+    startCommand: cd fasthub-backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        value: postgresql://fasthub_user:5Uh5gUCNwSYRqgPbutterflyotel.online:5432/fasthub_db
+      - key: SECRET_KEY
+        value: Kx9mP2nQ5rS8tV1wY4zA7bC0dE3fG6hJ9kL2mN5oP8qR1sT4uV7wX0yZ3aC6bE
+      - key: BACKEND_CORS_ORIGINS
+        value: '["https://fasthub-lz4x.onrender.com","http://localhost:3001"]'
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+
+  # Frontend
+  - type: web
+    name: fasthub-frontend
+    env: node
+    region: frankfurt
+    plan: free
+    buildCommand: cd fasthub-frontend && npm install && npm run build
+    startCommand: cd fasthub-frontend && npm run preview -- --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: VITE_API_URL
+        sync: false
