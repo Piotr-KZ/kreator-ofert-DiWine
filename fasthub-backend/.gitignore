@@ -69,3 +69,5 @@ dmypy.json
 
 # Pyre
 .pyre/
+.env.production
+.env.staging
