@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Tabs, Card, Form, Input, Button, message, Typography, Divider, Space, Modal } from 'antd';
+import { Tabs, Card, Form, Input, Button, message, Typography, Divider, Space, Modal, Select } from 'antd';
 import { UserOutlined, LockOutlined, BankOutlined, MailOutlined, PhoneOutlined, ExclamationCircleOutlined } from '@ant-design/icons';
 import { useAuthStore } from '../store/authStore';
 import { useOrgStore } from '../store/orgStore';
@@ -255,12 +255,30 @@ export default function SettingsPage() {
               <Input prefix={<MailOutlined />} />
             </Form.Item>
 
-            <Form.Item name="phone" label="Phone">
-              <Input prefix={<PhoneOutlined />} />
+            <Form.Item 
+              name="phone" 
+              label="Phone"
+              rules={[
+                {
+                  pattern: /^[+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,9}$/,
+                  message: 'Please enter a valid phone number!'
+                }
+              ]}
+            >
+              <Input prefix={<PhoneOutlined />} placeholder="+48 123 456 789" />
             </Form.Item>
 
-            <Form.Item name="nip" label="NIP (Tax ID)">
-              <Input />
+            <Form.Item 
+              name="nip" 
+              label="NIP (Tax ID)"
+              rules={[
+                {
+                  pattern: /^[0-9]{10}$/,
+                  message: 'NIP must be exactly 10 digits!'
+                }
+              ]}
+            >
+              <Input placeholder="1234567890" maxLength={10} />
             </Form.Item>
 
             <Divider>Billing Address</Divider>
@@ -268,45 +286,102 @@ export default function SettingsPage() {
             <Form.Item
               name="billing_street"
               label="Street"
-              rules={[{ required: true, message: 'Please input street!' }]}
+              rules={[
+                { required: true, message: 'Please input street!' },
+                { min: 2, message: 'Street must be at least 2 characters!' }
+              ]}
             >
-              <Input />
+              <Input placeholder="ul. Przykładowa 123" />
             </Form.Item>
 
             <Space style={{ display: 'flex' }}>
               <Form.Item
                 name="billing_city"
                 label="City"
-                rules={[{ required: true, message: 'Required!' }]}
+                rules={[
+                  { required: true, message: 'Required!' },
+                  { min: 2, message: 'City must be at least 2 characters!' }
+                ]}
                 style={{ flex: 1 }}
               >
-                <Input />
+                <Input placeholder="Kraków" />
               </Form.Item>
 
               <Form.Item
                 name="billing_postal_code"
                 label="Postal Code"
-                rules={[{ required: true, message: 'Required!' }]}
+                rules={[
+                  { required: true, message: 'Required!' },
+                  {
+                    pattern: /^[0-9]{2}-[0-9]{3}$/,
+                    message: 'Format: XX-XXX (e.g., 30-001)'
+                  }
+                ]}
                 style={{ flex: 1 }}
               >
-                <Input />
+                <Input placeholder="30-001" maxLength={6} />
               </Form.Item>
             </Space>
 
             <Form.Item
               name="billing_country"
               label="Country"
-              rules={[{ required: true, message: 'Please input country!' }]}
+              rules={[{ required: true, message: 'Please select country!' }]}
             >
-              <Input />
+              <Select
+                showSearch
+                placeholder="Select a country"
+                optionFilterProp="children"
+                filterOption={(input, option) =>
+                  (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
+                }
+                options={[
+                  { value: 'Polska', label: 'Polska' },
+                  { value: 'Germany', label: 'Germany' },
+                  { value: 'United Kingdom', label: 'United Kingdom' },
+                  { value: 'France', label: 'France' },
+                  { value: 'Spain', label: 'Spain' },
+                  { value: 'Italy', label: 'Italy' },
+                  { value: 'Netherlands', label: 'Netherlands' },
+                  { value: 'Belgium', label: 'Belgium' },
+                  { value: 'Austria', label: 'Austria' },
+                  { value: 'Switzerland', label: 'Switzerland' },
+                  { value: 'Czech Republic', label: 'Czech Republic' },
+                  { value: 'Slovakia', label: 'Slovakia' },
+                  { value: 'Hungary', label: 'Hungary' },
+                  { value: 'Romania', label: 'Romania' },
+                  { value: 'Bulgaria', label: 'Bulgaria' },
+                  { value: 'United States', label: 'United States' },
+                  { value: 'Canada', label: 'Canada' },
+                  { value: 'Other', label: 'Other' },
+                ]}
+              />
             </Form.Item>
 
-            <Form.Item>
-              <Button type="primary" htmlType="submit" loading={loading}>
-                Save Changes
-              </Button>
-            </Form.Item>
-          </Form>
+              <Form.Item>
+                <Space>
+                  <Button type="primary" htmlType="submit" loading={loading}>
+                    Save Changes
+                  </Button>
+                  <Button onClick={() => {
+                    setIsEditingOrg(false);
+                    orgForm.setFieldsValue({
+                      name: organization?.name,
+                      email: organization?.email,
+                      phone: organization?.phone,
+                      billing_street: organization?.billing_street,
+                      billing_city: organization?.billing_city,
+                      billing_postal_code: organization?.billing_postal_code,
+                      billing_country: organization?.billing_country,
+                      nip: organization?.nip,
+                    });
+                  }}>
+                    Cancel
+                  </Button>
+                </Space>
+              </Form.Item>
+            </Form>
+          )}
 
           <Divider />
 

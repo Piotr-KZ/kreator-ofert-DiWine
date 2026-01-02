@@ -68,3 +68,17 @@
 - [ ] Verify Team page shows members
 - [ ] Verify Users page shows all users (SuperAdmin)
 - [ ] Verify Billing page shows subscriptions
+
+## Settings Form Validation & UX Improvements (2026-01-02)
+
+### Form Validation
+- [x] Add NIP (Tax ID) validation - only digits, exactly 10 characters for Poland
+- [x] Add Postal Code validation - format XX-XXX for Poland
+- [x] Replace Country text input with dropdown selector (list of countries)
+- [x] Add phone number validation (optional field)
+
+### UX Improvements
+- [x] After successful save, redirect to read-only view with saved data
+- [x] Add "Edit" button in read-only view to enable editing again
+- [x] Show success message after saving changes
+- [x] Add loading state during save operation
