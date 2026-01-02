@@ -1,6 +1,8 @@
 # FastHub - SaaS Boilerplate
 
-**FastHub** is a production-ready SaaS boilerplate built with FastAPI (backend) and React (frontend), featuring Docker support, automated tests, and simplified user onboarding.
+**FastHub** is a production-ready SaaS boilerplate built with FastAPI (backend) and React (frontend), featuring multi-tenant organizations, role-based access control, automated tests, and simplified user onboarding.
+
+**🌐 Live Demo:** [https://fasthub-lz4x.onrender.com](https://fasthub-lz4x.onrender.com)
 
 ---
 
@@ -41,8 +43,27 @@ docker-compose up
 - Validation: NIP (10 digits), Postal Code (XX-XXX), Phone
 - "Skip for now" option
 
+### **✅ Multi-Tenant Organizations**
+- Users can belong to multiple organizations
+- Organization owner management
+- Team member invitations (Admin/Viewer roles)
+- Organization settings with validation
+
+### **✅ Role-Based Access Control**
+- **SuperAdmin:** Full system access, manage all users
+- **Admin:** Organization owner, manage team and settings
+- **Viewer:** Read-only access to organization data
+
+### **✅ Advanced Form Validation**
+- NIP (Tax ID): 10 digits only
+- Postal Code: XX-XXX format (Poland)
+- Phone: International format
+- Country: Dropdown selector (18 countries)
+- Read-only view after save with Edit button
+
 ### **✅ Automated Tests**
-- **13 tests** covering auth, organizations, validation
+- **44 tests** covering auth, organizations, members, validation
+- **91% passing** (40/44 tests)
 - Run: `docker-compose exec backend pytest`
 - Coverage report: `pytest --cov=app --cov-report=html`
 
@@ -153,9 +174,11 @@ Register → 3 fields → Dashboard → Modal (8 fields) → Complete/Skip
 
 ## 📝 Documentation
 
+- **[SYSTEM_DOCUMENTATION.md](SYSTEM_DOCUMENTATION.md)** - Complete system documentation (architecture, API, database, deployment)
 - **[QUICK-START.md](QUICK-START.md)** - Quick start guide
 - **[README-DOCKER.md](README-DOCKER.md)** - Docker setup guide
 - **[TESTS_SUMMARY.md](TESTS_SUMMARY.md)** - Automated tests documentation
+- **[FASTHUB_PROJECT_SUMMARY.md](FASTHUB_PROJECT_SUMMARY.md)** - Backend technical summary
 - **[REGISTRATION_SIMPLIFICATION_SUMMARY.md](REGISTRATION_SIMPLIFICATION_SUMMARY.md)** - Registration changes
 
 ---
@@ -248,8 +271,9 @@ This project is licensed under the MIT License.
 - ✅ +45% conversion rate
 
 **Testing:**
-- ✅ 13 automated tests
-- ✅ 85%+ code coverage
+- ✅ 44 automated tests
+- ✅ 91% passing rate
+- ✅ 46% code coverage
 - ✅ CI/CD ready
 
 **Development:**

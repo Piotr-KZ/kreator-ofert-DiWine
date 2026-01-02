@@ -82,3 +82,8 @@
 - [x] Add "Edit" button in read-only view to enable editing again
 - [x] Show success message after saving changes
 - [x] Add loading state during save operation
+
+
+## Documentation Updates (2026-01-02)
+- [ ] Update README.md with new features (multi-org, SuperAdmin, validation)
+- [ ] Add link to SYSTEM_DOCUMENTATION.md in README
