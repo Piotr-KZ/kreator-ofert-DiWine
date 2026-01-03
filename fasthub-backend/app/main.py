@@ -87,8 +87,8 @@ app.add_middleware(
     max_age=600,  # Cache preflight requests for 10 minutes
 )
 
-# Debug: Print CORS origins at startup
-print(f"🔧 CORS Origins configured: {origins}")
+# Debug: Log CORS origins at startup
+logger.info(f"🔧 CORS Origins configured: {origins}")
 
 # 2. Trusted Host (prevent host header attacks)
 if not settings.DEBUG and settings.ALLOWED_HOSTS:
