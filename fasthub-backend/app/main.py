@@ -3,7 +3,6 @@ FastHub - Universal SaaS Boilerplate
 Main FastAPI application entry point
 """
 
-import logging
 import time
 
 from fastapi import FastAPI, Request
@@ -14,10 +13,14 @@ from slowapi.errors import RateLimitExceeded
 
 from app.api.v1.api import api_router
 from app.core.config import settings
+from app.core.logging_config import configure_logging, get_logger
 from app.core.monitoring import init_sentry
 from app.core.rate_limit import get_rate_limit_exceeded_handler, limiter
+from app.middleware.request_logging import RequestLoggingMiddleware
 
-logger = logging.getLogger(__name__)
+# Configure structured logging
+configure_logging()
+logger = get_logger(__name__)
 
 # Initialize Sentry error tracking
 init_sentry()
@@ -94,11 +97,14 @@ logger.info(f"🔧 CORS Origins configured: {origins}")
 if not settings.DEBUG and settings.ALLOWED_HOSTS:
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=settings.ALLOWED_HOSTS)
 
-# 3. GZip compression
+# 3. Request logging (before GZip to log uncompressed size)
+app.add_middleware(RequestLoggingMiddleware)
+
+# 4. GZip compression
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
-# 4. Security headers middleware
+# 5. Security headers middleware
 @app.middleware("http")
 async def add_security_headers(request: Request, call_next):
     response = await call_next(request)
@@ -124,7 +130,7 @@ async def add_security_headers(request: Request, call_next):
     return response
 
 
-# 5. Request timing middleware
+# 6. Request timing middleware
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next):
     start_time = time.time()
