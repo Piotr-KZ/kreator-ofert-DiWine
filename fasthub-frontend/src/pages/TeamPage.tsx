@@ -337,7 +337,7 @@ export default function TeamPage() {
             rules={[{ required: true, message: 'Please select role!' }]}
             initialValue="viewer"
           >
-            <Select onChange={(value) => form.setFieldValue('role', value)}>
+            <Select>
               <Option value="viewer">Viewer - Can view only</Option>
               <Option value="admin">Admin - Can manage members and organization</Option>
             </Select>

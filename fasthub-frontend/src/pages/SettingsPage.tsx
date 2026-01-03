@@ -347,7 +347,6 @@ export default function SettingsPage() {
                   showSearch
                   placeholder="Select a country"
                   optionFilterProp="children"
-                  onChange={(value) => orgForm.setFieldValue('billing_country', value)}
                   filterOption={(input, option) =>
                     (option?.label ?? '').toLowerCase().includes(input.toLowerCase())
                   }
