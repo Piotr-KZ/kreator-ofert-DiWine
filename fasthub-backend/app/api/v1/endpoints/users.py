@@ -50,6 +50,29 @@ async def get_current_user_profile(current_user: User = Depends(get_current_acti
     return current_user
 
 
+@router.put("/me", response_model=UserResponse)
+@router.patch("/me", response_model=UserResponse)
+async def update_current_user_profile(
+    user_update: UserUpdate,
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Update current user profile
+
+    Allows authenticated users to update their own profile (full_name, email).
+    Cannot change is_active or other admin fields.
+    """
+    user_service = UserService(db)
+    
+    # Users can only update their own profile
+    user = await user_service.update_user(current_user.id, user_update, current_user)
+    
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
 @router.get("/")
 async def list_users(
     page: int = Query(1, ge=1),
