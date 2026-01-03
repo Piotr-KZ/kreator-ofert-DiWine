@@ -274,7 +274,6 @@ export default function SettingsPage() {
                 name="email"
                 label="Email"
                 rules={[
-                  { required: true, message: 'Please input email!' },
                   { type: 'email', message: 'Please enter a valid email!' }
                 ]}
               >
@@ -312,10 +311,6 @@ export default function SettingsPage() {
               <Form.Item
                 name="billing_street"
                 label="Street"
-                rules={[
-                  { required: true, message: 'Please input street!' },
-                  { min: 2, message: 'Street must be at least 2 characters!' }
-                ]}
               >
                 <Input placeholder="ul. Przykładowa 123" />
               </Form.Item>
@@ -324,10 +319,6 @@ export default function SettingsPage() {
                 <Form.Item
                   name="billing_city"
                   label="City"
-                  rules={[
-                    { required: true, message: 'Required!' },
-                    { min: 2, message: 'City must be at least 2 characters!' }
-                  ]}
                   style={{ flex: 1 }}
                 >
                   <Input placeholder="Kraków" />
@@ -337,7 +328,6 @@ export default function SettingsPage() {
                   name="billing_postal_code"
                   label="Postal Code"
                   rules={[
-                    { required: true, message: 'Required!' },
                     {
                       pattern: /^[0-9]{2}-[0-9]{3}$/,
                       message: 'Format: XX-XXX (e.g., 30-001)'
@@ -352,7 +342,6 @@ export default function SettingsPage() {
               <Form.Item
                 name="billing_country"
                 label="Country"
-                rules={[{ required: true, message: 'Please select country!' }]}
               >
                 <Select
                   showSearch
