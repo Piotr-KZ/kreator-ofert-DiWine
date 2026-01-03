@@ -13,6 +13,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 
 
 class UserBase(BaseModel):
+    model_config = {"strict": True}
     """Base user schema"""
 
     email: EmailStr
@@ -26,6 +27,7 @@ class UserCreate(UserBase):
 
 
 class UserUpdate(BaseModel):
+    model_config = {"strict": True}
     """Schema for updating user"""
 
     full_name: Optional[str] = None

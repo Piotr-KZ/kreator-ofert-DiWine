@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class OrganizationBase(BaseModel):
+    model_config = {"strict": True}
     """Base organization schema"""
 
     name: str = Field(..., min_length=1, max_length=255)
@@ -25,6 +26,7 @@ class OrganizationCreate(OrganizationBase):
 
 
 class OrganizationUpdate(BaseModel):
+    model_config = {"strict": True}
     """Schema for updating organization"""
 
     name: Optional[str] = Field(None, min_length=1, max_length=255)
@@ -32,6 +34,7 @@ class OrganizationUpdate(BaseModel):
 
 
 class OrganizationComplete(BaseModel):
+    model_config = {"strict": True}
     """Schema for completing organization onboarding"""
 
     name: str = Field(..., min_length=1, max_length=255)

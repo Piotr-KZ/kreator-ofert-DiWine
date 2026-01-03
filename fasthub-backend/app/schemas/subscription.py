@@ -31,6 +31,7 @@ class SubscriptionPlan(str, Enum):
 
 
 class SubscriptionBase(BaseModel):
+    model_config = {"strict": True}
     """Base subscription schema"""
 
     plan: Optional[SubscriptionPlan] = None
@@ -38,6 +39,7 @@ class SubscriptionBase(BaseModel):
 
 
 class SubscriptionCreate(BaseModel):
+    model_config = {"strict": True}
     """Schema for creating subscription"""
 
     plan: SubscriptionPlan
@@ -45,6 +47,7 @@ class SubscriptionCreate(BaseModel):
 
 
 class SubscriptionUpdate(BaseModel):
+    model_config = {"strict": True}
     """Schema for updating subscription"""
 
     plan: Optional[SubscriptionPlan] = None

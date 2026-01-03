@@ -12,12 +12,14 @@ from app.models.member import MemberRole
 
 
 class MemberBase(BaseModel):
+    model_config = {"strict": True}
     """Base member schema with common fields"""
     
     role: MemberRole = Field(..., description="Member role in organization")
 
 
 class MemberCreate(BaseModel):
+    model_config = {"strict": True}
     """Schema for inviting a new member to organization"""
     
     email: EmailStr = Field(..., description="Email of user to invite")
@@ -25,6 +27,7 @@ class MemberCreate(BaseModel):
 
 
 class MemberUpdate(BaseModel):
+    model_config = {"strict": True}
     """Schema for updating member (only role can be changed)"""
     
     role: MemberRole = Field(..., description="New role for member")
@@ -45,6 +48,7 @@ class MemberInDB(MemberBase):
 
 
 class UserBasicInfo(BaseModel):
+    model_config = {"strict": True}
     """Basic user info for member response"""
     
     id: UUID
@@ -73,6 +77,7 @@ class MemberResponse(MemberBase):
 
 
 class MemberListResponse(BaseModel):
+    model_config = {"strict": True}
     """Response for listing members"""
     
     members: list[MemberResponse]

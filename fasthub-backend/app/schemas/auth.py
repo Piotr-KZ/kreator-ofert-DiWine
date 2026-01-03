@@ -10,6 +10,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class UserRegister(BaseModel):
+    model_config = {"strict": True}
     """Schema for user registration"""
 
     email: EmailStr
@@ -37,6 +38,7 @@ class UserRegister(BaseModel):
 
 
 class UserLogin(BaseModel):
+    model_config = {"strict": True}
     """Schema for user login"""
 
     email: EmailStr
@@ -44,6 +46,7 @@ class UserLogin(BaseModel):
 
 
 class TokenResponse(BaseModel):
+    model_config = {"strict": True}
     """Schema for token response"""
 
     access_token: str
@@ -53,18 +56,21 @@ class TokenResponse(BaseModel):
 
 
 class TokenRefresh(BaseModel):
+    model_config = {"strict": True}
     """Schema for token refresh request"""
 
     refresh_token: str
 
 
 class PasswordResetRequest(BaseModel):
+    model_config = {"strict": True}
     """Schema for password reset request"""
 
     email: EmailStr
 
 
 class PasswordResetConfirm(BaseModel):
+    model_config = {"strict": True}
     """Schema for password reset confirmation"""
 
     token: str
@@ -90,12 +96,14 @@ class PasswordResetConfirm(BaseModel):
 
 
 class EmailVerificationRequest(BaseModel):
+    model_config = {"strict": True}
     """Schema for email verification"""
 
     token: str
 
 
 class ChangePassword(BaseModel):
+    model_config = {"strict": True}
     """Schema for changing password (authenticated user)"""
 
     current_password: str
@@ -121,6 +129,7 @@ class ChangePassword(BaseModel):
 
 
 class MagicLinkRequest(BaseModel):
+    model_config = {"strict": True}
     """Schema for magic link request"""
 
     email: EmailStr

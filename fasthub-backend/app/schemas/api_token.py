@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class APITokenCreate(BaseModel):
+    model_config = {"strict": True}
     """Schema for creating API token"""
 
     name: str
@@ -17,6 +18,7 @@ class APITokenCreate(BaseModel):
 
 
 class APITokenResponse(BaseModel):
+    model_config = {"strict": True}
     """Schema for API token response (without plaintext token)"""
 
     id: int
@@ -31,6 +33,7 @@ class APITokenResponse(BaseModel):
 
 
 class APITokenCreateResponse(BaseModel):
+    model_config = {"strict": True}
     """Schema for API token creation response (includes plaintext token)"""
 
     token: APITokenResponse

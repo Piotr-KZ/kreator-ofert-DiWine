@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict
 
 
 class InvoiceBase(BaseModel):
+    model_config = {"strict": True}
     """Base invoice schema"""
 
     amount: float
@@ -37,6 +38,7 @@ class InvoiceResponse(InvoiceBase):
 
 
 class InvoiceListResponse(BaseModel):
+    model_config = {"strict": True}
     """Schema for invoice list response"""
 
     invoices: list[InvoiceResponse]

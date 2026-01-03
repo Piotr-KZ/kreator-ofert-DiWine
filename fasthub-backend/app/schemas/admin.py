@@ -9,6 +9,7 @@ from pydantic import BaseModel
 
 
 class BroadcastMessageRequest(BaseModel):
+    model_config = {"strict": True}
     """Schema for broadcast message request"""
 
     title: str
@@ -19,6 +20,7 @@ class BroadcastMessageRequest(BaseModel):
 
 
 class BroadcastMessageResponse(BaseModel):
+    model_config = {"strict": True}
     """Schema for broadcast message response"""
 
     status: str
@@ -28,6 +30,7 @@ class BroadcastMessageResponse(BaseModel):
 
 
 class SystemStatsResponse(BaseModel):
+    model_config = {"strict": True}
     """Schema for system statistics response"""
 
     users: dict
