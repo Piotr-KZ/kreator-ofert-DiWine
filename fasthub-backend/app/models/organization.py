@@ -24,6 +24,7 @@ class Organization(BaseModel):
 
     # Organization details
     type = Column(String(50), nullable=True)  # 'business' or 'individual'
+    email = Column(String(255), nullable=True)  # Organization email
     nip = Column(String(50), nullable=True)  # Tax ID
     phone = Column(String(50), nullable=True)
 
