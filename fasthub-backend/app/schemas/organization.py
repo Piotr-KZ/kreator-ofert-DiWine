@@ -22,7 +22,19 @@ class OrganizationBase(BaseModel):
 class OrganizationCreate(OrganizationBase):
     """Schema for creating organization"""
 
-    pass
+    @field_validator('name')
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        # Remove leading/trailing whitespace
+        v = v.strip()
+        # Check for dangerous characters
+        dangerous_chars = ['<', '>', '&', '"', "'", '\\', '/']
+        if any(char in v for char in dangerous_chars):
+            raise ValueError('Organization name contains invalid characters')
+        # Check minimum length
+        if len(v) < 2:
+            raise ValueError('Organization name must be at least 2 characters long')
+        return v
 
 
 class OrganizationUpdate(BaseModel):
@@ -31,6 +43,21 @@ class OrganizationUpdate(BaseModel):
 
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     slug: Optional[str] = Field(None, max_length=255)
+
+    @field_validator('name')
+    @classmethod
+    def validate_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            # Remove leading/trailing whitespace
+            v = v.strip()
+            # Check for dangerous characters
+            dangerous_chars = ['<', '>', '&', '"', "'", '\\', '/']
+            if any(char in v for char in dangerous_chars):
+                raise ValueError('Organization name contains invalid characters')
+            # Check minimum length
+            if len(v) < 2:
+                raise ValueError('Organization name must be at least 2 characters long')
+        return v
 
 
 class OrganizationComplete(BaseModel):

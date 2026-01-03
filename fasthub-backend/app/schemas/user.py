@@ -7,7 +7,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, field_validator
 
 # UserRole removed - roles are now in Member model
 
@@ -33,6 +33,21 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     email: Optional[EmailStr] = None
     is_active: Optional[bool] = None
+
+    @field_validator('full_name')
+    @classmethod
+    def validate_full_name(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None:
+            # Remove leading/trailing whitespace
+            v = v.strip()
+            # Check for dangerous characters
+            dangerous_chars = ['<', '>', '&', '"', "'", '\\', '/']
+            if any(char in v for char in dangerous_chars):
+                raise ValueError('Full name contains invalid characters')
+            # Check minimum length
+            if len(v) < 2:
+                raise ValueError('Full name must be at least 2 characters long')
+        return v
 
 
 class UserResponse(UserBase):
