@@ -43,7 +43,8 @@ class Member(BaseModel):
     role = Column(
         SQLEnum(MemberRole, name="memberrole", create_constraint=True, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
-        default=MemberRole.ADMIN
+        default=MemberRole.ADMIN,
+        index=True  # Index for filtering by role
     )
     
     # Membership metadata

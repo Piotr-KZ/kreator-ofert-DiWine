@@ -33,7 +33,7 @@ class User(BaseModel):
     is_superuser = Column(Boolean, default=False, nullable=False)  # Platform SuperAdmin
 
     # Magic link authentication
-    magic_link_token = Column(String(255), nullable=True)
+    magic_link_token = Column(String(255), nullable=True, index=True)  # Index for fast lookup
     magic_link_expires = Column(DateTime, nullable=True)
 
     # Multi-org: memberships relationship (replaces single organization_id)

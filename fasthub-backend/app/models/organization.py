@@ -37,7 +37,7 @@ class Organization(BaseModel):
     is_complete = Column(Boolean, default=False, nullable=False)
 
     # Owner (nullable to break circular dependency)
-    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
 
     # Stripe integration
     stripe_customer_id = Column(String(255), unique=True, nullable=True)
