@@ -34,6 +34,7 @@ class MemberUpdate(BaseModel):
 
 
 class MemberInDB(MemberBase):
+    model_config = {"from_attributes": True}
     """Member schema as stored in database"""
     
     id: int
@@ -42,25 +43,20 @@ class MemberInDB(MemberBase):
     joined_at: datetime
     created_at: datetime
     updated_at: datetime
-    
-    class Config:
-        from_attributes = True
 
 
 class UserBasicInfo(BaseModel):
-    model_config = {"strict": True}
+    model_config = {"strict": True, "from_attributes": True}
     """Basic user info for member response"""
     
     id: UUID
     email: str
     full_name: Optional[str] = None
     is_active: bool
-    
-    class Config:
-        from_attributes = True
 
 
 class MemberResponse(MemberBase):
+    model_config = {"from_attributes": True}
     """Full member response with user details"""
     
     id: UUID
@@ -71,17 +67,11 @@ class MemberResponse(MemberBase):
     
     # Nested user info
     user: UserBasicInfo
-    
-    class Config:
-        from_attributes = True
 
 
 class MemberListResponse(BaseModel):
-    model_config = {"strict": True}
+    model_config = {"strict": True, "from_attributes": True}
     """Response for listing members"""
     
     members: list[MemberResponse]
     total: int
-    
-    class Config:
-        from_attributes = True
