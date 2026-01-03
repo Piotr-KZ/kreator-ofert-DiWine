@@ -178,6 +178,8 @@ export default function TeamPage() {
       title: 'Member',
       dataIndex: 'full_name',
       key: 'full_name',
+      sorter: (a: TeamMemberDisplay, b: TeamMemberDisplay) => 
+        (a.full_name || '').localeCompare(b.full_name || ''),
       render: (text: string, record: TeamMemberDisplay) => (
         <div>
           <div>
@@ -201,6 +203,8 @@ export default function TeamPage() {
       title: 'Role',
       dataIndex: 'role',
       key: 'role',
+      sorter: (a: TeamMemberDisplay, b: TeamMemberDisplay) => 
+        a.role.localeCompare(b.role),
       render: (role: MemberRole) => {
         const colors: Record<MemberRole, string> = {
           admin: 'orange',
@@ -213,12 +217,19 @@ export default function TeamPage() {
       title: 'Joined',
       dataIndex: 'joined_at',
       key: 'joined_at',
+      sorter: (a: TeamMemberDisplay, b: TeamMemberDisplay) => 
+        new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime(),
       render: (date: string) => new Date(date).toLocaleDateString(),
     },
     {
       title: 'Last Login',
       dataIndex: 'last_login_at',
       key: 'last_login_at',
+      sorter: (a: TeamMemberDisplay, b: TeamMemberDisplay) => {
+        if (!a.last_login_at) return 1;
+        if (!b.last_login_at) return -1;
+        return new Date(a.last_login_at).getTime() - new Date(b.last_login_at).getTime();
+      },
       render: (date: string) => date ? new Date(date).toLocaleDateString() : 'Never',
     },
     {
