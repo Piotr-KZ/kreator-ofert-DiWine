@@ -250,10 +250,10 @@ export default function SettingsPage() {
               <p><strong>NIP (Tax ID):</strong> {organization.nip || 'Not provided'}</p>
               
               <Divider orientation="left">Billing Address</Divider>
-              <p><strong>Street:</strong> {organization.billing_street}</p>
-              <p><strong>City:</strong> {organization.billing_city}</p>
-              <p><strong>Postal Code:</strong> {organization.billing_postal_code}</p>
-              <p><strong>Country:</strong> {organization.billing_country}</p>
+              <p><strong>Street:</strong> {organization.billing_street || 'Not provided'}</p>
+              <p><strong>City:</strong> {organization.billing_city || 'Not provided'}</p>
+              <p><strong>Postal Code:</strong> {organization.billing_postal_code || 'Not provided'}</p>
+              <p><strong>Country:</strong> {organization.billing_country || 'Not provided'}</p>
             </div>
           ) : (
             <Form
