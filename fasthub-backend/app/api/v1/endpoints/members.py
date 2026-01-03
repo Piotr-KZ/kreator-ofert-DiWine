@@ -130,6 +130,8 @@ async def invite_member(
 )
 async def list_members(
     organization_id: UUID,
+    page: int = Query(1, ge=1, description="Page number"),
+    per_page: int = Query(10, ge=1, le=100, description="Items per page (max 100)"),
     search: str = Query("", description="Search by name or email"),
     role: str = Query(None, description="Filter by role (admin/viewer)"),
     current_user: User = Depends(get_current_user),
@@ -226,7 +228,13 @@ async def list_members(
                 # Insert at beginning of list
                 members.insert(0, virtual_member)
     
-    return MemberListResponse(members=members, total=len(members))
+    # Apply pagination
+    total = len(members)
+    start = (page - 1) * per_page
+    end = start + per_page
+    paginated_members = members[start:end]
+    
+    return MemberListResponse(members=paginated_members, total=total)
 
 
 @router.delete("/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
