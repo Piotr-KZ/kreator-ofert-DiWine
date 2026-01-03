@@ -99,6 +99,7 @@ async def get_current_subscription(
     Returns active subscription details or default free plan.
     """
     from app.models.subscription import Subscription, SubscriptionStatus
+    from app.schemas.subscription import SubscriptionPlan as SchemaPlan, SubscriptionStatus as SchemaStatus
     from datetime import datetime, timedelta
     
     org_id = await get_user_primary_org_id(current_user, db)
@@ -117,8 +118,8 @@ async def get_current_subscription(
         return SubscriptionResponse(
             id=None,
             organization_id=org_id,
-            plan="free",
-            status="active",
+            plan=SchemaPlan.free,
+            status=SchemaStatus.active,
             current_period_start=datetime.utcnow(),
             current_period_end=datetime.utcnow() + timedelta(days=365),
             cancel_at_period_end=False,
