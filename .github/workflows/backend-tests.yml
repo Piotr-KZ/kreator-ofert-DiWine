@@ -1,0 +1,114 @@
+name: Backend Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'fasthub-backend/**'
+      - '.github/workflows/backend-tests.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'fasthub-backend/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: testdb
+          POSTGRES_USER: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      
+      - name: Cache pip packages
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('fasthub-backend/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+      
+      - name: Install dependencies
+        run: |
+          cd fasthub-backend
+          pip install -r requirements.txt
+          pip install pytest pytest-cov pytest-asyncio httpx
+      
+      - name: Run database migrations
+        run: |
+          cd fasthub-backend
+          alembic upgrade head
+        env:
+          DATABASE_URL: postgresql://postgres:testpass@localhost:5432/testdb
+          JWT_SECRET: test-secret-key-for-ci-testing
+          OAUTH_SERVER_URL: http://localhost:8000
+          VITE_APP_ID: test-app-id
+      
+      - name: Run unit tests
+        run: |
+          cd fasthub-backend
+          pytest tests/unit/ -v --cov=app --cov-report=xml --cov-report=term
+        env:
+          DATABASE_URL: postgresql://postgres:testpass@localhost:5432/testdb
+          JWT_SECRET: test-secret-key-for-ci-testing
+          OAUTH_SERVER_URL: http://localhost:8000
+          VITE_APP_ID: test-app-id
+      
+      - name: Run integration tests
+        run: |
+          cd fasthub-backend
+          pytest tests/integration/ -v
+        env:
+          DATABASE_URL: postgresql://postgres:testpass@localhost:5432/testdb
+          JWT_SECRET: test-secret-key-for-ci-testing
+          OAUTH_SERVER_URL: http://localhost:8000
+          VITE_APP_ID: test-app-id
+      
+      - name: Run root-level tests
+        run: |
+          cd fasthub-backend
+          pytest tests/test_*.py -v
+        env:
+          DATABASE_URL: postgresql://postgres:testpass@localhost:5432/testdb
+          JWT_SECRET: test-secret-key-for-ci-testing
+          OAUTH_SERVER_URL: http://localhost:8000
+          VITE_APP_ID: test-app-id
+      
+      - name: Check test coverage
+        run: |
+          cd fasthub-backend
+          coverage report --fail-under=50
+      
+      - name: Lint with Ruff
+        run: |
+          cd fasthub-backend
+          pip install ruff
+          ruff check . --exit-zero
+        continue-on-error: true
+      
+      - name: Upload coverage reports
+        uses: codecov/codecov-action@v3
+        with:
+          file: ./fasthub-backend/coverage.xml
+          flags: backend
+          name: backend-coverage
+        continue-on-error: true

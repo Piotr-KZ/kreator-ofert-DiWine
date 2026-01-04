@@ -1,0 +1,45 @@
+name: Frontend Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'fasthub-frontend/**'
+      - '.github/workflows/frontend-tests.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'fasthub-frontend/**'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Node.js 18
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+          cache-dependency-path: fasthub-frontend/package-lock.json
+      
+      - name: Install dependencies
+        run: |
+          cd fasthub-frontend
+          npm ci
+      
+      - name: Lint code
+        run: |
+          cd fasthub-frontend
+          npm run lint
+      
+      - name: Build check
+        run: |
+          cd fasthub-frontend
+          npm run build
+        env:
+          VITE_API_URL: http://localhost:8000
+          VITE_APP_NAME: FastHub
