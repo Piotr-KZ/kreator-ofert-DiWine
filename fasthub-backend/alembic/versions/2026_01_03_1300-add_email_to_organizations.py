@@ -1,7 +1,7 @@
 """add_email_to_organizations
 
 Revision ID: add_email_org_2026
-Revises: 0722de807eb5
+Revises: add_performance_indexes
 Create Date: 2026-01-03 13:00:00.000000
 
 """
@@ -11,7 +11,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'add_email_org_2026'
-down_revision = '0722de807eb5'
+down_revision = 'add_performance_indexes'
 branch_labels = None
 depends_on = None
 
