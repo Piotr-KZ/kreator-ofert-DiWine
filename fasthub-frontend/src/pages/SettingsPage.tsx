@@ -285,12 +285,12 @@ export default function SettingsPage() {
                 label="Phone"
                 rules={[
                   {
-                    pattern: /^[+]?[(]?[0-9]{1,4}[)]?[-\s\.]?[(]?[0-9]{1,4}[)]?[-\s\.]?[0-9]{1,9}$/,
-                    message: 'Please enter a valid phone number!'
+                    pattern: /^\+?[0-9]{9,15}$/,
+                    message: 'Phone number must contain 9-15 digits (optionally starting with +)'
                   }
                 ]}
               >
-                <Input prefix={<PhoneOutlined />} placeholder="+48 123 456 789" />
+                <Input prefix={<PhoneOutlined />} placeholder="+48123456789" />
               </Form.Item>
 
               <Form.Item 
