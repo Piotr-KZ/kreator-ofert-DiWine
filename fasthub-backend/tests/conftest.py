@@ -18,8 +18,8 @@ from app.db.session import Base, get_db
 from app.main import app
 from app.models import APIToken, Invoice, Organization, Subscription, User
 
-# Test database URL
-TEST_DATABASE_URL = "postgresql+asyncpg://autoflow:autoflow123@localhost:5432/autoflow_test"
+# Test database URL - matches GitHub Actions workflow
+TEST_DATABASE_URL = "postgresql+asyncpg://postgres:testpass@localhost:5432/testdb"
 
 
 # Create test engine

@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     """Application settings"""
 
     # Application
-    APP_NAME: str = "AutoFlow"
+    APP_NAME: str = "FastHub"
     APP_VERSION: str = "1.0.0"
     API_V1_STR: str = "/api/v1"
     DEBUG: bool = False
@@ -51,7 +51,7 @@ class Settings(BaseSettings):
     # SendGrid (optional)
     SENDGRID_API_KEY: Optional[str] = None
     SENDGRID_FROM_EMAIL: str = "noreply@example.com"
-    SENDGRID_FROM_NAME: str = "AutoFlow"
+    SENDGRID_FROM_NAME: str = "FastHub"
 
     # Frontend URL for email links
     FRONTEND_URL: str = "http://localhost:3000"

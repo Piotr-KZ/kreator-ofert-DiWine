@@ -1,1 +1,1 @@
-"""AutoFlow application package"""
+"""FastHub application package"""
