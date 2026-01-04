@@ -96,6 +96,22 @@ class OrganizationService:
                 )
             org.slug = org_update.slug
 
+        # Update billing fields
+        if org_update.email is not None:
+            org.email = org_update.email
+        if org_update.phone is not None:
+            org.phone = org_update.phone
+        if org_update.nip is not None:
+            org.nip = org_update.nip
+        if org_update.billing_street is not None:
+            org.billing_street = org_update.billing_street
+        if org_update.billing_city is not None:
+            org.billing_city = org_update.billing_city
+        if org_update.billing_postal_code is not None:
+            org.billing_postal_code = org_update.billing_postal_code
+        if org_update.billing_country is not None:
+            org.billing_country = org_update.billing_country
+
         return await self.org_repo.update(org)
 
     async def delete_organization(self, org_id: int, current_user: User) -> None:
