@@ -13,11 +13,14 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-# Test database URL - matches GitHub Actions workflow
-TEST_DATABASE_URL = "postgresql+asyncpg://postgres:testpass@localhost:5432/testdb"
+# Test database URL - use from environment or fallback to GitHub Actions default
+TEST_DATABASE_URL = os.environ.get(
+    "DATABASE_URL",
+    "postgresql+asyncpg://postgres:testpass@localhost:5432/testdb"
+)
 
-# Set DATABASE_URL before importing app (to avoid default credentials)
-os.environ.setdefault("DATABASE_URL", TEST_DATABASE_URL)
+# Ensure DATABASE_URL is set before importing app
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
 from app.core.config import settings
 from app.core.security import get_password_hash
@@ -41,8 +44,8 @@ def event_loop():
 
 @pytest_asyncio.fixture(scope="function")
 async def db_session() -> AsyncGenerator[AsyncSession, None]:
-    """Create database session for tests"""
-    # Create tables
+    """Create database session for tests with automatic cleanup"""
+    # Create tables if they don't exist
     async with test_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -53,20 +56,9 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
         yield session
         await session.rollback()
 
-    # Drop tables after test (manually to avoid circular dependency)
+    # Clean up data after test using TRUNCATE (much faster than DROP/CREATE)
     async with test_engine.begin() as conn:
-        # Drop tables in correct order (respect foreign keys)
-        await conn.execute(text("DROP TABLE IF EXISTS invoices CASCADE"))
-        await conn.execute(text("DROP TABLE IF EXISTS subscriptions CASCADE"))
-        await conn.execute(text("DROP TABLE IF EXISTS api_tokens CASCADE"))
-        await conn.execute(text("DROP TABLE IF EXISTS audit_logs CASCADE"))
-        await conn.execute(text("DROP TABLE IF EXISTS members CASCADE"))
-        await conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
-        await conn.execute(text("DROP TABLE IF EXISTS organizations CASCADE"))
-        await conn.execute(text("DROP TYPE IF EXISTS memberrole CASCADE"))
-        await conn.execute(text("DROP TYPE IF EXISTS userrole CASCADE"))
-        await conn.execute(text("DROP TYPE IF EXISTS subscriptionstatus CASCADE"))
-        await conn.execute(text("DROP TYPE IF EXISTS invoicestatus CASCADE"))
+        await conn.execute(text("TRUNCATE TABLE invoices, subscriptions, api_tokens, audit_logs, members, users, organizations RESTART IDENTITY CASCADE"))
 
 
 @pytest.fixture
