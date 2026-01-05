@@ -19,6 +19,10 @@ TEST_DATABASE_URL = os.environ.get(
     "postgresql+asyncpg://postgres:testpass@localhost:5432/testdb"
 )
 
+# Convert postgresql:// to postgresql+asyncpg:// for async engine
+if TEST_DATABASE_URL.startswith("postgresql://"):
+    TEST_DATABASE_URL = TEST_DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+
 # Ensure DATABASE_URL is set before importing app
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
 
