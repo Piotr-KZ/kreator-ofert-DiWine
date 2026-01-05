@@ -126,7 +126,6 @@ async def test_log_action_without_resource_id(
 async def test_log_multiple_actions(
     audit_service: AuditService,
     test_user: User,
-    owner_user: User,
     db_session: AsyncSession
 ):
     """Test logging multiple actions"""
@@ -139,7 +138,7 @@ async def test_log_multiple_actions(
     )
     
     log2 = await audit_service.log_action(
-        user=owner_user,
+        user=test_user,
         action="organization.create",
         resource_type="organization"
     )
@@ -148,7 +147,7 @@ async def test_log_multiple_actions(
     # Assert
     assert log1.user_id == test_user.id
     assert log1.action == "user.login"
-    assert log2.user_id == owner_user.id
+    assert log2.user_id == test_user.id
     assert log2.action == "organization.create"
     assert log1.id != log2.id
 

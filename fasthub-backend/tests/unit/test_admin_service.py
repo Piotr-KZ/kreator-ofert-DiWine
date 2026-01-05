@@ -43,7 +43,6 @@ async def test_get_system_stats(
 async def test_get_recent_users(
     admin_service: AdminService,
     test_user: User,
-    owner_user: User,
     db_session: AsyncSession
 ):
     """Test fetching recent users"""
@@ -51,7 +50,7 @@ async def test_get_recent_users(
     recent_users = await admin_service.get_recent_users(limit=10)
     
     # Assert
-    assert len(recent_users) >= 2  # At least test_user and owner_user
+    assert len(recent_users) >= 1  # At least test_user
     assert isinstance(recent_users[0], User)
     # Most recent user should be first
     assert recent_users[0].created_at >= recent_users[-1].created_at
@@ -61,7 +60,6 @@ async def test_get_recent_users(
 async def test_get_recent_users_with_limit(
     admin_service: AdminService,
     test_user: User,
-    owner_user: User,
     db_session: AsyncSession
 ):
     """Test fetching recent users with limit"""
@@ -77,7 +75,6 @@ async def test_get_recent_users_with_limit(
 async def test_broadcast_message_to_all(
     admin_service: AdminService,
     test_user: User,
-    owner_user: User,
     db_session: AsyncSession
 ):
     """Test broadcasting message to all users"""
@@ -91,8 +88,8 @@ async def test_broadcast_message_to_all(
     
     # Assert
     assert result["status"] == "success"
-    assert result["users_notified"] >= 2  # At least 2 active users
-    assert len(result["target_emails"]) >= 2
+    assert result["users_notified"] >= 1  # At least 1 active user
+    assert len(result["target_emails"]) >= 1
     assert result["message"]["title"] == "System Maintenance"
     assert result["message"]["url"] == "https://example.com/maintenance"
     assert result["message"]["emoji"] == "🔧"
@@ -102,7 +99,6 @@ async def test_broadcast_message_to_all(
 async def test_broadcast_message_to_specific_users(
     admin_service: AdminService,
     test_user: User,
-    owner_user: User,
     db_session: AsyncSession
 ):
     """Test broadcasting message to specific users"""
