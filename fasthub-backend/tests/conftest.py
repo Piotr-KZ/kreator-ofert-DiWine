@@ -121,6 +121,23 @@ async def owner_user(db_session: AsyncSession) -> User:
 
 
 @pytest_asyncio.fixture
+async def test_admin(db_session: AsyncSession) -> User:
+    """Create test admin/superuser"""
+    user = User(
+        email="admin@example.com",
+        hashed_password=get_password_hash("adminpass123"),
+        full_name="Admin User",
+        is_active=True,
+        is_verified=True,
+        is_superuser=True,
+    )
+    db_session.add(user)
+    await db_session.commit()
+    await db_session.refresh(user)
+    return user
+
+
+@pytest_asyncio.fixture
 async def test_user(db_session: AsyncSession, test_organization: Organization) -> User:
     """Create test user"""
     user = User(
