@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Space, Typography, Modal, Form, Input, Select, message, Tag, Card, Popconfirm, Dropdown } from 'antd';
-import { UserAddOutlined, MoreOutlined, DeleteOutlined, EditOutlined, CrownOutlined } from '@ant-design/icons';
+import { Table, Button, Space, Typography, Modal, Form, Input, Select, message, Tag, Card, Popconfirm, Dropdown, Avatar } from 'antd';
+import { UserAddOutlined, MoreOutlined, DeleteOutlined, EditOutlined, CrownOutlined, MailOutlined, UserOutlined } from '@ant-design/icons';
 import { membersApi } from '../api/members';
 import { MemberWithUser, MemberRole } from '../types/models';
 import { useOrgStore } from '../store/orgStore';
 import { useAuthStore } from '../store/authStore';
 
-const { Title, Paragraph } = Typography;
+const { Title, Paragraph, Text } = Typography;
 const { Option } = Select;
 
 interface TeamMemberDisplay {
@@ -151,7 +151,14 @@ export default function TeamPage() {
     return currentMember?.role === 'admin';
   };
 
-
+  const getInitials = (name: string) => {
+    if (!name) return '?';
+    const parts = name.split(' ');
+    if (parts.length >= 2) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return name.substring(0, 2).toUpperCase();
+  };
 
   const columns = [
     {
@@ -161,21 +168,33 @@ export default function TeamPage() {
       sorter: (a: TeamMemberDisplay, b: TeamMemberDisplay) => 
         (a.full_name || '').localeCompare(b.full_name || ''),
       render: (text: string, record: TeamMemberDisplay) => (
-        <div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Avatar 
+            size={48} 
+            style={{ 
+              backgroundColor: '#1890ff',
+              fontSize: 18,
+              fontWeight: 600
+            }}
+          >
+            {getInitials(text)}
+          </Avatar>
           <div>
-            <strong>{text || 'N/A'}</strong>
-            {isOwner(record) && (
-              <Tag color="gold" icon={<CrownOutlined />} style={{ marginLeft: 8 }}>
-                Owner
-              </Tag>
-            )}
-            {record.is_superuser && (
-              <Tag color="red" style={{ marginLeft: 8 }}>
-                Super Admin
-              </Tag>
-            )}
+            <div style={{ marginBottom: 4 }}>
+              <Text strong style={{ fontSize: 15 }}>{text || 'N/A'}</Text>
+              {isOwner(record) && (
+                <Tag color="gold" icon={<CrownOutlined />} style={{ marginLeft: 8 }}>
+                  Owner
+                </Tag>
+              )}
+              {record.is_superuser && (
+                <Tag color="red" style={{ marginLeft: 8 }}>
+                  Super Admin
+                </Tag>
+              )}
+            </div>
+            <Text type="secondary" style={{ fontSize: 13 }}>{record.email}</Text>
           </div>
-          <div style={{ fontSize: 12, color: '#999' }}>{record.email}</div>
         </div>
       ),
     },
@@ -190,7 +209,18 @@ export default function TeamPage() {
           admin: 'orange',
           viewer: 'green',
         };
-        return <Tag color={colors[role]}>{role.toUpperCase()}</Tag>;
+        return (
+          <Tag 
+            color={colors[role]} 
+            style={{ 
+              fontSize: 13, 
+              padding: '4px 12px',
+              borderRadius: 6
+            }}
+          >
+            {role.toUpperCase()}
+          </Tag>
+        );
       },
     },
     {
@@ -199,7 +229,15 @@ export default function TeamPage() {
       key: 'joined_at',
       sorter: (a: TeamMemberDisplay, b: TeamMemberDisplay) => 
         new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime(),
-      render: (date: string) => new Date(date).toLocaleDateString(),
+      render: (date: string) => (
+        <Text style={{ fontSize: 14 }}>
+          {new Date(date).toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            year: 'numeric' 
+          })}
+        </Text>
+      ),
     },
     {
       title: 'Last Login',
@@ -210,14 +248,29 @@ export default function TeamPage() {
         if (!b.last_login_at) return -1;
         return new Date(a.last_login_at).getTime() - new Date(b.last_login_at).getTime();
       },
-      render: (date: string) => date ? new Date(date).toLocaleDateString() : 'Never',
+      render: (date: string) => (
+        <Text style={{ fontSize: 14 }}>
+          {date ? new Date(date).toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            year: 'numeric' 
+          }) : <Text type="secondary">Never</Text>}
+        </Text>
+      ),
     },
     {
       title: 'Status',
       dataIndex: 'is_active',
       key: 'is_active',
       render: (isActive: boolean) => (
-        <Tag color={isActive ? 'green' : 'red'}>
+        <Tag 
+          color={isActive ? 'green' : 'red'}
+          style={{ 
+            fontSize: 13, 
+            padding: '4px 12px',
+            borderRadius: 6
+          }}
+        >
           {isActive ? 'Active' : 'Inactive'}
         </Tag>
       ),
@@ -225,15 +278,16 @@ export default function TeamPage() {
     {
       title: 'Actions',
       key: 'actions',
+      width: 100,
       render: (_: any, record: TeamMemberDisplay) => {
         // Cannot manage owner
         if (isOwner(record)) {
-          return <span style={{ color: '#999' }}>-</span>;
+          return <Text type="secondary">—</Text>;
         }
 
         // Only admins/owners can manage members
         if (!canManageMembers()) {
-          return <span style={{ color: '#999' }}>-</span>;
+          return <Text type="secondary">—</Text>;
         }
 
         const menuItems = [
@@ -262,7 +316,7 @@ export default function TeamPage() {
 
         return (
           <Dropdown menu={{ items: menuItems }} trigger={['click']}>
-            <Button type="text" icon={<MoreOutlined />} />
+            <Button type="text" icon={<MoreOutlined />} size="large" />
           </Dropdown>
         );
       },
@@ -270,13 +324,19 @@ export default function TeamPage() {
   ];
 
   return (
-    <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+    <div style={{ padding: '24px 0' }}>
+      {/* Header */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'flex-start', 
+        marginBottom: 32 
+      }}>
         <div>
-          <Title level={2} style={{ margin: 0 }}>Team</Title>
-          <Paragraph type="secondary">
+          <Title level={2} style={{ marginBottom: 8 }}>Team</Title>
+          <Paragraph style={{ fontSize: 16, color: '#666', marginBottom: 0 }}>
             Manage your team members and their roles
-            {organization && ` in ${organization.name}`}
+            {organization && <Text strong> in {organization.name}</Text>}
           </Paragraph>
         </div>
         {canManageMembers() && (
@@ -284,25 +344,62 @@ export default function TeamPage() {
             type="primary" 
             icon={<UserAddOutlined />}
             onClick={() => setInviteModalVisible(true)}
+            size="large"
           >
             Invite Member
           </Button>
         )}
       </div>
 
-      <Card>
+      {/* Team Stats */}
+      <div style={{ marginBottom: 24 }}>
+        <Space size="large">
+          <div>
+            <Text type="secondary" style={{ fontSize: 13 }}>Total Members</Text>
+            <Title level={3} style={{ margin: 0 }}>{members.length}</Title>
+          </div>
+          <div>
+            <Text type="secondary" style={{ fontSize: 13 }}>Active</Text>
+            <Title level={3} style={{ margin: 0, color: '#52c41a' }}>
+              {members.filter(m => m.is_active).length}
+            </Title>
+          </div>
+          <div>
+            <Text type="secondary" style={{ fontSize: 13 }}>Admins</Text>
+            <Title level={3} style={{ margin: 0, color: '#faad14' }}>
+              {members.filter(m => m.role === 'admin').length}
+            </Title>
+          </div>
+        </Space>
+      </div>
+
+      {/* Members Table */}
+      <Card 
+        style={{ borderRadius: 8 }}
+        bodyStyle={{ padding: 0 }}
+      >
         <Table
           columns={columns}
           dataSource={members}
           rowKey="id"
           loading={loading}
-          pagination={{ pageSize: 10 }}
+          pagination={{ 
+            pageSize: 10,
+            showSizeChanger: true,
+            showTotal: (total) => `Total ${total} members`
+          }}
+          style={{ fontSize: 14 }}
         />
       </Card>
 
       {/* Invite Modal */}
       <Modal
-        title="Invite Team Member"
+        title={
+          <div>
+            <Title level={4} style={{ marginBottom: 4 }}>Invite Team Member</Title>
+            <Text type="secondary">Send an invitation to join your organization</Text>
+          </div>
+        }
         open={inviteModalVisible}
         onCancel={() => {
           setInviteModalVisible(false);
@@ -310,11 +407,14 @@ export default function TeamPage() {
         }}
         onOk={() => form.submit()}
         okText="Send Invitation"
+        width={600}
       >
         <Form
           form={form}
           layout="vertical"
           onFinish={handleInviteSubmit}
+          size="large"
+          style={{ marginTop: 24 }}
         >
           <Form.Item
             name="email"
@@ -323,9 +423,9 @@ export default function TeamPage() {
               { required: true, message: 'Please input email address!' },
               { type: 'email', message: 'Please enter a valid email address!' }
             ]}
-            help="Enter the email address of the person you want to invite"
           >
             <Input 
+              prefix={<MailOutlined style={{ color: '#1890ff' }} />}
               placeholder="user@example.com"
               type="email"
             />
@@ -336,10 +436,21 @@ export default function TeamPage() {
             label="Role"
             rules={[{ required: true, message: 'Please select role!' }]}
             initialValue="viewer"
+            help="Choose the permission level for this team member"
           >
             <Select>
-              <Option value="viewer">Viewer - Can view only</Option>
-              <Option value="admin">Admin - Can manage members and organization</Option>
+              <Option value="viewer">
+                <div>
+                  <div><Text strong>Viewer</Text></div>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Can view organization data only</Text>
+                </div>
+              </Option>
+              <Option value="admin">
+                <div>
+                  <div><Text strong>Admin</Text></div>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Can manage members and organization settings</Text>
+                </div>
+              </Option>
             </Select>
           </Form.Item>
         </Form>
@@ -347,7 +458,12 @@ export default function TeamPage() {
 
       {/* Change Role Modal */}
       <Modal
-        title="Change Member Role"
+        title={
+          <div>
+            <Title level={4} style={{ marginBottom: 4 }}>Change Member Role</Title>
+            <Text type="secondary">Update permission level for this member</Text>
+          </div>
+        }
         open={changeRoleModalVisible}
         onCancel={() => {
           setChangeRoleModalVisible(false);
@@ -356,14 +472,17 @@ export default function TeamPage() {
         }}
         onOk={() => roleForm.submit()}
         okText="Change Role"
+        width={600}
       >
         <Form
           form={roleForm}
           layout="vertical"
           onFinish={handleChangeRole}
+          size="large"
+          style={{ marginTop: 24 }}
         >
-          <Paragraph>
-            Change role for <strong>{selectedMember?.full_name}</strong>
+          <Paragraph style={{ fontSize: 15 }}>
+            Change role for <Text strong>{selectedMember?.full_name}</Text>
           </Paragraph>
           
           <Form.Item
@@ -372,8 +491,18 @@ export default function TeamPage() {
             rules={[{ required: true, message: 'Please select role!' }]}
           >
             <Select>
-              <Option value="viewer">Viewer - Can view only</Option>
-              <Option value="admin">Admin - Can manage members and organization</Option>
+              <Option value="viewer">
+                <div>
+                  <div><Text strong>Viewer</Text></div>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Can view organization data only</Text>
+                </div>
+              </Option>
+              <Option value="admin">
+                <div>
+                  <div><Text strong>Admin</Text></div>
+                  <Text type="secondary" style={{ fontSize: 12 }}>Can manage members and organization settings</Text>
+                </div>
+              </Option>
             </Select>
           </Form.Item>
         </Form>

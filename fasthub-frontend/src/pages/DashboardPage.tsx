@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Row, Col, Card, Statistic, Typography, Spin, Alert, Button, Empty } from 'antd';
-import { UserOutlined, TeamOutlined, CreditCardOutlined, RiseOutlined, PlusOutlined } from '@ant-design/icons';
+import { Row, Col, Card, Statistic, Typography, Spin, Alert, Button, Space } from 'antd';
+import { UserOutlined, TeamOutlined, CreditCardOutlined, RiseOutlined, PlusOutlined, ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons';
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import { useAuthStore } from '../store/authStore';
 import { useNavigate } from 'react-router-dom';
@@ -9,7 +9,7 @@ import { usersApi } from '../api/users';
 import { organizationsApi } from '../api/organizations';
 import OnboardingModal from '../components/common/OnboardingModal';
 
-const { Title } = Typography;
+const { Title, Paragraph, Text } = Typography;
 
 export default function DashboardPage() {
   const { user } = useAuthStore();
@@ -96,14 +96,25 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <div style={{ textAlign: 'center', padding: '50px' }}>
+      <div style={{ textAlign: 'center', padding: '100px 0' }}>
         <Spin size="large" />
+        <Paragraph style={{ marginTop: 24, color: '#999' }}>Loading dashboard...</Paragraph>
       </div>
     );
   }
 
   if (error) {
-    return <Alert message="Error" description={error} type="error" showIcon />;
+    return (
+      <div style={{ maxWidth: 600, margin: '50px auto' }}>
+        <Alert 
+          message="Error Loading Dashboard" 
+          description={error} 
+          type="error" 
+          showIcon 
+          style={{ borderRadius: 8 }}
+        />
+      </div>
+    );
   }
 
   // Mock chart data
@@ -117,19 +128,26 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div>
-      <Title level={2}>Dashboard</Title>
-      <p style={{ color: '#666', marginBottom: 24 }}>
-        Welcome back, {user?.full_name}! Here's what's happening with your account.
-      </p>
+    <div style={{ padding: '24px 0' }}>
+      {/* Header */}
+      <div style={{ marginBottom: 32 }}>
+        <Title level={2} style={{ marginBottom: 8 }}>Dashboard</Title>
+        <Paragraph style={{ fontSize: 16, color: '#666', marginBottom: 0 }}>
+          Welcome back, <Text strong>{user?.full_name}</Text>! Here's what's happening with your account.
+        </Paragraph>
+      </div>
 
       {/* Orphan User Empty State */}
       {!user?.is_superuser && stats?.total_organizations === 0 && (
         <Alert
-          message="Welcome to AutoFlow!"
+          message={
+            <Text strong style={{ fontSize: 16 }}>Welcome to FastHub!</Text>
+          }
           description={
-            <div>
-              <p style={{ marginBottom: 16 }}>You're not part of any organization yet. Create your first organization to get started!</p>
+            <div style={{ marginTop: 12 }}>
+              <Paragraph style={{ marginBottom: 20, fontSize: 15 }}>
+                You're not part of any organization yet. Create your first organization to get started!
+              </Paragraph>
               <Button 
                 type="primary" 
                 icon={<PlusOutlined />}
@@ -142,82 +160,181 @@ export default function DashboardPage() {
           }
           type="info"
           showIcon
-          style={{ marginBottom: 24 }}
+          style={{ 
+            marginBottom: 32, 
+            borderRadius: 8,
+            padding: '24px',
+            border: '1px solid #1890ff'
+          }}
         />
       )}
 
       {/* Stats Cards */}
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
+      <Row gutter={[24, 24]} style={{ marginBottom: 32 }}>
         <Col xs={24} sm={12} lg={6}>
-          <Card>
+          <Card 
+            style={{ borderRadius: 8, height: '100%' }}
+            bodyStyle={{ padding: '28px' }}
+          >
             <Statistic
-              title="Total Users"
+              title={<Text style={{ fontSize: 14, color: '#666' }}>Total Users</Text>}
               value={stats?.total_users || 0}
-              prefix={<UserOutlined />}
-              valueStyle={{ color: '#3f8600' }}
+              prefix={<UserOutlined style={{ color: '#52c41a', fontSize: 24 }} />}
+              valueStyle={{ color: '#52c41a', fontSize: 32, fontWeight: 600 }}
             />
+            <div style={{ marginTop: 12 }}>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                <ArrowUpOutlined style={{ color: '#52c41a' }} /> +12% from last month
+              </Text>
+            </div>
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card>
+          <Card 
+            style={{ borderRadius: 8, height: '100%' }}
+            bodyStyle={{ padding: '28px' }}
+          >
             <Statistic
-              title="Organizations"
+              title={<Text style={{ fontSize: 14, color: '#666' }}>Organizations</Text>}
               value={stats?.total_organizations || 0}
-              prefix={<TeamOutlined />}
-              valueStyle={{ color: '#1890ff' }}
+              prefix={<TeamOutlined style={{ color: '#1890ff', fontSize: 24 }} />}
+              valueStyle={{ color: '#1890ff', fontSize: 32, fontWeight: 600 }}
             />
+            <div style={{ marginTop: 12 }}>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                <ArrowUpOutlined style={{ color: '#52c41a' }} /> +5% from last month
+              </Text>
+            </div>
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card>
+          <Card 
+            style={{ borderRadius: 8, height: '100%' }}
+            bodyStyle={{ padding: '28px' }}
+          >
             <Statistic
-              title="Subscriptions"
+              title={<Text style={{ fontSize: 14, color: '#666' }}>Active Subscriptions</Text>}
               value={stats?.active_subscriptions || 0}
-              prefix={<CreditCardOutlined />}
-              valueStyle={{ color: '#cf1322' }}
+              prefix={<CreditCardOutlined style={{ color: '#faad14', fontSize: 24 }} />}
+              valueStyle={{ color: '#faad14', fontSize: 32, fontWeight: 600 }}
             />
+            <div style={{ marginTop: 12 }}>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                <ArrowDownOutlined style={{ color: '#ff4d4f' }} /> -2% from last month
+              </Text>
+            </div>
           </Card>
         </Col>
         <Col xs={24} sm={12} lg={6}>
-          <Card>
+          <Card 
+            style={{ borderRadius: 8, height: '100%' }}
+            bodyStyle={{ padding: '28px' }}
+          >
             <Statistic
-              title="Revenue"
+              title={<Text style={{ fontSize: 14, color: '#666' }}>Revenue This Month</Text>}
               value={stats?.revenue_this_month || 0}
-              prefix={<RiseOutlined />}
+              prefix={<RiseOutlined style={{ color: '#722ed1', fontSize: 24 }} />}
               precision={2}
               suffix="PLN"
-              valueStyle={{ color: '#722ed1' }}
+              valueStyle={{ color: '#722ed1', fontSize: 32, fontWeight: 600 }}
             />
+            <div style={{ marginTop: 12 }}>
+              <Text type="secondary" style={{ fontSize: 13 }}>
+                <ArrowUpOutlined style={{ color: '#52c41a' }} /> +18% from last month
+              </Text>
+            </div>
           </Card>
         </Col>
       </Row>
 
       {/* Charts */}
-      <Row gutter={[16, 16]}>
+      <Row gutter={[24, 24]} style={{ marginBottom: 32 }}>
         <Col xs={24} lg={12}>
-          <Card title="User Growth" bordered={false}>
-            <ResponsiveContainer width="100%" height={300}>
+          <Card 
+            title={
+              <div>
+                <Title level={4} style={{ marginBottom: 4 }}>User Growth</Title>
+                <Text type="secondary">Monthly active users over time</Text>
+              </div>
+            }
+            bordered={false}
+            style={{ borderRadius: 8, height: '100%' }}
+            bodyStyle={{ padding: '32px' }}
+          >
+            <ResponsiveContainer width="100%" height={320}>
               <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Line type="monotone" dataKey="users" stroke="#8884d8" activeDot={{ r: 8 }} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis 
+                  dataKey="name" 
+                  stroke="#999"
+                  style={{ fontSize: 13 }}
+                />
+                <YAxis 
+                  stroke="#999"
+                  style={{ fontSize: 13 }}
+                />
+                <Tooltip 
+                  contentStyle={{ 
+                    borderRadius: 8, 
+                    border: '1px solid #f0f0f0',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                  }}
+                />
+                <Legend 
+                  wrapperStyle={{ fontSize: 14 }}
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="users" 
+                  stroke="#1890ff" 
+                  strokeWidth={3}
+                  activeDot={{ r: 6 }} 
+                  name="Users"
+                />
               </LineChart>
             </ResponsiveContainer>
           </Card>
         </Col>
         <Col xs={24} lg={12}>
-          <Card title="Revenue" bordered={false}>
-            <ResponsiveContainer width="100%" height={300}>
+          <Card 
+            title={
+              <div>
+                <Title level={4} style={{ marginBottom: 4 }}>Revenue</Title>
+                <Text type="secondary">Monthly revenue in PLN</Text>
+              </div>
+            }
+            bordered={false}
+            style={{ borderRadius: 8, height: '100%' }}
+            bodyStyle={{ padding: '32px' }}
+          >
+            <ResponsiveContainer width="100%" height={320}>
               <BarChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="revenue" fill="#82ca9d" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis 
+                  dataKey="name" 
+                  stroke="#999"
+                  style={{ fontSize: 13 }}
+                />
+                <YAxis 
+                  stroke="#999"
+                  style={{ fontSize: 13 }}
+                />
+                <Tooltip 
+                  contentStyle={{ 
+                    borderRadius: 8, 
+                    border: '1px solid #f0f0f0',
+                    boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+                  }}
+                />
+                <Legend 
+                  wrapperStyle={{ fontSize: 14 }}
+                />
+                <Bar 
+                  dataKey="revenue" 
+                  fill="#52c41a" 
+                  radius={[8, 8, 0, 0]}
+                  name="Revenue (PLN)"
+                />
               </BarChart>
             </ResponsiveContainer>
           </Card>
@@ -226,18 +343,44 @@ export default function DashboardPage() {
 
       {/* Recent Users */}
       {recentUsers.length > 0 && (
-        <Card title="Recent Users" style={{ marginTop: 24 }}>
-          <div>
+        <Card 
+          title={
+            <div>
+              <Title level={4} style={{ marginBottom: 4 }}>Recent Users</Title>
+              <Text type="secondary">Latest registered users</Text>
+            </div>
+          }
+          style={{ borderRadius: 8 }}
+          bodyStyle={{ padding: '32px' }}
+        >
+          <Space direction="vertical" size="middle" style={{ width: '100%' }}>
             {recentUsers.slice(0, 5).map((u: any) => (
-              <div key={u.id} style={{ padding: '8px 0', borderBottom: '1px solid #f0f0f0' }}>
-                <strong>{u.full_name || u.email}</strong>
-                <span style={{ color: '#999', marginLeft: 16 }}>{u.email}</span>
-                <span style={{ float: 'right', color: '#999' }}>
-                  {new Date(u.created_at).toLocaleDateString()}
-                </span>
+              <div 
+                key={u.id} 
+                style={{ 
+                  padding: '16px 0', 
+                  borderBottom: '1px solid #f0f0f0',
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center'
+                }}
+              >
+                <div>
+                  <Text strong style={{ fontSize: 15, display: 'block', marginBottom: 4 }}>
+                    {u.full_name || u.email}
+                  </Text>
+                  <Text type="secondary" style={{ fontSize: 13 }}>{u.email}</Text>
+                </div>
+                <Text type="secondary" style={{ fontSize: 13 }}>
+                  {new Date(u.created_at).toLocaleDateString('en-US', { 
+                    month: 'short', 
+                    day: 'numeric', 
+                    year: 'numeric' 
+                  })}
+                </Text>
               </div>
             ))}
-          </div>
+          </Space>
         </Card>
       )}
 

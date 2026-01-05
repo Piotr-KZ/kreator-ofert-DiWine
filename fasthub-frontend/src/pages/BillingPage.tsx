@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { Card, Row, Col, Typography, Button, Table, Tag, Space, message, Spin, Alert } from 'antd';
-import { CreditCardOutlined, DownloadOutlined, CheckCircleOutlined } from '@ant-design/icons';
+import { Card, Row, Col, Typography, Button, Table, Tag, Space, message, Spin, Alert, Divider } from 'antd';
+import { CreditCardOutlined, DownloadOutlined, CheckCircleOutlined, CloseCircleOutlined, StarOutlined, RocketOutlined, CrownOutlined } from '@ant-design/icons';
 import { billingApi } from '../api/billing';
 import { Subscription, Invoice } from '../types/models';
 
@@ -76,31 +76,48 @@ export default function BillingPage() {
 
   if (loading) {
     return (
-      <div style={{ textAlign: 'center', padding: '50px' }}>
+      <div style={{ textAlign: 'center', padding: '100px 0' }}>
         <Spin size="large" />
+        <Paragraph style={{ marginTop: 24, color: '#999' }}>Loading billing information...</Paragraph>
       </div>
     );
   }
 
   if (error) {
-    return <Alert message="Error" description={error} type="error" showIcon />;
+    return (
+      <div style={{ maxWidth: 600, margin: '50px auto' }}>
+        <Alert 
+          message="Error Loading Billing Data" 
+          description={error} 
+          type="error" 
+          showIcon 
+          style={{ borderRadius: 8 }}
+        />
+      </div>
+    );
   }
 
   const plans = [
     {
       name: 'Free',
       price: 0,
-      features: ['Up to 5 users', 'Basic features', 'Email support'],
+      icon: <StarOutlined style={{ fontSize: 32, color: '#1890ff' }} />,
+      features: ['Up to 5 users', 'Basic features', 'Email support', 'Community access'],
+      recommended: false,
     },
     {
       name: 'Pro',
       price: 99,
-      features: ['Up to 50 users', 'Advanced features', 'Priority support', 'API access'],
+      icon: <RocketOutlined style={{ fontSize: 32, color: '#52c41a' }} />,
+      features: ['Up to 50 users', 'Advanced features', 'Priority support', 'API access', 'Custom branding'],
+      recommended: true,
     },
     {
       name: 'Enterprise',
       price: 299,
-      features: ['Unlimited users', 'All features', '24/7 support', 'Custom integrations', 'SLA'],
+      icon: <CrownOutlined style={{ fontSize: 32, color: '#faad14' }} />,
+      features: ['Unlimited users', 'All features', '24/7 support', 'Custom integrations', 'SLA', 'Dedicated account manager'],
+      recommended: false,
     },
   ];
 
@@ -109,12 +126,17 @@ export default function BillingPage() {
       title: 'Invoice Number',
       dataIndex: 'invoice_number',
       key: 'invoice_number',
+      render: (text: string) => <Text strong style={{ fontSize: 14 }}>{text}</Text>,
     },
     {
       title: 'Amount',
       dataIndex: 'amount',
       key: 'amount',
-      render: (amount: number, record: Invoice) => `${amount} ${record.currency}`,
+      render: (amount: number, record: Invoice) => (
+        <Text strong style={{ fontSize: 15, color: '#1890ff' }}>
+          {amount} {record.currency}
+        </Text>
+      ),
     },
     {
       title: 'Status',
@@ -127,21 +149,41 @@ export default function BillingPage() {
           draft: 'default',
           void: 'red',
         };
-        return <Tag color={colors[status]}>{status.toUpperCase()}</Tag>;
+        return (
+          <Tag 
+            color={colors[status]}
+            style={{ 
+              fontSize: 13, 
+              padding: '4px 12px',
+              borderRadius: 6
+            }}
+          >
+            {status.toUpperCase()}
+          </Tag>
+        );
       },
     },
     {
       title: 'Issue Date',
       dataIndex: 'issue_date',
       key: 'issue_date',
-      render: (date: string) => new Date(date).toLocaleDateString(),
+      render: (date: string) => (
+        <Text style={{ fontSize: 14 }}>
+          {new Date(date).toLocaleDateString('en-US', { 
+            month: 'short', 
+            day: 'numeric', 
+            year: 'numeric' 
+          })}
+        </Text>
+      ),
     },
     {
       title: 'Actions',
       key: 'actions',
+      width: 150,
       render: (_: any, record: Invoice) => (
         <Button
-          type="link"
+          type="primary"
           icon={<DownloadOutlined />}
           onClick={() => handleDownloadInvoice(record.id)}
         >
@@ -152,90 +194,199 @@ export default function BillingPage() {
   ];
 
   return (
-    <div>
-      <Title level={2}>Billing & Subscription</Title>
-      <Paragraph type="secondary">Manage your subscription and billing information</Paragraph>
+    <div style={{ padding: '24px 0' }}>
+      {/* Header */}
+      <div style={{ marginBottom: 32 }}>
+        <Title level={2} style={{ marginBottom: 8 }}>Billing & Subscription</Title>
+        <Paragraph style={{ fontSize: 16, color: '#666', marginBottom: 0 }}>
+          Manage your subscription plan and billing information
+        </Paragraph>
+      </div>
 
       {/* Current Subscription */}
       {subscription && (
         <Card 
-          title="Current Subscription" 
-          style={{ marginBottom: 24 }}
+          title={
+            <div>
+              <Title level={4} style={{ marginBottom: 4 }}>Current Subscription</Title>
+              <Text type="secondary">Your active plan and billing details</Text>
+            </div>
+          }
+          style={{ marginBottom: 32, borderRadius: 8 }}
+          bodyStyle={{ padding: '32px' }}
           extra={
             subscription.status === 'active' && (
-              <Button danger onClick={handleCancelSubscription}>
+              <Button 
+                danger 
+                icon={<CloseCircleOutlined />}
+                onClick={handleCancelSubscription}
+                size="large"
+              >
                 Cancel Subscription
               </Button>
             )
           }
         >
-          <Row gutter={16}>
-            <Col span={8}>
-              <Text strong>Plan:</Text>
-              <div><Tag color="blue">{subscription.plan.toUpperCase()}</Tag></div>
-            </Col>
-            <Col span={8}>
-              <Text strong>Status:</Text>
+          <Row gutter={[32, 24]}>
+            <Col xs={24} md={8}>
+              <div style={{ marginBottom: 8 }}>
+                <Text type="secondary" style={{ fontSize: 13 }}>Current Plan</Text>
+              </div>
               <div>
-                <Tag color={subscription.status === 'active' ? 'green' : 'red'}>
+                <Tag 
+                  color="blue" 
+                  style={{ 
+                    fontSize: 16, 
+                    padding: '8px 16px',
+                    borderRadius: 6
+                  }}
+                >
+                  {subscription.plan.toUpperCase()}
+                </Tag>
+              </div>
+            </Col>
+            <Col xs={24} md={8}>
+              <div style={{ marginBottom: 8 }}>
+                <Text type="secondary" style={{ fontSize: 13 }}>Status</Text>
+              </div>
+              <div>
+                <Tag 
+                  color={subscription.status === 'active' ? 'green' : 'red'}
+                  icon={subscription.status === 'active' ? <CheckCircleOutlined /> : <CloseCircleOutlined />}
+                  style={{ 
+                    fontSize: 16, 
+                    padding: '8px 16px',
+                    borderRadius: 6
+                  }}
+                >
                   {subscription.status.toUpperCase()}
                 </Tag>
               </div>
             </Col>
-            <Col span={8}>
-              <Text strong>Next Billing:</Text>
-              <div>{new Date(subscription.current_period_end).toLocaleDateString()}</div>
+            <Col xs={24} md={8}>
+              <div style={{ marginBottom: 8 }}>
+                <Text type="secondary" style={{ fontSize: 13 }}>Next Billing Date</Text>
+              </div>
+              <div>
+                <Text strong style={{ fontSize: 16 }}>
+                  {new Date(subscription.current_period_end).toLocaleDateString('en-US', { 
+                    month: 'long', 
+                    day: 'numeric', 
+                    year: 'numeric' 
+                  })}
+                </Text>
+              </div>
             </Col>
           </Row>
         </Card>
       )}
 
       {/* Pricing Plans */}
-      <Title level={3}>Available Plans</Title>
-      <Row gutter={[16, 16]} style={{ marginBottom: 24 }}>
-        {plans.map((plan) => (
-          <Col key={plan.name} xs={24} md={8}>
-            <Card
-              title={plan.name}
-              extra={
-                subscription?.plan.toLowerCase() === plan.name.toLowerCase() ? (
-                  <Tag color="green" icon={<CheckCircleOutlined />}>Current</Tag>
-                ) : null
-              }
-            >
-              <div style={{ textAlign: 'center', marginBottom: 16 }}>
-                <Title level={2} style={{ margin: 0 }}>
-                  {plan.price} PLN
-                </Title>
-                <Text type="secondary">per month</Text>
-              </div>
-              <ul style={{ paddingLeft: 20 }}>
-                {plan.features.map((feature, idx) => (
-                  <li key={idx} style={{ marginBottom: 8 }}>{feature}</li>
-                ))}
-              </ul>
-              {subscription?.plan.toLowerCase() !== plan.name.toLowerCase() && (
-                <Button 
-                  type="primary" 
-                  block 
-                  style={{ marginTop: 16 }}
-                  onClick={() => handleUpgrade(plan.name.toLowerCase())}
-                >
-                  Upgrade to {plan.name}
-                </Button>
-              )}
-            </Card>
-          </Col>
-        ))}
+      <div style={{ marginBottom: 32 }}>
+        <Title level={3} style={{ marginBottom: 8 }}>Available Plans</Title>
+        <Paragraph style={{ fontSize: 15, color: '#666' }}>
+          Choose the plan that best fits your needs
+        </Paragraph>
+      </div>
+
+      <Row gutter={[24, 24]} style={{ marginBottom: 48 }}>
+        {plans.map((plan) => {
+          const isCurrentPlan = subscription?.plan.toLowerCase() === plan.name.toLowerCase();
+          
+          return (
+            <Col key={plan.name} xs={24} md={8}>
+              <Card
+                style={{ 
+                  borderRadius: 8,
+                  height: '100%',
+                  border: plan.recommended ? '2px solid #52c41a' : '1px solid #f0f0f0',
+                  position: 'relative'
+                }}
+                bodyStyle={{ padding: '32px' }}
+              >
+                {plan.recommended && (
+                  <div style={{
+                    position: 'absolute',
+                    top: -12,
+                    right: 24,
+                    backgroundColor: '#52c41a',
+                    color: 'white',
+                    padding: '4px 16px',
+                    borderRadius: 12,
+                    fontSize: 13,
+                    fontWeight: 600
+                  }}>
+                    RECOMMENDED
+                  </div>
+                )}
+                
+                <div style={{ textAlign: 'center', marginBottom: 24 }}>
+                  <div style={{ marginBottom: 16 }}>
+                    {plan.icon}
+                  </div>
+                  <Title level={3} style={{ marginBottom: 4 }}>{plan.name}</Title>
+                  {isCurrentPlan && (
+                    <Tag color="green" icon={<CheckCircleOutlined />} style={{ marginBottom: 16 }}>
+                      Current Plan
+                    </Tag>
+                  )}
+                </div>
+
+                <div style={{ textAlign: 'center', marginBottom: 32 }}>
+                  <Title level={1} style={{ margin: 0, fontSize: 48, color: '#1890ff' }}>
+                    {plan.price}
+                  </Title>
+                  <Text type="secondary" style={{ fontSize: 16 }}>PLN / month</Text>
+                </div>
+
+                <Divider style={{ margin: '24px 0' }} />
+
+                <ul style={{ paddingLeft: 20, marginBottom: 32 }}>
+                  {plan.features.map((feature, idx) => (
+                    <li key={idx} style={{ marginBottom: 12, fontSize: 15 }}>
+                      <CheckCircleOutlined style={{ color: '#52c41a', marginRight: 8 }} />
+                      {feature}
+                    </li>
+                  ))}
+                </ul>
+
+                {!isCurrentPlan && (
+                  <Button 
+                    type={plan.recommended ? 'primary' : 'default'}
+                    size="large"
+                    block 
+                    onClick={() => handleUpgrade(plan.name.toLowerCase())}
+                    style={{ height: 48, fontSize: 16 }}
+                  >
+                    Upgrade to {plan.name}
+                  </Button>
+                )}
+              </Card>
+            </Col>
+          );
+        })}
       </Row>
 
       {/* Invoices */}
-      <Card title="Invoices">
+      <Card 
+        title={
+          <div>
+            <Title level={4} style={{ marginBottom: 4 }}>Billing History</Title>
+            <Text type="secondary">View and download your invoices</Text>
+          </div>
+        }
+        style={{ borderRadius: 8 }}
+        bodyStyle={{ padding: 0 }}
+      >
         <Table
           columns={invoiceColumns}
           dataSource={invoices}
           rowKey="id"
-          pagination={{ pageSize: 10 }}
+          pagination={{ 
+            pageSize: 10,
+            showSizeChanger: true,
+            showTotal: (total) => `Total ${total} invoices`
+          }}
         />
       </Card>
     </div>
