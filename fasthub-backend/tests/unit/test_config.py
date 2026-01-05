@@ -5,8 +5,8 @@ from app.core.config import Settings
 def test_settings_loaded():
     """Test settings can be loaded"""
     settings = Settings()
-    assert settings.PROJECT_NAME is not None
-    assert settings.VERSION is not None
+    assert settings.APP_VERSION is not None
+    assert settings.DATABASE_URL is not None
 
 def test_settings_has_required_fields():
     """Test settings has all required fields"""
@@ -27,10 +27,10 @@ def test_settings_default_values():
 def test_settings_environment_variable():
     """Test settings can be overridden by env vars"""
     import os
-    os.environ["PROJECT_NAME"] = "TestProject"
+    os.environ["APP_VERSION"] = "2.0.0"
     
     settings = Settings()
-    assert settings.PROJECT_NAME == "TestProject"
+    assert settings.APP_VERSION == "2.0.0"
     
     # Cleanup
-    del os.environ["PROJECT_NAME"]
+    del os.environ["APP_VERSION"]

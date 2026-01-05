@@ -14,7 +14,7 @@ def test_organization_creation():
 def test_organization_tax_id_optional():
     """Test tax_id (NIP) is optional"""
     org = Organization(name="Test")
-    assert org.tax_id is None
+    assert org.nip is None
 
 def test_organization_billing_address_optional():
     """Test billing address fields are optional"""
