@@ -165,7 +165,7 @@ async def test_list_user_tokens(
     await token_service.create_token(test_user.id, "Token 3")
     
     # Act
-    tokens = await token_service.list_user_tokens(test_user.id)
+    tokens = await token_service.list_tokens(test_user.id)
     
     # Assert
     assert len(tokens) >= 3
@@ -176,11 +176,11 @@ async def test_list_user_tokens(
 
 
 @pytest.mark.asyncio
-async def test_revoke_token(
+async def test_delete_token(
     token_service: APITokenService,
     test_user: User
 ):
-    """Test revoking API token"""
+    """Test deleting API token"""
     # Arrange
     api_token, plaintext_token = await token_service.create_token(
         test_user.id,
@@ -188,10 +188,11 @@ async def test_revoke_token(
     )
     
     # Act
-    await token_service.revoke_token(api_token.id, test_user.id)
+    success = await token_service.delete_token(api_token.id, test_user.id)
+    assert success is True
     
     # Verify token no longer works
     verified_user = await token_service.verify_token(plaintext_token)
     
     # Assert
-    assert verified_user is None  # Token should be revoked
+    assert verified_user is None  # Token should be deleted
