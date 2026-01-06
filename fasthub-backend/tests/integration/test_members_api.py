@@ -25,10 +25,12 @@ async def test_list_organization_members(
     
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
-    assert isinstance(data, list)
-    assert len(data) >= 1  # At least test_user
+    assert "members" in data
+    assert "total" in data
+    assert isinstance(data["members"], list)
+    assert len(data["members"]) >= 1  # At least test_user
     # Check that test_user is in members
-    member_ids = [member["user_id"] for member in data]
+    member_ids = [member["user_id"] for member in data["members"]]
     assert str(test_user.id) in member_ids
 
 
@@ -42,6 +44,16 @@ async def test_add_member(
     """Test POST /api/v1/organizations/{id}/members - Add member"""
     # Set owner
     test_organization.owner_id = owner_user.id
+    await db_session.commit()
+    
+    # Add owner as member (required for get_user_org_role check)
+    from app.models.member import Member as MemberModel, MemberRole
+    owner_member = MemberModel(
+        user_id=owner_user.id,
+        organization_id=test_organization.id,
+        role=MemberRole.ADMIN
+    )
+    db_session.add(owner_member)
     await db_session.commit()
     
     # Create a new user to add as member
