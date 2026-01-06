@@ -170,3 +170,95 @@ class CacheService:
 
 # Singleton instance
 cache = CacheService()
+
+
+# Function-based API (for backward compatibility with tests)
+async def cache_set(key: str, value: Any, ttl: int = 3600) -> bool:
+    """
+    Set value in cache with TTL (function-based API)
+    
+    Args:
+        key: Cache key
+        value: Value to cache
+        ttl: Time to live in seconds
+    
+    Returns:
+        bool: True if successful
+    """
+    return await cache.set(key, value, expire=ttl)
+
+
+async def cache_get(key: str) -> Optional[Any]:
+    """
+    Get value from cache (function-based API)
+    
+    Args:
+        key: Cache key
+    
+    Returns:
+        Optional[Any]: Cached value or None
+    """
+    return await cache.get(key)
+
+
+async def cache_delete(key: str) -> bool:
+    """
+    Delete key from cache (function-based API)
+    
+    Args:
+        key: Cache key
+    
+    Returns:
+        bool: True if deleted
+    """
+    return await cache.delete(key)
+
+
+async def cache_exists(key: str) -> bool:
+    """
+    Check if key exists in cache (function-based API)
+    
+    Args:
+        key: Cache key
+    
+    Returns:
+        bool: True if exists
+    """
+    if not cache.enabled or not cache.client:
+        return False
+    
+    try:
+        exists = await cache.client.exists(key)
+        return exists > 0
+    except Exception as e:
+        logger.error(f"Cache exists error: {e}")
+        return False
+
+
+async def cache_clear_pattern(pattern: str) -> int:
+    """
+    Delete all keys matching pattern (function-based API)
+    
+    Args:
+        pattern: Redis pattern
+    
+    Returns:
+        int: Number of keys deleted
+    """
+    return await cache.delete_pattern(pattern)
+
+
+def cache_key(*args, **kwargs) -> str:
+    """
+    Generate cache key from arguments (function-based API)
+    
+    Example:
+        key = cache_key("user", user_id=123)
+    """
+    parts = [str(arg) for arg in args]
+    
+    if kwargs:
+        kv_pairs = [f"{k}={v}" for k, v in sorted(kwargs.items())]
+        parts.extend(kv_pairs)
+    
+    return ":".join(parts)
