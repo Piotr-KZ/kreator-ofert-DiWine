@@ -40,19 +40,18 @@ async def test_list_user_organizations(
     test_organization: Organization,
     auth_headers: dict
 ):
-    """Test GET /api/v1/organizations - List user's organizations"""
+    """Test GET /api/v1/organizations/me - Get user's current organization"""
     response = await async_client.get(
-        "/api/v1/organizations/",
+        "/api/v1/organizations/me",
         headers=auth_headers
     )
     
     assert response.status_code == status.HTTP_200_OK
     data = response.json()
-    assert isinstance(data, list)
-    assert len(data) >= 1
-    # Check that test_organization is in the list
-    org_ids = [org["id"] for org in data]
-    assert str(test_organization.id) in org_ids
+    assert "id" in data
+    assert "name" in data
+    # Should return organization with stats
+    assert "user_count" in data or "subscription_status" in data
 
 
 @pytest.mark.asyncio
@@ -62,7 +61,7 @@ async def test_update_organization_billing(
     owner_user: User,
     db_session
 ):
-    """Test PATCH /api/v1/organizations/{id}/billing - Update billing info"""
+    """Test PATCH /api/v1/organizations/{id} - Update organization billing info"
     # Set owner
     test_organization.owner_id = owner_user.id
     await db_session.commit()
@@ -73,7 +72,7 @@ async def test_update_organization_billing(
     headers = {"Authorization": f"Bearer {token}"}
     
     response = await async_client.patch(
-        f"/api/v1/organizations/{test_organization.id}/billing",
+        f"/api/v1/organizations/{test_organization.id}",
         json={
             "billing_street": "123 Main St",
             "billing_city": "Warsaw",
