@@ -61,7 +61,7 @@ async def test_update_organization_billing(
     owner_user: User,
     db_session
 ):
-    """Test PATCH /api/v1/organizations/{id} - Update organization billing info"
+    """Test PATCH /api/v1/organizations/{id} - Update organization billing info"""
     # Set owner
     test_organization.owner_id = owner_user.id
     await db_session.commit()
