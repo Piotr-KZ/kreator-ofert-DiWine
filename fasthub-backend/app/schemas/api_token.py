@@ -5,6 +5,7 @@ Pydantic models for API token data
 
 from datetime import datetime
 from typing import Optional
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
 
@@ -21,8 +22,8 @@ class APITokenResponse(BaseModel):
     model_config = {"strict": True}
     """Schema for API token response (without plaintext token)"""
 
-    id: int
-    user_id: int
+    id: UUID
+    user_id: UUID
     name: str
     last_used_at: Optional[datetime]
     expires_at: Optional[datetime]

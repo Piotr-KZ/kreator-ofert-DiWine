@@ -82,7 +82,7 @@ class APITokenService:
             return None
 
         # Check if expired
-        if api_token.is_expired():
+        if api_token.is_expired:
             return None
 
         # Update last used timestamp

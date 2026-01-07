@@ -182,3 +182,57 @@ class TokenBlacklist:
         except Exception as e:
             logger.error(f"Failed to clear blacklist: {e}")
             return False
+
+
+# ============================================================================
+# WRAPPER FUNCTIONS FOR TESTS
+# ============================================================================
+
+def blacklist_token(token: str, expires_at: datetime) -> bool:
+    """
+    Wrapper function for tests - adds token to blacklist
+    
+    Args:
+        token: JWT token to blacklist
+        expires_at: Token expiration datetime
+        
+    Returns:
+        True if added successfully, False otherwise
+    """
+    return TokenBlacklist.add_token(token, expires_at)
+
+
+def is_token_blacklisted(token: str) -> bool:
+    """
+    Wrapper function for tests - checks if token is blacklisted
+    
+    Args:
+        token: JWT token to check
+        
+    Returns:
+        True if blacklisted, False otherwise
+    """
+    return TokenBlacklist.is_blacklisted(token)
+
+
+def cleanup_expired_tokens() -> bool:
+    """
+    Wrapper function for tests - cleanup expired tokens
+    
+    Note: Redis automatically expires keys with TTL, so this is a no-op
+    
+    Returns:
+        True always (Redis handles expiration automatically)
+    """
+    # Redis automatically removes expired keys, no manual cleanup needed
+    return True
+
+
+def get_redis():
+    """
+    Wrapper function for tests - get Redis client
+    
+    Returns:
+        Redis client or None
+    """
+    return TokenBlacklist.get_redis()

@@ -25,6 +25,16 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     
     steps:
       - name: Checkout code
@@ -59,6 +69,9 @@ jobs:
           JWT_SECRET: test-secret-key-for-ci-testing
           OAUTH_SERVER_URL: http://localhost:8000
           VITE_APP_ID: test-app-id
+          REDIS_URL: redis://localhost:6379/0
+          SENTRY_DSN: ""
+          ENVIRONMENT: testing
       
       - name: Run unit tests
         run: |
@@ -70,6 +83,9 @@ jobs:
           JWT_SECRET: test-secret-key-for-ci-testing
           OAUTH_SERVER_URL: http://localhost:8000
           VITE_APP_ID: test-app-id
+          REDIS_URL: redis://localhost:6379/0
+          SENTRY_DSN: ""
+          ENVIRONMENT: testing
       
       - name: Run integration tests
         run: |
@@ -81,6 +97,9 @@ jobs:
           JWT_SECRET: test-secret-key-for-ci-testing
           OAUTH_SERVER_URL: http://localhost:8000
           VITE_APP_ID: test-app-id
+          REDIS_URL: redis://localhost:6379/0
+          SENTRY_DSN: ""
+          ENVIRONMENT: testing
       
       # Root-level tests disabled (legacy tests with transaction issues)
       # - name: Run root-level tests

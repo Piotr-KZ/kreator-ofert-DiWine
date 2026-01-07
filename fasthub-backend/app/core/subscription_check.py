@@ -205,3 +205,45 @@ async def require_active_subscription(user: User, db: AsyncSession, path: str) -
             ...
     """
     await SubscriptionChecker.check_subscription(user, db, path)
+
+
+# ============================================================================
+# WRAPPER FUNCTIONS FOR TESTS
+# ============================================================================
+
+async def check_subscription_active(
+    db: AsyncSession, 
+    organization_id: UUID
+) -> bool:
+    """
+    Check if organization has active subscription (wrapper for tests)
+    
+    Args:
+        db: Database session
+        organization_id: Organization UUID
+        
+    Returns:
+        True if subscription is active, False otherwise
+    """
+    subscription = await SubscriptionChecker._get_subscription(organization_id, db)
+    
+    if not subscription:
+        return False
+        
+    # Check if subscription is in valid state
+    now = datetime.utcnow()
+    
+    if subscription.status == SubscriptionStatus.active:
+        if subscription.current_period_end and subscription.current_period_end >= now:
+            return True
+    elif subscription.status == SubscriptionStatus.trialing:
+        if subscription.trial_end and subscription.trial_end >= now:
+            return True
+    elif subscription.status == SubscriptionStatus.past_due:
+        grace_period_end = subscription.current_period_end + timedelta(
+            days=SubscriptionChecker.GRACE_PERIOD_DAYS
+        )
+        if now <= grace_period_end:
+            return True
+            
+    return False

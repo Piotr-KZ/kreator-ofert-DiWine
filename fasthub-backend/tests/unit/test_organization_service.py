@@ -21,24 +21,6 @@ async def org_service(db_session: AsyncSession) -> OrganizationService:
     return OrganizationService(db_session)
 
 
-@pytest_asyncio.fixture
-async def owner_user(db_session: AsyncSession) -> User:
-    """Create organization owner user"""
-    from app.core.security import get_password_hash
-    
-    user = User(
-        email="owner@example.com",
-        hashed_password=get_password_hash("ownerpass123"),
-        full_name="Organization Owner",
-        is_active=True,
-        is_verified=True,
-    )
-    db_session.add(user)
-    await db_session.commit()
-    await db_session.refresh(user)
-    return user
-
-
 @pytest.mark.asyncio
 async def test_create_organization(
     org_service: OrganizationService,

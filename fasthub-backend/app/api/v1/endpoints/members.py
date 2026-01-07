@@ -21,7 +21,7 @@ from app.schemas.member import (
     MemberUpdate,
 )
 
-router = APIRouter(prefix="/members", tags=["members"])
+router = APIRouter(tags=["members"])
 
 
 async def get_user_org_role(

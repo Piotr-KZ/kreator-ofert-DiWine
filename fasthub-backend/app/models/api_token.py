@@ -38,6 +38,7 @@ class APIToken(BaseModel):
     # Relationships
     user = relationship("User", back_populates="api_tokens")
 
+    @property
     def is_expired(self) -> bool:
         """Check if token is expired"""
         if not self.expires_at:
@@ -46,4 +47,4 @@ class APIToken(BaseModel):
 
     def is_valid(self) -> bool:
         """Check if token is valid (not expired)"""
-        return not self.is_expired()
+        return not self.is_expired

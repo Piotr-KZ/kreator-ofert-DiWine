@@ -19,10 +19,7 @@ router = APIRouter()
 
 
 @router.post("/", response_model=APITokenCreateResponse)
-@limiter.limit(RateLimits.API_TOKEN_CREATE)
 async def create_api_token(
-    http_request: Request,
-    response: Response,
     request: APITokenCreate,
     current_user: User = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
