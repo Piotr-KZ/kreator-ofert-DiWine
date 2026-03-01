@@ -1,14 +1,14 @@
 """
 Alembic environment configuration for PostgreSQL
+Uses fasthub_core migration helper for unified model registry.
 """
 from logging.config import fileConfig
 from sqlalchemy import engine_from_config, pool
 from alembic import context
 
-# Import models and settings
-from app.core.config import get_settings
-from app.db.session import Base
-from app.models import *  # Import all models
+# Import from fasthub_core — single source of truth
+from fasthub_core.config import get_settings
+from fasthub_core.db.migrations import get_metadata, get_sync_database_url
 
 # Alembic Config object
 config = context.config
@@ -17,20 +17,12 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Convert async URL to sync for migrations
-def get_sync_database_url(url: str) -> str:
-    """Convert async PostgreSQL URL to sync (remove asyncpg)"""
-    if '+asyncpg' in url:
-        url = url.replace('+asyncpg', '')
-    return url
-
-# Set SQLAlchemy URL
-# Lazy load settings to ensure env vars are available
+# Set SQLAlchemy URL — lazy load settings
 settings = get_settings()
 config.set_main_option("sqlalchemy.url", get_sync_database_url(settings.DATABASE_URL))
 
-# Add your model's MetaData object here for 'autogenerate' support
-target_metadata = Base.metadata
+# All fasthub_core models registered via get_metadata()
+target_metadata = get_metadata()
 
 
 def run_migrations_offline() -> None:
@@ -52,11 +44,11 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations in 'online' mode"""
-    
+
     configuration = config.get_section(config.config_ini_section)
     settings = get_settings()
     configuration["sqlalchemy.url"] = get_sync_database_url(settings.DATABASE_URL)
-    
+
     connectable = engine_from_config(
         configuration,
         prefix="sqlalchemy.",

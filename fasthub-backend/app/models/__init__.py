@@ -1,25 +1,24 @@
 """
-Models package
-Exports all database models
+Models package — re-exports from fasthub_core
+All models come from fasthub_core for unified schema.
 """
 
-from app.models.api_token import APIToken
-from app.models.base import BaseModel
-from app.models.invoice import Invoice, InvoiceStatus
-from app.models.member import Member, MemberRole
-from app.models.organization import Organization
-from app.models.subscription import Subscription, SubscriptionStatus
-from app.models.user import User
+from fasthub_core.db.base import BaseModel
+from fasthub_core.users.models import User, Organization, Member, MemberRole
+from fasthub_core.auth.models import APIToken
+from fasthub_core.billing.models import Subscription, SubscriptionStatus, Invoice, InvoiceStatus
+from fasthub_core.audit.models import AuditLog
 
 __all__ = [
     "BaseModel",
-    "Organization",
     "User",
+    "Organization",
     "Member",
     "MemberRole",
+    "APIToken",
     "Subscription",
     "SubscriptionStatus",
     "Invoice",
     "InvoiceStatus",
-    "APIToken",
+    "AuditLog",
 ]

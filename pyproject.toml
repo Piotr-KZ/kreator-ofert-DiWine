@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fasthub-core"
+version = "2.0.0-alpha"
+description = "Universal SaaS boilerplate - auth, users, billing, middleware"
+requires-python = ">=3.11"
+
+[tool.setuptools.packages.find]
+include = ["fasthub_core", "fasthub_core.*"]

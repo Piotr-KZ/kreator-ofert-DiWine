@@ -23,8 +23,9 @@ TEST_DATABASE_URL = os.environ.get(
 if TEST_DATABASE_URL.startswith("postgresql://"):
     TEST_DATABASE_URL = TEST_DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
-# Ensure DATABASE_URL is set before importing app
+# Ensure required env vars are set before importing app
 os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+os.environ.setdefault("SECRET_KEY", "test-secret-key-for-pytest-1234567890")
 
 from app.core.config import settings
 from app.core.security import get_password_hash

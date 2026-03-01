@@ -17,6 +17,7 @@ from app.core.logging_config import configure_logging, get_logger
 from app.core.monitoring import init_sentry
 from app.core.rate_limit import get_rate_limit_exceeded_handler, limiter
 from app.middleware.request_logging import RequestLoggingMiddleware
+from fasthub_core.middleware import SecurityHeadersMiddleware, RequestIDMiddleware
 
 # Configure structured logging
 configure_logging()
@@ -104,40 +105,14 @@ app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 
-# 5. Security headers middleware
-@app.middleware("http")
-async def add_security_headers(request: Request, call_next):
-    response = await call_next(request)
+# 5. Security headers middleware (from fasthub_core)
+app.add_middleware(
+    SecurityHeadersMiddleware,
+    enable_hsts=settings.ENVIRONMENT == "production",
+)
 
-    # Security headers (OWASP recommendations)
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["X-XSS-Protection"] = "1; mode=block"
-    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    response.headers["Permissions-Policy"] = "geolocation=(), microphone=(), camera=()"
-
-    # Content Security Policy
-    if not settings.DEBUG:
-        response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
-        )
-
-    # Remove server header
-    if "Server" in response.headers:
-        del response.headers["Server"]
-
-    return response
-
-
-# 6. Request timing middleware
-@app.middleware("http")
-async def add_process_time_header(request: Request, call_next):
-    start_time = time.time()
-    response = await call_next(request)
-    process_time = time.time() - start_time
-    response.headers["X-Process-Time"] = str(process_time)
-    return response
+# 6. Request ID middleware (from fasthub_core)
+app.add_middleware(RequestIDMiddleware)
 
 
 # Include API router

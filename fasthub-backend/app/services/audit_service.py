@@ -25,7 +25,7 @@ class AuditService:
         action: str,
         resource_type: str,
         resource_id: Optional[UUID] = None,
-        details: Optional[Dict[str, Any]] = None,
+        extra_data: Optional[Dict[str, Any]] = None,
         request: Optional[Request] = None,
     ) -> AuditLog:
         """
@@ -36,7 +36,7 @@ class AuditService:
             action: Action name (e.g., 'user.delete', 'user.update')
             resource_type: Type of resource (e.g., 'user', 'organization')
             resource_id: ID of the affected resource
-            details: Additional context (what changed, etc.)
+            extra_data: Additional context (what changed, etc.)
             request: FastAPI request object (for IP and user agent)
 
         Returns:
@@ -54,8 +54,8 @@ class AuditService:
             user_id=user.id,
             action=action,
             resource_type=resource_type,
-            resource_id=resource_id,
-            details=details,
+            resource_id=str(resource_id) if resource_id else None,
+            extra_data=extra_data,
             ip_address=ip_address,
             user_agent=user_agent,
         )

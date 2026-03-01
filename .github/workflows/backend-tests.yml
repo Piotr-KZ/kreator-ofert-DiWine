@@ -53,6 +53,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-pip-
       
+      - name: Install fasthub_core (local package)
+        run: |
+          pip install -e .
+
       - name: Install dependencies
         run: |
           cd fasthub-backend

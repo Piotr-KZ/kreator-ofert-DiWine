@@ -38,8 +38,8 @@ async def test_log_action_basic(
     assert audit_log.user_id == test_user.id
     assert audit_log.action == "user.update"
     assert audit_log.resource_type == "user"
-    assert audit_log.resource_id == test_user.id
-    assert audit_log.details is None
+    assert audit_log.resource_id == str(test_user.id)
+    assert audit_log.extra_data is None
     assert audit_log.ip_address is None
     assert audit_log.user_agent is None
 
@@ -64,13 +64,13 @@ async def test_log_action_with_details(
         action="user.update",
         resource_type="user",
         resource_id=test_user.id,
-        details=details
+        extra_data=details
     )
     await db_session.commit()
     
     # Assert
-    assert audit_log.details == details
-    assert audit_log.details["field"] == "email"
+    assert audit_log.extra_data == details
+    assert audit_log.extra_data["field"] == "email"
 
 
 @pytest.mark.asyncio
@@ -202,11 +202,11 @@ async def test_log_action_complex_details(
         user=test_user,
         action="user.bulk_update",
         resource_type="user",
-        details=complex_details
+        extra_data=complex_details
     )
     await db_session.commit()
     
     # Assert
-    assert audit_log.details["operation"] == "bulk_update"
-    assert len(audit_log.details["affected_users"]) == 1
-    assert audit_log.details["changes"]["role"]["to"] == "admin"
+    assert audit_log.extra_data["operation"] == "bulk_update"
+    assert len(audit_log.extra_data["affected_users"]) == 1
+    assert audit_log.extra_data["changes"]["role"]["to"] == "admin"
