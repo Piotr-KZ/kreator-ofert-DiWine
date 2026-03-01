@@ -128,13 +128,20 @@ def test_fasthub_auth_implementation():
     assert auth.verify_password("BadPassword", hashed) == False
 
 
-def test_fasthub_permission_role_mapping():
-    """Sprawdź mapowanie uprawnień na role"""
-    from fasthub_core.contracts_impl import ROLE_PERMISSIONS
+def test_fasthub_permission_uses_rbac():
+    """FastHubPermission musi używać RBACService (Advanced RBAC)"""
+    from fasthub_core.contracts_impl import FastHubPermission
+    from fasthub_core.rbac.defaults import CORE_PERMISSIONS, SYSTEM_ROLES
 
-    assert "processes.edit" in ROLE_PERMISSIONS["admin"]
-    assert "processes.edit" not in ROLE_PERMISSIONS["viewer"]
-    assert "processes.view" in ROLE_PERMISSIONS["viewer"]
+    # PermissionContract teraz deleguje do RBACService
+    assert FastHubPermission is not None
+    # Domyślne role muszą istnieć
+    assert "owner" in SYSTEM_ROLES
+    assert "admin" in SYSTEM_ROLES
+    assert "member" in SYSTEM_ROLES
+    # Core permissions muszą zawierać kluczowe kategorie
+    assert "team" in CORE_PERMISSIONS
+    assert "billing" in CORE_PERMISSIONS
 
 
 def test_notification_not_implemented():

@@ -141,64 +141,32 @@ class FastHubUser(UserContract):
 
 
 # ============================================================================
-# Permission — podstawowa wersja (admin/viewer)
-# Pełny RBAC planowany w v2.0
+# Permission — Advanced RBAC (v2.0)
+# Używa RBACService z fasthub_core.rbac
 # ============================================================================
-
-# Mapowanie ról na uprawnienia (basic)
-ROLE_PERMISSIONS = {
-    "admin": {
-        "processes.view", "processes.edit", "processes.execute", "processes.delete",
-        "members.view", "members.invite", "members.remove",
-        "billing.view", "billing.manage",
-        "settings.view", "settings.edit",
-        "audit.view",
-    },
-    "viewer": {
-        "processes.view",
-        "members.view",
-        "billing.view",
-        "settings.view",
-    },
-}
-
 
 class FastHubPermission(PermissionContract):
     """
-    Podstawowa implementacja uprawnień.
-    Obecnie: admin ma wszystko, viewer tylko odczyt.
-    v2.0 doda: customowe role, uprawnienia per-zasób, grupy.
+    Implementacja uprawnień oparta na Advanced RBAC.
+    Sprawdza uprawnienia przez RBACService (role -> permissions z bazy danych).
     """
 
     async def check_permission(self, user_id: str, organization_id: str, permission: str, db: AsyncSession) -> bool:
-        # Pobierz rolę usera w organizacji
-        result = await db.execute(
-            select(Member).where(
-                Member.user_id == UUID(user_id),
-                Member.organization_id == UUID(organization_id),
-            )
+        from fasthub_core.rbac.service import RBACService
+        rbac = RBACService(db)
+        return await rbac.check_permission(
+            user_id=UUID(user_id),
+            organization_id=UUID(organization_id),
+            permission=permission,
         )
-        member = result.scalar_one_or_none()
-        if not member or not member.role:
-            return False
-
-        role = member.role.value
-        permissions = ROLE_PERMISSIONS.get(role, set())
-        return permission in permissions
 
     async def get_user_permissions(self, user_id: str, organization_id: str, db: AsyncSession) -> Set[str]:
-        result = await db.execute(
-            select(Member).where(
-                Member.user_id == UUID(user_id),
-                Member.organization_id == UUID(organization_id),
-            )
+        from fasthub_core.rbac.service import RBACService
+        rbac = RBACService(db)
+        return await rbac.get_user_permissions(
+            user_id=UUID(user_id),
+            organization_id=UUID(organization_id),
         )
-        member = result.scalar_one_or_none()
-        if not member or not member.role:
-            return set()
-
-        role = member.role.value
-        return ROLE_PERMISSIONS.get(role, set())
 
 
 # ============================================================================

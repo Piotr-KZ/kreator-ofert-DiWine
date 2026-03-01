@@ -26,6 +26,9 @@ from fasthub_core.db.session import get_db, get_engine
 # Admin
 from fasthub_core.admin import admin_router
 
+# RBAC
+from fasthub_core.rbac import rbac_router, RBACService, require_permission
+
 __all__ = [
     "__version__",
     "AuthContract", "UserContract", "PermissionContract",
@@ -33,4 +36,5 @@ __all__ = [
     "DatabaseContract",
     "Settings", "get_settings", "get_db", "get_engine",
     "admin_router",
+    "rbac_router", "RBACService", "require_permission",
 ]
