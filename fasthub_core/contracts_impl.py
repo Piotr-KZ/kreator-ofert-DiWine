@@ -1,0 +1,361 @@
+"""
+Implementacja kontraktów — mapowanie interfejsów na realne funkcje.
+
+Każda klasa tutaj łączy abstrakcyjny kontrakt z faktycznym kodem
+w fasthub_core/. Aplikacje importują te implementacje.
+
+Status implementacji:
+- FastHubAuth          — w pełni zaimplementowany
+- FastHubUser          — w pełni zaimplementowany
+- FastHubPermission    — podstawowa wersja (admin/viewer)
+- FastHubBilling       — częściowo (get_subscription gotowe, limity w v2.0)
+- FastHubAudit         — w pełni zaimplementowany
+- FastHubNotification  — brak implementacji (planowane v2.0)
+- FastHubDatabase      — w pełni zaimplementowany
+"""
+
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Set
+from uuid import UUID
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from fasthub_core.contracts import (
+    AuthContract,
+    UserContract,
+    PermissionContract,
+    BillingContract,
+    AuditContract,
+    NotificationContract,
+    DatabaseContract,
+)
+
+# Importy faktycznych implementacji
+from fasthub_core.auth.service import (
+    get_password_hash,
+    verify_password,
+    create_access_token,
+    create_refresh_token,
+    decode_access_token,
+    decode_refresh_token,
+)
+from fasthub_core.auth.token_blacklist import TokenBlacklist
+from fasthub_core.db.session import get_db, get_engine
+from fasthub_core.users.models import User, Organization, Member, MemberRole
+from fasthub_core.audit.models import AuditLog
+from fasthub_core.billing.models import Subscription
+
+
+# ============================================================================
+# Auth — w pełni zaimplementowany
+# ============================================================================
+
+class FastHubAuth(AuthContract):
+    """Implementacja kontraktu auth oparta na fasthub_core.auth"""
+
+    def hash_password(self, password: str) -> str:
+        return get_password_hash(password)
+
+    def verify_password(self, plain_password: str, hashed_password: str) -> bool:
+        return verify_password(plain_password, hashed_password)
+
+    def create_access_token(self, user_id: str, organization_id: Optional[str] = None, extra_data: Optional[Dict] = None) -> str:
+        data = {"sub": user_id}
+        if organization_id:
+            data["org"] = organization_id
+        if extra_data:
+            data.update(extra_data)
+        return create_access_token(data)
+
+    def create_refresh_token(self, user_id: str) -> str:
+        return create_refresh_token({"sub": user_id})
+
+    def decode_token(self, token: str) -> Optional[Dict[str, Any]]:
+        # Najpierw próbujemy access token, potem refresh
+        result = decode_access_token(token)
+        if result is None:
+            result = decode_refresh_token(token)
+        return result
+
+    def blacklist_token(self, token: str, expires_at: datetime) -> bool:
+        return TokenBlacklist.add_token(token, expires_at)
+
+    def is_token_blacklisted(self, token: str) -> bool:
+        return TokenBlacklist.is_blacklisted(token)
+
+
+# ============================================================================
+# User — w pełni zaimplementowany
+# ============================================================================
+
+class FastHubUser(UserContract):
+    """Implementacja kontraktu user oparta na fasthub_core.users"""
+
+    async def get_current_user(self, token: str, db: AsyncSession) -> Any:
+        payload = decode_access_token(token)
+        if not payload:
+            return None
+
+        user_id = payload.get("sub")
+        if not user_id:
+            return None
+
+        result = await db.execute(select(User).where(User.id == UUID(user_id)))
+        return result.scalar_one_or_none()
+
+    async def get_user(self, user_id: str, db: AsyncSession) -> Optional[Any]:
+        result = await db.execute(select(User).where(User.id == UUID(user_id)))
+        return result.scalar_one_or_none()
+
+    async def list_organization_users(self, organization_id: str, db: AsyncSession) -> List[Dict[str, Any]]:
+        result = await db.execute(
+            select(Member, User)
+            .join(User, Member.user_id == User.id)
+            .where(Member.organization_id == UUID(organization_id))
+        )
+        rows = result.all()
+
+        users = []
+        for member, user in rows:
+            users.append({
+                "id": str(user.id),
+                "email": user.email,
+                "full_name": user.full_name,
+                "role": member.role.value if member.role else None,
+                "is_active": user.is_active,
+            })
+        return users
+
+    async def get_user_role(self, user_id: str, organization_id: str, db: AsyncSession) -> Optional[str]:
+        result = await db.execute(
+            select(Member).where(
+                Member.user_id == UUID(user_id),
+                Member.organization_id == UUID(organization_id),
+            )
+        )
+        member = result.scalar_one_or_none()
+        if member and member.role:
+            return member.role.value
+        return None
+
+
+# ============================================================================
+# Permission — podstawowa wersja (admin/viewer)
+# Pełny RBAC planowany w v2.0
+# ============================================================================
+
+# Mapowanie ról na uprawnienia (basic)
+ROLE_PERMISSIONS = {
+    "admin": {
+        "processes.view", "processes.edit", "processes.execute", "processes.delete",
+        "members.view", "members.invite", "members.remove",
+        "billing.view", "billing.manage",
+        "settings.view", "settings.edit",
+        "audit.view",
+    },
+    "viewer": {
+        "processes.view",
+        "members.view",
+        "billing.view",
+        "settings.view",
+    },
+}
+
+
+class FastHubPermission(PermissionContract):
+    """
+    Podstawowa implementacja uprawnień.
+    Obecnie: admin ma wszystko, viewer tylko odczyt.
+    v2.0 doda: customowe role, uprawnienia per-zasób, grupy.
+    """
+
+    async def check_permission(self, user_id: str, organization_id: str, permission: str, db: AsyncSession) -> bool:
+        # Pobierz rolę usera w organizacji
+        result = await db.execute(
+            select(Member).where(
+                Member.user_id == UUID(user_id),
+                Member.organization_id == UUID(organization_id),
+            )
+        )
+        member = result.scalar_one_or_none()
+        if not member or not member.role:
+            return False
+
+        role = member.role.value
+        permissions = ROLE_PERMISSIONS.get(role, set())
+        return permission in permissions
+
+    async def get_user_permissions(self, user_id: str, organization_id: str, db: AsyncSession) -> Set[str]:
+        result = await db.execute(
+            select(Member).where(
+                Member.user_id == UUID(user_id),
+                Member.organization_id == UUID(organization_id),
+            )
+        )
+        member = result.scalar_one_or_none()
+        if not member or not member.role:
+            return set()
+
+        role = member.role.value
+        return ROLE_PERMISSIONS.get(role, set())
+
+
+# ============================================================================
+# Billing — częściowo zaimplementowany
+# get_subscription: gotowe
+# check_limit, record_usage: planowane v2.0
+# ============================================================================
+
+class FastHubBilling(BillingContract):
+    """
+    Implementacja kontraktu billing.
+    Subskrypcje przez Stripe — dane z modelu Subscription.
+    System limitów i zużycia planowany w v2.0.
+    """
+
+    async def get_subscription(self, organization_id: str, db: AsyncSession) -> Optional[Dict[str, Any]]:
+        result = await db.execute(
+            select(Subscription).where(
+                Subscription.organization_id == UUID(organization_id)
+            ).order_by(Subscription.created_at.desc()).limit(1)
+        )
+        sub = result.scalar_one_or_none()
+        if not sub:
+            return None
+
+        return {
+            "stripe_subscription_id": sub.stripe_subscription_id,
+            "stripe_price_id": sub.stripe_price_id,
+            "status": sub.status.value if sub.status else None,
+            "current_period_start": sub.current_period_start.isoformat() if sub.current_period_start else None,
+            "current_period_end": sub.current_period_end.isoformat() if sub.current_period_end else None,
+            "cancel_at_period_end": sub.cancel_at_period_end,
+        }
+
+    async def check_limit(self, organization_id: str, resource: str, current_usage: int, db: AsyncSession) -> bool:
+        raise NotImplementedError("Planowane w FastHub v2.0 — system limitów per plan")
+
+    async def record_usage(self, organization_id: str, resource: str, amount: int, db: AsyncSession) -> None:
+        raise NotImplementedError("Planowane w FastHub v2.0 — tracking zużycia zasobów")
+
+
+# ============================================================================
+# Audit — w pełni zaimplementowany
+# ============================================================================
+
+class FastHubAudit(AuditContract):
+    """Implementacja kontraktu audit oparta na fasthub_core.audit"""
+
+    async def log_action(
+        self,
+        user_id: str,
+        organization_id: str,
+        action: str,
+        resource_type: str,
+        resource_id: str,
+        details: Optional[Dict[str, Any]] = None,
+        before: Optional[Dict[str, Any]] = None,
+        after: Optional[Dict[str, Any]] = None,
+        db: AsyncSession = None,
+    ) -> None:
+        if db is None:
+            raise ValueError("db session is required")
+
+        full_details = details or {}
+        if before is not None:
+            full_details["before"] = before
+        if after is not None:
+            full_details["after"] = after
+
+        audit_log = AuditLog(
+            user_id=UUID(user_id),
+            action=action,
+            resource_type=resource_type,
+            resource_id=UUID(resource_id) if resource_id else None,
+            details=full_details,
+        )
+        db.add(audit_log)
+        await db.flush()
+
+    async def get_audit_logs(
+        self,
+        organization_id: str,
+        resource_type: Optional[str] = None,
+        resource_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        limit: int = 50,
+        offset: int = 0,
+        db: AsyncSession = None,
+    ) -> List[Dict[str, Any]]:
+        if db is None:
+            raise ValueError("db session is required")
+
+        query = select(AuditLog)
+
+        if resource_type:
+            query = query.where(AuditLog.resource_type == resource_type)
+        if resource_id:
+            query = query.where(AuditLog.resource_id == UUID(resource_id))
+        if user_id:
+            query = query.where(AuditLog.user_id == UUID(user_id))
+
+        query = query.order_by(AuditLog.created_at.desc()).offset(offset).limit(limit)
+        result = await db.execute(query)
+        logs = result.scalars().all()
+
+        return [
+            {
+                "id": str(log.id),
+                "user_id": str(log.user_id) if log.user_id else None,
+                "action": log.action,
+                "resource_type": log.resource_type,
+                "resource_id": str(log.resource_id) if log.resource_id else None,
+                "details": log.details,
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+            }
+            for log in logs
+        ]
+
+
+# ============================================================================
+# Notification — brak implementacji (planowane v2.0)
+# ============================================================================
+
+class FastHubNotification(NotificationContract):
+    """
+    Placeholder — powiadomienia planowane w FastHub v2.0.
+    Będzie: in-app notifications + email templates (SendGrid).
+    """
+
+    async def send_notification(
+        self,
+        user_id: str,
+        notification_type: str,
+        title: str,
+        message: str,
+        data: Optional[Dict[str, Any]] = None,
+    ) -> None:
+        raise NotImplementedError("Planowane w FastHub v2.0 — in-app notifications")
+
+    async def send_email(
+        self,
+        to_email: str,
+        template: str,
+        variables: Dict[str, Any],
+    ) -> None:
+        raise NotImplementedError("Planowane w FastHub v2.0 — email templates via SendGrid")
+
+
+# ============================================================================
+# Database — w pełni zaimplementowany
+# ============================================================================
+
+class FastHubDatabase(DatabaseContract):
+    """Implementacja kontraktu database oparta na fasthub_core.db"""
+
+    async def get_db_session(self):
+        return get_db()
+
+    def get_engine(self):
+        return get_engine()
