@@ -185,7 +185,7 @@ async def update_user(
                 action="user.update",
                 resource_type="user",
                 resource_id=user_id,
-                details=changes,
+                extra_data=changes,
                 request=request,
             )
     
@@ -221,7 +221,7 @@ async def delete_user(
             action="user.delete",
             resource_type="user",
             resource_id=user_id,
-            details={
+            extra_data={
                 "email": user_to_delete.email,
                 "full_name": user_to_delete.full_name,
                 "is_superuser": user_to_delete.is_superuser,
