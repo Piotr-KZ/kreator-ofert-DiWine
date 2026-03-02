@@ -58,6 +58,10 @@ from fasthub_core.rate_limiting import create_limiter, RateLimits
 from fasthub_core.health import health_router, HealthChecker, get_health_checker
 from fasthub_core.billing.subscription_check import SubscriptionChecker, require_active_subscription
 
+# File Storage + Feature Flags (Brief 14)
+from fasthub_core.storage import StorageService, FileUpload, get_storage_service
+from fasthub_core.billing.feature_flags import check_feature, require_feature, get_plan_features
+
 __all__ = [
     "__version__",
     "AuthContract", "UserContract", "PermissionContract",
@@ -80,4 +84,7 @@ __all__ = [
     "create_limiter", "RateLimits",
     "health_router", "HealthChecker", "get_health_checker",
     "SubscriptionChecker", "require_active_subscription",
+    # Brief 14 modules
+    "StorageService", "FileUpload", "get_storage_service",
+    "check_feature", "require_feature", "get_plan_features",
 ]

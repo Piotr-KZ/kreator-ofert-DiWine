@@ -96,6 +96,16 @@ class Settings(BaseSettings):
     SENTRY_ENVIRONMENT: str = "development"
     SENTRY_TRACES_SAMPLE_RATE: float = 0.1  # 10% of transactions
 
+    # File Storage
+    STORAGE_BACKEND: str = "local"  # "local" or "s3"
+    STORAGE_LOCAL_DIR: str = "./uploads"
+    STORAGE_MAX_FILE_SIZE_MB: float = 50.0
+
+    # S3 (opcjonalnie)
+    AWS_S3_BUCKET: Optional[str] = None
+    AWS_S3_REGION: str = "eu-central-1"
+    AWS_S3_ENDPOINT_URL: Optional[str] = None  # MinIO, Wasabi, DigitalOcean Spaces
+
     class Config:
         env_file = ".env"
         case_sensitive = True

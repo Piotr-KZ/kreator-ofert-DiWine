@@ -28,5 +28,6 @@ setup(
         "structlog>=23.1.0",
         "slowapi>=0.1.9",
         "sentry-sdk[fastapi]>=1.40.0",
+        "boto3>=1.34.0",
     ],
 )

@@ -31,6 +31,7 @@ def get_all_models():
     from fasthub_core.audit.models import AuditLog
     from fasthub_core.notifications.models import Notification, NotificationPreference
     from fasthub_core.rbac.models import Permission, Role, RolePermission, UserRole
+    from fasthub_core.storage.models import FileUpload  # noqa: F401
 
     return {
         "User": User,
@@ -54,6 +55,7 @@ def get_all_models():
         "Role": Role,
         "RolePermission": RolePermission,
         "UserRole": UserRole,
+        "FileUpload": FileUpload,
     }
 
 
