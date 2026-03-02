@@ -26,6 +26,14 @@ from fasthub_core.auth.blacklist import blacklist_token, is_token_blacklisted
 from fasthub_core.auth.password_validation import validate_password, PasswordValidator
 from fasthub_core.auth.email_verification import EmailVerificationService
 from fasthub_core.auth.routes import router as auth_router
+from fasthub_core.auth.social_routes import router as social_login_router
+from fasthub_core.auth.social_login import SocialLoginService, get_social_login_service
+from fasthub_core.auth.social_providers import (
+    SocialUserInfo,
+    SUPPORTED_PROVIDERS,
+    get_provider_config,
+    fetch_user_info,
+)
 
 __all__ = [
     "verify_password",
@@ -49,4 +57,12 @@ __all__ = [
     "PasswordValidator",
     "EmailVerificationService",
     "auth_router",
+    # Social Login (Brief 18)
+    "social_login_router",
+    "SocialLoginService",
+    "get_social_login_service",
+    "SocialUserInfo",
+    "SUPPORTED_PROVIDERS",
+    "get_provider_config",
+    "fetch_user_info",
 ]

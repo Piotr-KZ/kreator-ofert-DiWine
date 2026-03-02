@@ -72,10 +72,19 @@ class Settings(BaseSettings):
     FAKTUROWNIA_API_TOKEN: Optional[str] = None
     FAKTUROWNIA_ACCOUNT: Optional[str] = None
 
-    # Google APIs
+    # OAuth Social Login
     GOOGLE_CLIENT_ID: Optional[str] = None
     GOOGLE_CLIENT_SECRET: Optional[str] = None
     GOOGLE_REDIRECT_URI: Optional[str] = None
+    GITHUB_CLIENT_ID: Optional[str] = None
+    GITHUB_CLIENT_SECRET: Optional[str] = None
+    GITHUB_REDIRECT_URI: Optional[str] = None
+    MICROSOFT_CLIENT_ID: Optional[str] = None
+    MICROSOFT_CLIENT_SECRET: Optional[str] = None
+    MICROSOFT_REDIRECT_URI: Optional[str] = None
+
+    # Backend URL (for OAuth callbacks)
+    BACKEND_URL: str = "http://localhost:8000"
 
     # Outlook IMAP
     OUTLOOK_EMAIL: Optional[str] = None

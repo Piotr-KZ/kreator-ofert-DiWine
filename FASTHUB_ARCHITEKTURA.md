@@ -346,6 +346,11 @@ Logowanie / Rejestracja
 - **Testy e2e AutoFlow + fasthub_core** — 43 testy integracyjne
 - Pokrycie: encryption, event bus, OAuth, webhooks, billing, manifest, cross-module
 
+### Gotowe (Faza 4 — Brief 18)
+- **Social Login** — logowanie przez Google, GitHub, Microsoft
+- Automatyczne laczenie kont (ten sam email = to samo konto)
+- Tworzenie nowych kont bez hasla (social login only)
+
 ### Planowane
 - Brief 11: Thin wrappery w AutoFlow (zamiana lokalnych kopii na import z fasthub_core)
 - Szablony HTML emaili (zamiast plain text)
@@ -357,7 +362,7 @@ Logowanie / Rejestracja
 ## Wartosc biznesowa FastHub
 
 1. **Oszczednosc czasu:** Nowa aplikacja SaaS startuje w dni, nie miesiace
-2. **Sprawdzone rozwiazania:** Kazdy modul jest przetestowany (227+ testow: 184 fasthub_core + 43 e2e AutoFlow)
+2. **Sprawdzone rozwiazania:** Kazdy modul jest przetestowany (320+ testow: 277 fasthub_core + 43 e2e AutoFlow)
 3. **Bezpieczenstwo z automatu:** Bez dodatkowej pracy — szyfrowanie, uprawnienia, audit
 4. **Elastycznosc:** Kazdy modul mozna wymienic lub rozszerzyc niezaleznie
 5. **Skalowalnosc:** System gotowy na wzrost — od startupu do enterprise

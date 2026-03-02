@@ -62,6 +62,11 @@ from fasthub_core.billing.subscription_check import SubscriptionChecker, require
 from fasthub_core.storage import StorageService, FileUpload, get_storage_service
 from fasthub_core.billing.feature_flags import check_feature, require_feature, get_plan_features
 
+# Social Login (Brief 18)
+from fasthub_core.auth.social_login import SocialLoginService, get_social_login_service
+from fasthub_core.auth.social_routes import router as social_login_router
+from fasthub_core.auth.social_providers import SUPPORTED_PROVIDERS
+
 __all__ = [
     "__version__",
     "AuthContract", "UserContract", "PermissionContract",
@@ -87,4 +92,7 @@ __all__ = [
     # Brief 14 modules
     "StorageService", "FileUpload", "get_storage_service",
     "check_feature", "require_feature", "get_plan_features",
+    # Brief 18 — Social Login
+    "SocialLoginService", "get_social_login_service",
+    "social_login_router", "SUPPORTED_PROVIDERS",
 ]
