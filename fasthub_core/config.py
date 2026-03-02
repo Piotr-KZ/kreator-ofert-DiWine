@@ -105,6 +105,65 @@ class Settings(BaseSettings):
     SENTRY_ENVIRONMENT: str = "development"
     SENTRY_TRACES_SAMPLE_RATE: float = 0.1  # 10% of transactions
 
+    # Email templates + branding
+    EMAIL_BACKEND: Optional[str] = None  # "smtp", "sendgrid", "console" (auto-detect if None)
+    EMAIL_TEMPLATE_DIR: Optional[str] = None  # app override folder for templates
+    EMAIL_BRAND_COLOR: str = "#4F46E5"
+    EMAIL_BRAND_LOGO_URL: str = ""
+    EMAIL_COMPANY_NAME: str = "FastHub"
+    EMAIL_COMPANY_ADDRESS: str = ""
+
+    # Invitations
+    INVITATION_EXPIRE_DAYS: int = 7
+    INVITATION_MAX_PENDING: int = 50
+
+    # PayU
+    PAYU_POS_ID: Optional[str] = None
+    PAYU_MD5_KEY: Optional[str] = None
+    PAYU_CLIENT_ID: Optional[str] = None
+    PAYU_CLIENT_SECRET: Optional[str] = None
+    PAYU_SANDBOX: bool = True
+
+    # Tpay (Autopay)
+    TPAY_CLIENT_ID: Optional[str] = None
+    TPAY_CLIENT_SECRET: Optional[str] = None
+    TPAY_SECURITY_CODE: Optional[str] = None
+    TPAY_SANDBOX: bool = True
+
+    # Przelewy24
+    P24_MERCHANT_ID: Optional[str] = None
+    P24_POS_ID: Optional[str] = None
+    P24_CRC_KEY: Optional[str] = None
+    P24_SANDBOX: bool = True
+
+    # PayPal
+    PAYPAL_CLIENT_ID: Optional[str] = None
+    PAYPAL_CLIENT_SECRET: Optional[str] = None
+    PAYPAL_SANDBOX: bool = True
+
+    # Recurring (polskie bramki bez natywnych subskrypcji)
+    RECURRING_GRACE_DAYS: int = 14
+    RECURRING_REMINDER_DAYS: str = "1,3,7"
+
+    # KSeF (Krajowy System e-Faktur)
+    KSEF_NIP: Optional[str] = None
+    KSEF_AUTH_METHOD: str = "token"  # "token" or "certificate"
+    KSEF_AUTH_TOKEN: Optional[str] = None
+    KSEF_CERTIFICATE_BASE64: Optional[str] = None
+    KSEF_PRIVATE_KEY_BASE64: Optional[str] = None
+    KSEF_ENVIRONMENT: str = "test"  # test|demo|prod
+
+    # Invoice backend — wybor systemu fakturowania
+    INVOICE_BACKEND: str = "none"  # none|fakturownia|ksef
+    INVOICE_SELLER_NAME: str = ""
+    INVOICE_SELLER_ADDRESS: str = ""
+    INVOICE_BANK_ACCOUNT: str = ""
+
+    # GDPR
+    GDPR_DELETION_GRACE_DAYS: int = 14
+    GDPR_EXPORT_FORMAT: str = "json"  # json (csv planned)
+    GDPR_AUTO_EXPORT_ON_DELETE: bool = True
+
     # File Storage
     STORAGE_BACKEND: str = "local"  # "local" or "s3"
     STORAGE_LOCAL_DIR: str = "./uploads"
