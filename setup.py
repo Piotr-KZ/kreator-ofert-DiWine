@@ -25,5 +25,8 @@ setup(
         "python-dotenv>=1.0.0",
         "reportlab>=4.0.9",
         "asyncpg>=0.29.0",
+        "structlog>=23.1.0",
+        "slowapi>=0.1.9",
+        "sentry-sdk[fastapi]>=1.40.0",
     ],
 )

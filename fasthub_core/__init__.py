@@ -51,6 +51,13 @@ from fasthub_core.events.bus import event_bus, Event, EventBus
 # Security (Brief 10)
 from fasthub_core.security.encryption import encrypt_credentials, decrypt_credentials
 
+# Production infrastructure (Brief 13)
+from fasthub_core.logging import configure_logging, get_logger
+from fasthub_core.monitoring import init_monitoring, capture_exception
+from fasthub_core.rate_limiting import create_limiter, RateLimits
+from fasthub_core.health import health_router, HealthChecker, get_health_checker
+from fasthub_core.billing.subscription_check import SubscriptionChecker, require_active_subscription
+
 __all__ = [
     "__version__",
     "AuthContract", "UserContract", "PermissionContract",
@@ -67,4 +74,10 @@ __all__ = [
     "get_redis", "set_cache", "get_cache",
     "event_bus", "Event", "EventBus",
     "encrypt_credentials", "decrypt_credentials",
+    # Brief 13 modules
+    "configure_logging", "get_logger",
+    "init_monitoring", "capture_exception",
+    "create_limiter", "RateLimits",
+    "health_router", "HealthChecker", "get_health_checker",
+    "SubscriptionChecker", "require_active_subscription",
 ]
