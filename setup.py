@@ -29,5 +29,6 @@ setup(
         "slowapi>=0.1.9",
         "sentry-sdk[fastapi]>=1.40.0",
         "boto3>=1.34.0",
+        "jinja2>=3.1.0",
     ],
 )

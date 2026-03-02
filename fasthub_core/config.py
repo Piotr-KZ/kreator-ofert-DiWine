@@ -145,6 +145,13 @@ class Settings(BaseSettings):
     RECURRING_GRACE_DAYS: int = 14
     RECURRING_REMINDER_DAYS: str = "1,3,7"
 
+    # Task Queue (Background Tasks)
+    TASK_BACKEND: str = "arq"  # "arq" | "celery" | "sync"
+    ARQ_REDIS_URL: Optional[str] = None  # None = użyj REDIS_URL
+    ARQ_MAX_JOBS: int = 10
+    ARQ_JOB_TIMEOUT: int = 120  # sekundy
+    ARQ_MAX_TRIES: int = 3
+
     # KSeF (Krajowy System e-Faktur)
     KSEF_NIP: Optional[str] = None
     KSEF_AUTH_METHOD: str = "token"  # "token" or "certificate"
