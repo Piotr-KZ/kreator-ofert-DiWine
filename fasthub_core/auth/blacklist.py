@@ -83,17 +83,15 @@ _blacklist_instance: Optional[BlacklistBackend] = None
 async def get_blacklist() -> BlacklistBackend:
     """
     Zwraca instancję blacklisty.
-    Redis jeśli REDIS_URL jest ustawiony, inaczej InMemory.
+    Używa shared Redis connection pool z infrastructure.redis.
+    Fallback na InMemory jeśli Redis niedostępny.
     """
     global _blacklist_instance
     if _blacklist_instance is None:
         try:
-            from fasthub_core.config import get_settings
-            settings = get_settings()
-            redis_url = getattr(settings, 'REDIS_URL', None)
-            if redis_url:
-                import redis.asyncio as aioredis
-                client = aioredis.from_url(redis_url)
+            from fasthub_core.infrastructure.redis import get_redis
+            client = await get_redis()
+            if client is not None:
                 _blacklist_instance = RedisBlacklist(client)
             else:
                 _blacklist_instance = InMemoryBlacklist()

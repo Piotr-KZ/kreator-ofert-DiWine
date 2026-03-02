@@ -372,25 +372,22 @@ class FastHubNotification(NotificationContract):
 
 class FastHubEventBus(EventBusContract):
     """
-    Placeholder Event Bus — zostanie zaimplementowany przy migracji AutoFlow.
-    AutoFlow ma działający Event Bus (Redis Pub/Sub, wildcard handlers).
-    W v2.1 przenosimy ten wzorzec do fasthub_core.
+    Implementacja Event Bus oparta na fasthub_core.events.bus.
+    Singleton EventBus z wildcard matching + Redis pub/sub.
     """
 
+    def __init__(self):
+        from fasthub_core.events.bus import event_bus
+        self._bus = event_bus
+
     async def emit(self, event_type: str, data: dict) -> None:
-        raise NotImplementedError(
-            "EventBus planowany w FastHub v2.1 — zostanie przeniesiony z AutoFlow"
-        )
+        await self._bus.emit(event_type, data)
 
     async def on(self, event_pattern: str, handler) -> None:
-        raise NotImplementedError(
-            "EventBus planowany w FastHub v2.1 — zostanie przeniesiony z AutoFlow"
-        )
+        self._bus.register(event_pattern, handler)
 
     async def off(self, event_pattern: str, handler) -> None:
-        raise NotImplementedError(
-            "EventBus planowany w FastHub v2.1 — zostanie przeniesiony z AutoFlow"
-        )
+        self._bus.unregister(event_pattern, handler)
 
 
 # ============================================================================

@@ -42,6 +42,15 @@ from fasthub_core.realtime import ConnectionManager, get_connection_manager, ws_
 # Middleware
 from fasthub_core.middleware import SecurityHeadersMiddleware, RequestIDMiddleware
 
+# Infrastructure (Brief 10)
+from fasthub_core.infrastructure.redis import get_redis, set_cache, get_cache
+
+# Events (Brief 10)
+from fasthub_core.events.bus import event_bus, Event, EventBus
+
+# Security (Brief 10)
+from fasthub_core.security.encryption import encrypt_credentials, decrypt_credentials
+
 __all__ = [
     "__version__",
     "AuthContract", "UserContract", "PermissionContract",
@@ -54,4 +63,8 @@ __all__ = [
     "notifications_router", "NotificationService",
     "ConnectionManager", "get_connection_manager", "ws_router", "realtime_status_router",
     "SecurityHeadersMiddleware", "RequestIDMiddleware",
+    # Brief 10 modules
+    "get_redis", "set_cache", "get_cache",
+    "event_bus", "Event", "EventBus",
+    "encrypt_credentials", "decrypt_credentials",
 ]

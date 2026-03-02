@@ -20,6 +20,7 @@ setup(
         "email-validator>=2.1.0",
         "httpx>=0.26.0",
         "redis>=5.0.1",
+        "cryptography>=41.0.0",
         "stripe>=7.0.0",
         "python-dotenv>=1.0.0",
         "reportlab>=4.0.9",

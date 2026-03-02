@@ -24,7 +24,10 @@ def get_all_models():
     """
     from fasthub_core.users.models import User, Organization, Member, MemberRole
     from fasthub_core.auth.models import APIToken
-    from fasthub_core.billing.models import Subscription, SubscriptionStatus, Invoice, InvoiceStatus
+    from fasthub_core.billing.models import (
+        Subscription, SubscriptionStatus, Invoice, InvoiceStatus,
+        BillingPlan, BillingAddon, TenantAddon, UsageRecord, BillingEvent,
+    )
     from fasthub_core.audit.models import AuditLog
     from fasthub_core.notifications.models import Notification, NotificationPreference
     from fasthub_core.rbac.models import Permission, Role, RolePermission, UserRole
@@ -39,6 +42,11 @@ def get_all_models():
         "SubscriptionStatus": SubscriptionStatus,
         "Invoice": Invoice,
         "InvoiceStatus": InvoiceStatus,
+        "BillingPlan": BillingPlan,
+        "BillingAddon": BillingAddon,
+        "TenantAddon": TenantAddon,
+        "UsageRecord": UsageRecord,
+        "BillingEvent": BillingEvent,
         "AuditLog": AuditLog,
         "Notification": Notification,
         "NotificationPreference": NotificationPreference,

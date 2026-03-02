@@ -71,17 +71,16 @@ def test_eventbus_contract_imports():
     assert hasattr(EventBusContract, 'off')
 
 
-def test_eventbus_not_implemented():
-    """EventBus stub powinien rzucać NotImplementedError"""
-    import pytest
+def test_eventbus_works():
+    """EventBus powinien teraz działać (nie rzucać NotImplementedError)"""
+    import asyncio
     from fasthub_core.contracts_impl import FastHubEventBus
 
     bus = FastHubEventBus()
-    with pytest.raises(NotImplementedError):
-        import asyncio
-        asyncio.get_event_loop().run_until_complete(
-            bus.emit("test.event", {"key": "value"})
-        )
+    # Emit powinien przejść bez błędu
+    asyncio.get_event_loop().run_until_complete(
+        bus.emit("test.event", {"key": "value"})
+    )
 
 
 def test_database_contract_imports():

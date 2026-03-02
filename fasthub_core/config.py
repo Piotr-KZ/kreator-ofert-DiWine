@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
+    REDIS_KEY_PREFIX: str = "fasthub"  # Prefix for all Redis keys (override per app)
 
     # Celery (optional)
     CELERY_BROKER_URL: Optional[str] = "redis://localhost:6379/0"
