@@ -1,0 +1,7 @@
+{{ app_name }}
+==============================
+
+{% block content %}{% endblock %}
+
+------------------------------
+{{ app_name }}{% if company_address %} | {{ company_address }}{% endif %}

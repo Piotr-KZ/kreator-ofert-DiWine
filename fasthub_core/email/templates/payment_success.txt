@@ -1,0 +1,12 @@
+{% extends "base_layout.txt" %}
+{% block content %}
+Platnosc potwierdzona
+
+Czesc {{ user_name }}, otrzymalismy Twoja platnosc:
+
+Plan: {{ plan_name }}
+Kwota: {{ amount }} {{ currency | default("PLN") }}
+{% if next_billing_date %}Nastepna platnosc: {{ next_billing_date }}{% endif %}
+
+Dziekujemy za korzystanie z {{ app_name }}!
+{% endblock %}
