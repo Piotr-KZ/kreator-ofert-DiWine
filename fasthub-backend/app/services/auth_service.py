@@ -89,15 +89,39 @@ class AuthService:
         # Create organization if needed
         if organization_name:
             organization = await self.org_repo.create(name=organization_name, owner_id=user.id)
-            # Create member record (owner gets admin role)
+            # Create member record (owner gets admin role in legacy system)
             member = Member(
                 user_id=user.id,
                 organization_id=organization.id,
                 role=MemberRole.ADMIN
             )
             self.db.add(member)
-            await self.db.flush()  # Ensure member is created
+            await self.db.flush()
             organization_id = organization.id
+
+            # RBAC: create system roles for the new organization and assign Owner
+            try:
+                from fasthub_core.rbac.service import RBACService
+                from fasthub_core.rbac.models import Role
+                rbac = RBACService(self.db)
+                await rbac.seed_organization_roles(organization.id)
+                # Assign Owner role to the creator
+                owner_role_result = await self.db.execute(
+                    select(Role).where(
+                        Role.organization_id == organization.id,
+                        Role.name == "Owner",
+                        Role.is_system == True,
+                    )
+                )
+                owner_role = owner_role_result.scalar_one_or_none()
+                if owner_role:
+                    await rbac.assign_role(
+                        user_id=user.id,
+                        role_id=owner_role.id,
+                        organization_id=organization.id,
+                    )
+            except Exception:
+                pass  # RBAC seed failure should not block registration
 
         # Generate email verification token
         verification_token = create_email_verification_token(user.id)

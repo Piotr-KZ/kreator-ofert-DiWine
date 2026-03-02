@@ -151,7 +151,7 @@ def upgrade():
                        sa.ForeignKey('roles.id', ondelete='CASCADE'), nullable=False),
             sa.Column('organization_id', UUID(as_uuid=True),
                        sa.ForeignKey('organizations.id', ondelete='CASCADE'), nullable=False),
-            sa.Column('assigned_at', sa.DateTime(), nullable=False, server_default=sa.func.now()),
+            sa.Column('assigned_at', sa.DateTime(), nullable=True),
             sa.Column('assigned_by', UUID(as_uuid=True),
                        sa.ForeignKey('users.id', ondelete='SET NULL'), nullable=True),
         )

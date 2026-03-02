@@ -94,10 +94,9 @@ class UserContract(ABC):
 
 class PermissionContract(ABC):
     """
-    Kontrakt uprawnień — kto co może robić.
+    Kontrakt uprawnień — RBAC z rolami i granularnymi permissions.
+    Zaimplementowany w Fazie 1.2 (Advanced RBAC).
     AutoFlow potrzebuje: sprawdzanie czy user może edytować/wykonać proces.
-    UWAGA: Ten kontrakt będzie ROZSZERZONY w FastHub v2.0 (Advanced RBAC).
-    Na razie mamy podstawowy system: admin / viewer.
     """
 
     @abstractmethod
@@ -111,6 +110,21 @@ class PermissionContract(ABC):
     @abstractmethod
     async def get_user_permissions(self, user_id: str, organization_id: str, db) -> Set[str]:
         """Zwraca zestaw wszystkich uprawnień usera w organizacji"""
+        ...
+
+    @abstractmethod
+    async def assign_role(self, user_id: str, role_id: str, organization_id: str, db) -> None:
+        """Przypisuje rolę użytkownikowi w organizacji"""
+        ...
+
+    @abstractmethod
+    async def create_custom_role(self, organization_id: str, name: str, permissions: List[str], db) -> Any:
+        """Tworzy nową rolę custom w organizacji z podanymi uprawnieniami"""
+        ...
+
+    @abstractmethod
+    async def register_app_permissions(self, permissions: Dict[str, List[tuple]], db) -> None:
+        """Aplikacja (AutoFlow) rejestruje swoje permissions przy starcie"""
         ...
 
 

@@ -173,8 +173,22 @@ async def startup_event():
         logger.info("✅ Database migrations completed successfully")
     except Exception as e:
         logger.error(f"❌ Failed to run database migrations: {e}")
-        # Don't crash the app if migrations fail - let it start anyway
         logger.warning("⚠️ Application starting without running migrations")
+
+    # Seed RBAC permissions
+    try:
+        logger.info("🔑 Seeding RBAC permissions...")
+        from fasthub_core.rbac.service import RBACService
+        from app.db.session import get_db
+
+        async for db in get_db():
+            rbac = RBACService(db)
+            await rbac.seed_permissions()
+            logger.info("✅ RBAC permissions seeded successfully")
+            break
+    except Exception as e:
+        logger.error(f"❌ Failed to seed RBAC permissions: {e}")
+        logger.warning("⚠️ RBAC permissions not seeded — endpoints may reject requests")
 
 
 # Shutdown event

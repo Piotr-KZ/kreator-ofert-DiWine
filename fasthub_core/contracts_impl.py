@@ -7,7 +7,7 @@ w fasthub_core/. Aplikacje importują te implementacje.
 Status implementacji:
 - FastHubAuth          — w pełni zaimplementowany
 - FastHubUser          — w pełni zaimplementowany
-- FastHubPermission    — podstawowa wersja (admin/viewer)
+- FastHubPermission    — Advanced RBAC (role + granularne permissions)
 - FastHubBilling       — częściowo (get_subscription gotowe, limity w v2.0)
 - FastHubAudit         — w pełni zaimplementowany
 - FastHubNotification  — w pełni zaimplementowany (in-app + email)
@@ -173,6 +173,31 @@ class FastHubPermission(PermissionContract):
             user_id=UUID(user_id),
             organization_id=UUID(organization_id),
         )
+
+    async def assign_role(self, user_id: str, role_id: str, organization_id: str, db: AsyncSession) -> None:
+        from fasthub_core.rbac.service import RBACService
+        rbac = RBACService(db)
+        await rbac.assign_role(
+            user_id=UUID(user_id),
+            role_id=UUID(role_id),
+            organization_id=UUID(organization_id),
+        )
+
+    async def create_custom_role(self, organization_id: str, name: str, permissions: List[str], db: AsyncSession) -> Any:
+        from fasthub_core.rbac.service import RBACService
+        rbac = RBACService(db)
+        role = await rbac.create_custom_role(
+            organization_id=UUID(organization_id),
+            name=name,
+            description="",
+            permission_names=permissions,
+        )
+        return {"id": str(role.id), "name": role.name}
+
+    async def register_app_permissions(self, permissions: Dict[str, List[tuple]], db: AsyncSession) -> None:
+        from fasthub_core.rbac.service import RBACService
+        rbac = RBACService(db)
+        await rbac.register_app_permissions(permissions)
 
 
 # ============================================================================

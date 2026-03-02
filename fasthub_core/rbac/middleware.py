@@ -53,7 +53,7 @@ def require_permission(permission: str):
         if getattr(current_user, 'is_superadmin', False):
             return current_user
 
-        # Sprawdź uprawnienie
+        # Sprawdź uprawnienie w RBAC
         rbac = RBACService(db)
         has_permission = await rbac.check_permission(
             user_id=current_user.id,
@@ -61,12 +61,37 @@ def require_permission(permission: str):
             permission=permission,
         )
 
-        if not has_permission:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Brak uprawnienia: {permission}"
-            )
+        if has_permission:
+            return current_user
 
-        return current_user
+        # Fallback: sprawdź stary system Member.role
+        # Jeśli user ma ADMIN w starym systemie → traktuj jak Owner (wszystkie uprawnienia)
+        # Jeśli user ma VIEWER → traktuj jak Member (podstawowe uprawnienia)
+        try:
+            from sqlalchemy import select
+            from fasthub_core.users.models import Member, MemberRole
+            from fasthub_core.rbac.defaults import SYSTEM_ROLES
+
+            result = await db.execute(
+                select(Member).where(
+                    Member.user_id == current_user.id,
+                    Member.organization_id == org_id,
+                )
+            )
+            member = result.scalar_one_or_none()
+            if member and member.role:
+                if member.role == MemberRole.ADMIN:
+                    return current_user  # ADMIN = all permissions
+                elif member.role == MemberRole.VIEWER:
+                    member_perms = SYSTEM_ROLES.get("member", {}).get("permissions", [])
+                    if permission in member_perms:
+                        return current_user
+        except Exception:
+            pass
+
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Brak uprawnienia: {permission}"
+        )
 
     return _check_permission

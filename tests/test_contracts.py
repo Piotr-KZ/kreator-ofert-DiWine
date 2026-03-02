@@ -32,10 +32,13 @@ def test_user_contract_imports():
 
 
 def test_permission_contract_imports():
-    """PermissionContract musi mieć wymagane metody"""
+    """PermissionContract musi mieć wymagane metody (Advanced RBAC)"""
     from fasthub_core.contracts import PermissionContract
     assert hasattr(PermissionContract, 'check_permission')
     assert hasattr(PermissionContract, 'get_user_permissions')
+    assert hasattr(PermissionContract, 'assign_role')
+    assert hasattr(PermissionContract, 'create_custom_role')
+    assert hasattr(PermissionContract, 'register_app_permissions')
 
 
 def test_billing_contract_imports():

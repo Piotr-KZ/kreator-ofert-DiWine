@@ -39,16 +39,43 @@ async def create_organization(
         owner_id=current_user.id,
     )
     
-    # Create owner membership as admin
+    # Create owner membership as admin (legacy system)
     owner_member = Member(
         user_id=current_user.id,
         organization_id=org.id,
         role=MemberRole.ADMIN,
     )
     db.add(owner_member)
+    await db.flush()
+
+    # RBAC: create system roles and assign Owner to creator
+    try:
+        from fasthub_core.rbac.service import RBACService
+        from fasthub_core.rbac.models import Role
+        from sqlalchemy import select
+
+        rbac = RBACService(db)
+        await rbac.seed_organization_roles(org.id)
+        owner_role_result = await db.execute(
+            select(Role).where(
+                Role.organization_id == org.id,
+                Role.name == "Owner",
+                Role.is_system == True,
+            )
+        )
+        owner_role = owner_role_result.scalar_one_or_none()
+        if owner_role:
+            await rbac.assign_role(
+                user_id=current_user.id,
+                role_id=owner_role.id,
+                organization_id=org.id,
+            )
+    except Exception:
+        pass  # RBAC failure should not block org creation
+
     await db.commit()
     await db.refresh(org)
-    
+
     return org
 
 
