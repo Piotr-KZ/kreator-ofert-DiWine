@@ -11,7 +11,7 @@ ZASADY:
 """
 
 from abc import ABC, abstractmethod
-from typing import List, Optional, Set, Dict, Any
+from typing import Callable, List, Optional, Set, Dict, Any
 from uuid import UUID
 from datetime import datetime
 
@@ -221,6 +221,38 @@ class NotificationContract(ABC):
         Wysyła email na podstawie szablonu.
         template: "welcome", "password_reset", "approval_request", "execution_complete"
         """
+        ...
+
+
+class EventBusContract(ABC):
+    """
+    Kontrakt Event Bus — komunikacja eventowa między modułami.
+    AutoFlow potrzebuje: pub/sub z wildcard handlers.
+    Planowany: FastHub v2.1. Implementacja przyjdzie z migracją AutoFlow.
+    """
+
+    @abstractmethod
+    async def emit(self, event_type: str, data: dict) -> None:
+        """
+        Emituje event do wszystkich subskrybentów.
+        event_type: "user.created", "process.completed", "billing.updated"
+        data: payload eventu (dict)
+        """
+        ...
+
+    @abstractmethod
+    async def on(self, event_pattern: str, handler: Callable) -> None:
+        """
+        Rejestruje handler na wzorzec eventu.
+        event_pattern: "user.*", "process.completed", "billing.*"
+        handler: async callable(event_type, data)
+        Obsługuje wildcard matching (np. "user.*" łapie "user.created", "user.deleted").
+        """
+        ...
+
+    @abstractmethod
+    async def off(self, event_pattern: str, handler: Callable) -> None:
+        """Wyrejestrowuje handler z wzorca eventu."""
         ...
 
 

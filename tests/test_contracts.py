@@ -60,6 +60,27 @@ def test_notification_contract_imports():
     assert hasattr(NotificationContract, 'send_email')
 
 
+def test_eventbus_contract_imports():
+    """EventBusContract musi mieć wymagane metody"""
+    from fasthub_core.contracts import EventBusContract
+    assert hasattr(EventBusContract, 'emit')
+    assert hasattr(EventBusContract, 'on')
+    assert hasattr(EventBusContract, 'off')
+
+
+def test_eventbus_not_implemented():
+    """EventBus stub powinien rzucać NotImplementedError"""
+    import pytest
+    from fasthub_core.contracts_impl import FastHubEventBus
+
+    bus = FastHubEventBus()
+    with pytest.raises(NotImplementedError):
+        import asyncio
+        asyncio.get_event_loop().run_until_complete(
+            bus.emit("test.event", {"key": "value"})
+        )
+
+
 def test_database_contract_imports():
     """DatabaseContract musi mieć wymagane metody"""
     from fasthub_core.contracts import DatabaseContract
@@ -175,7 +196,7 @@ def test_all_contracts_importable_from_init():
     from fasthub_core import (
         AuthContract, UserContract, PermissionContract,
         BillingContract, AuditContract, NotificationContract,
-        DatabaseContract
+        EventBusContract, DatabaseContract
     )
     # Jeśli import się udał — test przechodzi
     assert AuthContract is not None
@@ -184,4 +205,5 @@ def test_all_contracts_importable_from_init():
     assert BillingContract is not None
     assert AuditContract is not None
     assert NotificationContract is not None
+    assert EventBusContract is not None
     assert DatabaseContract is not None

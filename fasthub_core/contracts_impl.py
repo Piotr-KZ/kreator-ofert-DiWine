@@ -28,6 +28,7 @@ from fasthub_core.contracts import (
     BillingContract,
     AuditContract,
     NotificationContract,
+    EventBusContract,
     DatabaseContract,
 )
 
@@ -338,6 +339,33 @@ class FastHubNotification(NotificationContract):
         body = variables.get("body", template)
         subject = variables.get("subject", f"[FastHub] {template}")
         await transport.send(to=to_email, subject=subject, body=body)
+
+
+# ============================================================================
+# EventBus — placeholder (planowany v2.1)
+# ============================================================================
+
+class FastHubEventBus(EventBusContract):
+    """
+    Placeholder Event Bus — zostanie zaimplementowany przy migracji AutoFlow.
+    AutoFlow ma działający Event Bus (Redis Pub/Sub, wildcard handlers).
+    W v2.1 przenosimy ten wzorzec do fasthub_core.
+    """
+
+    async def emit(self, event_type: str, data: dict) -> None:
+        raise NotImplementedError(
+            "EventBus planowany w FastHub v2.1 — zostanie przeniesiony z AutoFlow"
+        )
+
+    async def on(self, event_pattern: str, handler) -> None:
+        raise NotImplementedError(
+            "EventBus planowany w FastHub v2.1 — zostanie przeniesiony z AutoFlow"
+        )
+
+    async def off(self, event_pattern: str, handler) -> None:
+        raise NotImplementedError(
+            "EventBus planowany w FastHub v2.1 — zostanie przeniesiony z AutoFlow"
+        )
 
 
 # ============================================================================

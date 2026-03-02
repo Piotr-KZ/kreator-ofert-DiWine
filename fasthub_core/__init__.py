@@ -14,6 +14,7 @@ from fasthub_core.contracts import (
     BillingContract,
     AuditContract,
     NotificationContract,
+    EventBusContract,
     DatabaseContract,
 )
 
@@ -45,7 +46,7 @@ __all__ = [
     "__version__",
     "AuthContract", "UserContract", "PermissionContract",
     "BillingContract", "AuditContract", "NotificationContract",
-    "DatabaseContract",
+    "EventBusContract", "DatabaseContract",
     "Settings", "get_settings", "get_db", "get_engine",
     "admin_router",
     "rbac_router", "RBACService", "require_permission",
