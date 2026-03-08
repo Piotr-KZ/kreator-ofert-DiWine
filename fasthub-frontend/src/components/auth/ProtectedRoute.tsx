@@ -1,10 +1,9 @@
 import { Navigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/authStore';
-import { Spin } from 'antd';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
-  requireSuperuser?: boolean;  // Require superuser access
+  requireSuperuser?: boolean;
 }
 
 export const ProtectedRoute = ({ children, requireSuperuser }: ProtectedRouteProps) => {
@@ -12,13 +11,8 @@ export const ProtectedRoute = ({ children, requireSuperuser }: ProtectedRoutePro
 
   if (isLoading) {
     return (
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'center', 
-        alignItems: 'center', 
-        height: '100vh' 
-      }}>
-        <Spin size="large" />
+      <div className="flex justify-center items-center h-screen">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
       </div>
     );
   }
@@ -27,7 +21,6 @@ export const ProtectedRoute = ({ children, requireSuperuser }: ProtectedRoutePro
     return <Navigate to="/login" replace />;
   }
 
-  // Check superuser access if required
   if (requireSuperuser && user && !user.is_superuser) {
     return <Navigate to="/dashboard" replace />;
   }

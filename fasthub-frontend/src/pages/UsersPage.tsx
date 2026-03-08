@@ -1,23 +1,26 @@
-import { useEffect, useState } from 'react';
-import { Table, Button, Space, Typography, Modal, Form, Input, Select, message, Popconfirm, Tag } from 'antd';
-import { PlusOutlined, EditOutlined, DeleteOutlined, SearchOutlined } from '@ant-design/icons';
-import { usersApi } from '../api/users';
-import { User } from '../types/models';
-
-const { Title } = Typography;
-const { Option } = Select;
+import { useEffect, useState } from "react";
+import { usersApi } from "../api/users";
+import { User } from "../types/models";
+import { Btn, Fld, StatusBadge } from "@/components/ui";
+import Modal from "@/components/shared/Modal";
 
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(10);
-  const [search, setSearch] = useState('');
-  
-  const [editModalVisible, setEditModalVisible] = useState(false);
+  const [pageSize] = useState(10);
+  const [search, setSearch] = useState("");
+  const [error, setError] = useState("");
+
+  // Edit modal
+  const [editOpen, setEditOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [form] = Form.useForm();
+  const [editForm, setEditForm] = useState({ full_name: "", email: "", is_superuser: false, position: "" });
+  const [editLoading, setEditLoading] = useState(false);
+
+  // Delete confirm
+  const [deleteId, setDeleteId] = useState<string | null>(null);
 
   useEffect(() => {
     fetchUsers();
@@ -25,16 +28,14 @@ export default function UsersPage() {
 
   const fetchUsers = async () => {
     setLoading(true);
+    setError("");
     try {
       const { data } = await usersApi.list({ page, per_page: pageSize, search });
       setUsers(data.items || []);
       setTotal(data.total || 0);
-    } catch (error: any) {
-      const errorMsg = error.response?.data?.detail || 'Failed to fetch users';
-      console.error('UsersPage error:', errorMsg);
-      // Don't show error message on 403 (user not authenticated)
-      if (error.response?.status !== 403) {
-        message.error(errorMsg);
+    } catch (err: any) {
+      if (err.response?.status !== 403) {
+        setError(err.response?.data?.detail || "Failed to fetch users");
       }
     } finally {
       setLoading(false);
@@ -43,199 +44,240 @@ export default function UsersPage() {
 
   const handleEdit = (user: User) => {
     setEditingUser(user);
-    form.setFieldsValue({
-      full_name: user.full_name,
-      email: user.email,
-      is_superuser: user.is_superuser,
-      position: user.position,
+    setEditForm({
+      full_name: user.full_name || "",
+      email: user.email || "",
+      is_superuser: user.is_superuser || false,
+      position: user.position || "",
     });
-    setEditModalVisible(true);
+    setEditOpen(true);
+  };
+
+  const handleEditSubmit = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    if (!editingUser) return;
+    setEditLoading(true);
+    try {
+      await usersApi.update(editingUser.id, editForm);
+      setEditOpen(false);
+      setEditingUser(null);
+      fetchUsers();
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Failed to update user");
+    } finally {
+      setEditLoading(false);
+    }
   };
 
   const handleDelete = async (id: string) => {
     try {
       await usersApi.delete(id);
-      message.success('User deleted successfully');
+      setDeleteId(null);
       fetchUsers();
-    } catch (error: any) {
-      message.error(error.response?.data?.detail || 'Failed to delete user');
+    } catch (err: any) {
+      setError(err.response?.data?.detail || "Failed to delete user");
     }
   };
 
-  const handleEditSubmit = async (values: any) => {
-    if (!editingUser) return;
-
-    try {
-      await usersApi.update(editingUser.id, values);
-      message.success('User updated successfully');
-      setEditModalVisible(false);
-      setEditingUser(null);
-      form.resetFields();
-      fetchUsers();
-    } catch (error: any) {
-      message.error(error.response?.data?.detail || 'Failed to update user');
-    }
-  };
-
-  const columns = [
-    {
-      title: 'Name',
-      dataIndex: 'full_name',
-      key: 'full_name',
-      render: (text: string, record: User) => (
-        <div>
-          <div><strong>{text || 'N/A'}</strong></div>
-          <div style={{ fontSize: 12, color: '#999' }}>{record.email}</div>
-        </div>
-      ),
-    },
-    {
-      title: 'Super Admin',
-      dataIndex: 'is_superuser',
-      key: 'is_superuser',
-      render: (isSuperuser: boolean) => (
-        <Tag color={isSuperuser ? 'red' : 'default'}>
-          {isSuperuser ? 'YES' : 'NO'}
-        </Tag>
-      ),
-    },
-    {
-      title: 'Position',
-      dataIndex: 'position',
-      key: 'position',
-      render: (text: string) => text || '-',
-    },
-    {
-      title: 'Status',
-      dataIndex: 'is_active',
-      key: 'is_active',
-      render: (isActive: boolean, record: User) => (
-        <div>
-          <Tag color={isActive ? 'green' : 'red'}>
-            {isActive ? 'Active' : 'Inactive'}
-          </Tag>
-          {record.is_verified && <Tag color="blue">Verified</Tag>}
-        </div>
-      ),
-    },
-    {
-      title: 'Created',
-      dataIndex: 'created_at',
-      key: 'created_at',
-      render: (date: string) => new Date(date).toLocaleDateString(),
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      render: (_: any, record: User) => (
-        <Space>
-          <Button 
-            type="link" 
-            icon={<EditOutlined />} 
-            onClick={() => handleEdit(record)}
-          >
-            Edit
-          </Button>
-          <Popconfirm
-            title="Delete user"
-            description="Are you sure you want to delete this user?"
-            onConfirm={() => handleDelete(record.id)}
-            okText="Yes"
-            cancelText="No"
-          >
-            <Button type="link" danger icon={<DeleteOutlined />}>
-              Delete
-            </Button>
-          </Popconfirm>
-        </Space>
-      ),
-    },
-  ];
+  const totalPages = Math.ceil(total / pageSize);
 
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
-        <Title level={2} style={{ margin: 0 }}>Users</Title>
-        <Space>
-          <Input
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Users</h1>
+        <div className="relative w-full sm:w-64">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
             placeholder="Search users..."
-            prefix={<SearchOutlined />}
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            style={{ width: 250 }}
+            onChange={(e) => { setSearch(e.target.value); setPage(1); }}
+            className="w-full pl-10 pr-4 py-2.5 border-2 border-gray-200 rounded-xl text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
           />
-        </Space>
+        </div>
       </div>
 
-      <Table
-        columns={columns}
-        dataSource={users}
-        rowKey="id"
-        loading={loading}
-        pagination={{
-          current: page,
-          pageSize: pageSize,
-          total: total,
-          showSizeChanger: true,
-          showTotal: (total) => `Total ${total} users`,
-          onChange: (page, pageSize) => {
-            setPage(page);
-            setPageSize(pageSize);
-          },
-        }}
-      />
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg">{error}</div>
+      )}
+
+      {/* Table */}
+      <div className="bg-white border-2 border-gray-200 rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-200 bg-gray-50">
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Super Admin</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Position</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
+                <th className="text-left px-4 py-3 font-medium text-gray-600">Created</th>
+                <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {loading ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
+                    <div className="flex justify-center">
+                      <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600" />
+                    </div>
+                  </td>
+                </tr>
+              ) : users.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
+                    No users found
+                  </td>
+                </tr>
+              ) : (
+                users.map((u) => (
+                  <tr key={u.id} className="border-b border-gray-100 hover:bg-gray-50/50">
+                    <td className="px-4 py-3">
+                      <div className="font-medium text-gray-900">{u.full_name || "N/A"}</div>
+                      <div className="text-xs text-gray-400">{u.email}</div>
+                    </td>
+                    <td className="px-4 py-3">
+                      <StatusBadge variant={u.is_superuser ? "error" : "neutral"}>
+                        {u.is_superuser ? "YES" : "NO"}
+                      </StatusBadge>
+                    </td>
+                    <td className="px-4 py-3 text-gray-600">{u.position || "—"}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-1.5">
+                        <StatusBadge variant={u.is_active ? "success" : "error"}>
+                          {u.is_active ? "Active" : "Inactive"}
+                        </StatusBadge>
+                        {u.is_verified && <StatusBadge variant="info">Verified</StatusBadge>}
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-gray-500">
+                      {new Date(u.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          onClick={() => handleEdit(u)}
+                          className="px-2.5 py-1.5 text-xs text-indigo-600 hover:bg-indigo-50 rounded-lg transition-colors"
+                        >
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => setDeleteId(u.id)}
+                          className="px-2.5 py-1.5 text-xs text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        >
+                          Delete
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between px-4 py-3 border-t border-gray-200">
+            <span className="text-sm text-gray-500">
+              Total {total} users
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Prev
+              </button>
+              <span className="px-3 py-1.5 text-sm text-gray-600">
+                {page} / {totalPages}
+              </span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="px-3 py-1.5 text-sm rounded-lg border border-gray-200 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Edit Modal */}
       <Modal
+        open={editOpen}
+        onClose={() => { setEditOpen(false); setEditingUser(null); }}
         title="Edit User"
-        open={editModalVisible}
-        onCancel={() => {
-          setEditModalVisible(false);
-          setEditingUser(null);
-          form.resetFields();
-        }}
-        onOk={() => form.submit()}
-        okText="Save"
+        footer={
+          <>
+            <Btn variant="ghost" onClick={() => { setEditOpen(false); setEditingUser(null); }}>
+              Cancel
+            </Btn>
+            <Btn loading={editLoading} onClick={() => {
+              const form = document.getElementById("edit-user-form") as HTMLFormElement;
+              form?.requestSubmit();
+            }}>
+              Save
+            </Btn>
+          </>
+        }
       >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleEditSubmit}
-        >
-          <Form.Item
-            name="full_name"
+        <form id="edit-user-form" onSubmit={handleEditSubmit} className="space-y-4">
+          <Fld
             label="Full Name"
-            rules={[{ required: true, message: 'Please input full name!' }]}
-          >
-            <Input />
-          </Form.Item>
-
-          <Form.Item
-            name="email"
+            value={editForm.full_name}
+            onChange={(v) => setEditForm((f) => ({ ...f, full_name: v }))}
+          />
+          <Fld
             label="Email"
-            rules={[
-              { required: true, message: 'Please input email!' },
-              { type: 'email', message: 'Please enter a valid email!' }
-            ]}
-          >
-            <Input />
-          </Form.Item>
+            type="email"
+            value={editForm.email}
+            onChange={(v) => setEditForm((f) => ({ ...f, email: v }))}
+          />
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1.5">
+              Super Admin
+            </label>
+            <select
+              value={editForm.is_superuser ? "true" : "false"}
+              onChange={(e) => setEditForm((f) => ({ ...f, is_superuser: e.target.value === "true" }))}
+              className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm outline-none focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
+            >
+              <option value="false">No — Regular User</option>
+              <option value="true">Yes — Super Admin (Global Access)</option>
+            </select>
+          </div>
+          <Fld
+            label="Position"
+            value={editForm.position}
+            onChange={(v) => setEditForm((f) => ({ ...f, position: v }))}
+          />
+        </form>
+      </Modal>
 
-          <Form.Item
-            name="is_superuser"
-            label="Super Admin"
-            valuePropName="checked"
-          >
-            <Select>
-              <Option value={false}>No - Regular User</Option>
-              <Option value={true}>Yes - Super Admin (Global Access)</Option>
-            </Select>
-          </Form.Item>
-
-          <Form.Item name="position" label="Position">
-            <Input />
-          </Form.Item>
-        </Form>
+      {/* Delete Confirm Modal */}
+      <Modal
+        open={!!deleteId}
+        onClose={() => setDeleteId(null)}
+        title="Delete User"
+        footer={
+          <>
+            <Btn variant="ghost" onClick={() => setDeleteId(null)}>No</Btn>
+            <Btn variant="danger" onClick={() => deleteId && handleDelete(deleteId)}>
+              Yes, Delete
+            </Btn>
+          </>
+        }
+      >
+        <p className="text-sm text-gray-600">
+          Are you sure you want to delete this user? This action cannot be undone.
+        </p>
       </Modal>
     </div>
   );

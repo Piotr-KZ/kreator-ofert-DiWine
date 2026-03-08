@@ -1,9 +1,8 @@
 import axios from 'axios';
-
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000/api/v1';
+import { APP_CONFIG } from '@/config/app.config';
 
 export const apiClient = axios.create({
-  baseURL: API_URL,
+  baseURL: APP_CONFIG.api.baseUrl,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -12,8 +11,7 @@ export const apiClient = axios.create({
 // Request interceptor - add token
 apiClient.interceptors.request.use(
   (config) => {
-    // Check both localStorage and sessionStorage for token
-    const token = localStorage.getItem('access_token') || sessionStorage.getItem('access_token');
+    const token = localStorage.getItem(APP_CONFIG.auth.tokenKey) || sessionStorage.getItem(APP_CONFIG.auth.tokenKey);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -42,10 +40,8 @@ apiClient.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    // 401 = token expired, try to refresh
     if (error.response?.status === 401 && !originalRequest._retry) {
       if (isRefreshing) {
-        // Already refreshing, queue this request
         return new Promise((resolve, reject) => {
           failedQueue.push({ resolve, reject });
         }).then(token => {
@@ -58,36 +54,34 @@ apiClient.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        // Check both localStorage and sessionStorage for refresh token
-        const refreshToken = localStorage.getItem('refresh_token') || sessionStorage.getItem('refresh_token');
+        const refreshToken = localStorage.getItem(APP_CONFIG.auth.refreshTokenKey) || sessionStorage.getItem(APP_CONFIG.auth.refreshTokenKey);
         if (!refreshToken) {
           throw new Error('No refresh token');
         }
 
-        const { data } = await axios.post(`${API_URL}/auth/refresh`, {
+        const { data } = await axios.post(`${APP_CONFIG.api.baseUrl}/auth/refresh`, {
           refresh_token: refreshToken,
         });
 
         // Save new token to the same storage as refresh token
-        if (localStorage.getItem('refresh_token')) {
-          localStorage.setItem('access_token', data.access_token);
+        if (localStorage.getItem(APP_CONFIG.auth.refreshTokenKey)) {
+          localStorage.setItem(APP_CONFIG.auth.tokenKey, data.access_token);
         } else {
-          sessionStorage.setItem('access_token', data.access_token);
+          sessionStorage.setItem(APP_CONFIG.auth.tokenKey, data.access_token);
         }
-        
+
         originalRequest.headers.Authorization = `Bearer ${data.access_token}`;
         processQueue(null, data.access_token);
         isRefreshing = false;
-        
+
         return apiClient(originalRequest);
       } catch (refreshError) {
-        // Refresh failed - logout
         processQueue(refreshError, null);
         isRefreshing = false;
-        localStorage.removeItem('access_token');
-        localStorage.removeItem('refresh_token');
-        sessionStorage.removeItem('access_token');
-        sessionStorage.removeItem('refresh_token');
+        localStorage.removeItem(APP_CONFIG.auth.tokenKey);
+        localStorage.removeItem(APP_CONFIG.auth.refreshTokenKey);
+        sessionStorage.removeItem(APP_CONFIG.auth.tokenKey);
+        sessionStorage.removeItem(APP_CONFIG.auth.refreshTokenKey);
         window.location.href = '/login';
         return Promise.reject(refreshError);
       }

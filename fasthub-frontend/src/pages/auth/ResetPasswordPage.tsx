@@ -1,56 +1,42 @@
 import { useState } from 'react';
 import { Link, useSearchParams, useNavigate } from 'react-router-dom';
-import { Form, Input, Button, Card, Typography, Alert, Result } from 'antd';
-import { LockOutlined } from '@ant-design/icons';
 import { authApi } from '../../api/auth';
-
-const { Title, Text } = Typography;
+import { Btn, Fld } from '@/components/ui';
+import { APP_CONFIG } from '@/config/app.config';
 
 export default function ResetPasswordPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const token = searchParams.get('token');
-  
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   if (!token) {
     return (
-      <div style={{ 
-        minHeight: '100vh', 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'center',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-      }}>
-        <Card style={{ width: 400 }}>
-          <Result
-            status="error"
-            title="Invalid Reset Link"
-            subTitle="This password reset link is invalid or has expired."
-            extra={
-              <Link to="/forgot-password">
-                <Button type="primary">Request New Link</Button>
-              </Link>
-            }
-          />
-        </Card>
+      <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+        <div className="bg-white rounded-2xl shadow-md w-full max-w-sm p-8 text-center">
+          <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <svg className="w-6 h-6 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </div>
+          <h2 className="text-lg font-bold text-gray-900 mb-2">Invalid Reset Link</h2>
+          <p className="text-sm text-gray-500 mb-6">This password reset link is invalid or has expired.</p>
+          <Link to="/forgot-password"><Btn variant="primary">Request New Link</Btn></Link>
+        </div>
       </div>
     );
   }
 
-  const onFinish = async (values: { password: string; confirmPassword: string }) => {
-    if (values.password !== values.confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
-
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (password !== confirmPassword) { setError('Passwords do not match'); return; }
+    if (password.length < 8) { setError('Password must be at least 8 characters'); return; }
     setLoading(true);
     setError(null);
-    
     try {
-      await authApi.resetPassword(token, values.password);
+      await authApi.resetPassword(token, password);
       setSuccess(true);
       setTimeout(() => navigate('/login'), 2000);
     } catch (err: any) {
@@ -60,99 +46,36 @@ export default function ResetPasswordPage() {
     }
   };
 
-  if (success) {
-    return (
-      <div style={{ 
-        minHeight: '100vh', 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'center',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-      }}>
-        <Card style={{ width: 400 }}>
-          <Result
-            status="success"
-            title="Password Reset Successful"
-            subTitle="Redirecting to login..."
-          />
-        </Card>
-      </div>
-    );
-  }
-
   return (
-    <div style={{ 
-      minHeight: '100vh', 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'center',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-    }}>
-      <Card style={{ width: 400, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <Title level={2}>Set New Password</Title>
-          <Text type="secondary">Enter your new password</Text>
-        </div>
-
-        {error && (
-          <Alert
-            message={error}
-            type="error"
-            closable
-            onClose={() => setError(null)}
-            style={{ marginBottom: 16 }}
-          />
-        )}
-
-        <Form
-          name="reset-password"
-          onFinish={onFinish}
-          layout="vertical"
-          size="large"
-        >
-          <Form.Item
-            name="password"
-            rules={[
-              { required: true, message: 'Please input your new password!' },
-              { min: 8, message: 'Password must be at least 8 characters!' }
-            ]}
-          >
-            <Input.Password
-              prefix={<LockOutlined />}
-              placeholder="New Password"
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="confirmPassword"
-            rules={[
-              { required: true, message: 'Please confirm your password!' }
-            ]}
-          >
-            <Input.Password
-              prefix={<LockOutlined />}
-              placeholder="Confirm Password"
-            />
-          </Form.Item>
-
-          <Form.Item>
-            <Button 
-              type="primary" 
-              htmlType="submit" 
-              block 
-              loading={loading}
-            >
-              Reset Password
-            </Button>
-          </Form.Item>
-
-          <div style={{ textAlign: 'center' }}>
-            <Link to="/login">
-              <Text type="secondary">Back to Login</Text>
-            </Link>
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+      <div className="bg-white rounded-2xl shadow-md w-full max-w-sm p-8">
+        {success ? (
+          <div className="text-center">
+            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+            </div>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">Password Reset Successful</h2>
+            <p className="text-sm text-gray-500">Redirecting to login...</p>
           </div>
-        </Form>
-      </Card>
+        ) : (
+          <>
+            <div className="text-center mb-6">
+              <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${APP_CONFIG.logo.gradient} flex items-center justify-center mx-auto mb-3`}>
+                <span className="text-white font-extrabold text-lg">{APP_CONFIG.logo.icon}</span>
+              </div>
+              <h1 className="text-xl font-bold text-gray-900">Set New Password</h1>
+              <p className="text-sm text-gray-500 mt-1">Enter your new password</p>
+            </div>
+            {error && <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4"><p className="text-sm text-red-700">{error}</p></div>}
+            <form onSubmit={onSubmit} className="space-y-4">
+              <Fld label="New Password" type="password" placeholder="Min. 8 characters" value={password} onChange={setPassword} />
+              <Fld label="Confirm Password" type="password" placeholder="Confirm password" value={confirmPassword} onChange={setConfirmPassword} />
+              <Btn type="submit" loading={loading} className="w-full">Reset Password</Btn>
+            </form>
+            <div className="mt-6 text-center"><Link to="/login" className="text-sm text-gray-500 hover:text-gray-700">Back to Login</Link></div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
