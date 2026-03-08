@@ -87,19 +87,19 @@ def client(override_get_db) -> TestClient:
 @pytest_asyncio.fixture
 async def async_client(override_get_db) -> AsyncGenerator[AsyncClient, None]:
     """Create async test client with rate limiter disabled"""
-    # Mock limiter.limit() decorator to bypass rate limiting
     from app.core.rate_limit import limiter
-    from unittest.mock import MagicMock
 
-    original_limit = limiter.limit
-    # Replace limiter.limit with a no-op decorator
-    limiter.limit = lambda *args, **kwargs: lambda func: func
+    # Disable rate limiter entirely for tests
+    original_enabled = getattr(limiter, '_enabled', True)
+    limiter.enabled = False
+    limiter._enabled = False
 
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
 
-    # Restore original limiter
-    limiter.limit = original_limit
+    # Restore original state
+    limiter.enabled = original_enabled
+    limiter._enabled = original_enabled
 
 
 @pytest_asyncio.fixture
