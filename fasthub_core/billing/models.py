@@ -69,8 +69,23 @@ class Subscription(BaseModel):
     cancel_at_period_end = Column(Boolean, default=False, nullable=False)
     canceled_at = Column(DateTime, nullable=True)
 
+    # Multi-gateway support (Brief 20: Polish payment gateways)
+    gateway_id = Column(String(50), nullable=True)  # "stripe", "payu", "tpay", "p24", "paypal"
+    amount = Column(Integer, nullable=True)  # kwota w groszach (19900 = 199 PLN)
+    currency = Column(String(3), default="PLN")
+
+    # Saved card for auto-renewal
+    gateway_customer_id = Column(String(200), nullable=True)
+    gateway_payment_token = Column(String(200), nullable=True)
+
+    # Renewal tracking (RecurringManager)
+    last_renewal_attempt = Column(DateTime, nullable=True)
+    renewal_failures = Column(Integer, default=0)
+    grace_period_end = Column(DateTime, nullable=True)
+
     def __repr__(self):
-        return f"<Subscription {self.stripe_subscription_id} - {self.status}>"
+        gw = self.gateway_id or "stripe"
+        return f"<Subscription {self.stripe_subscription_id} - {self.status} ({gw})>"
 
 
 # ============================================================================

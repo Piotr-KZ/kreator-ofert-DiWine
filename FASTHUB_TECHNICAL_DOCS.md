@@ -737,7 +737,7 @@ VITE_API_URL=https://api.fasthub.pl/api/v1
 **Uruchamianie:**
 ```bash
 # fasthub_core
-python -m pytest tests/ -v  # 184 testow
+python -m pytest tests/ -v  # 277 testow
 
 # fasthub-backend
 cd fasthub-backend && python -m pytest tests/ -v
@@ -748,7 +748,57 @@ cd ../autoflow && python -m pytest tests/test_fasthub_e2e.py -v  # 43 testy
 
 ---
 
-## 14. Uwagi techniczne
+## 14. Social Login (Brief 18)
+
+Logowanie przez zewnetrznych providerow OAuth: **Google, GitHub, Microsoft**.
+
+### Architektura
+```
+fasthub_core/auth/
+├── social_providers.py   # Konfiguracje providerow (URL-e, scopes, parsery)
+├── social_login.py       # SocialLoginService (flow: code→token→user→JWT)
+└── social_routes.py      # Endpointy /auth/{provider}/login i /callback
+```
+
+### Flow
+1. Frontend kieruje usera na `GET /api/auth/{provider}/login`
+2. Backend generuje URL OAuth i robi redirect (302) do providera
+3. User loguje sie u providera (Google/GitHub/Microsoft)
+4. Provider redirectuje na `GET /api/auth/{provider}/callback?code=xxx&state=yyy`
+5. Backend: wymienia code na token → pobiera dane usera → generuje JWT
+
+### User linking (logika laczenia kont)
+- **Social ID istnieje w DB** → loguj bezposrednio
+- **Email istnieje w DB** → link social ID do istniejacego konta
+- **Brak w DB** → stworz nowe konto (bez hasla) + domyslna organizacja
+
+### Nowe pola User model
+| Pole | Typ | Opis |
+|------|-----|------|
+| google_id | String(255), unique | Google OAuth ID |
+| github_id | String(255), unique | GitHub OAuth ID |
+| microsoft_id | String(255), unique | Microsoft OAuth ID |
+| oauth_provider | String(50) | Ostatni provider uzity do logowania |
+| avatar_url | String(500) | URL avatara z providera |
+
+### Konfiguracja (.env)
+```
+GOOGLE_CLIENT_ID=xxx
+GOOGLE_CLIENT_SECRET=xxx
+GITHUB_CLIENT_ID=xxx
+GITHUB_CLIENT_SECRET=xxx
+MICROSOFT_CLIENT_ID=xxx
+MICROSOFT_CLIENT_SECRET=xxx
+BACKEND_URL=http://localhost:8000
+```
+
+### Tryb development vs production
+- **Development:** callback zwraca JSON z tokenami (latwiejsze testowanie)
+- **Production:** callback robi redirect na frontend z tokenami w query params
+
+---
+
+## 15. Uwagi techniczne
 
 - **bcrypt 5.0 NIE dziala z passlib 1.7.4** — uzywac `bcrypt==4.1.2`
 - **WebSocket auth** przez query string `?token=JWT` (nie mozna ustawic Authorization header w WS)
@@ -759,6 +809,7 @@ cd ../autoflow && python -m pytest tests/test_fasthub_e2e.py -v  # 43 testy
 - **Redis graceful degradation** — gdy Redis niedostepny, fallback na InMemory (blacklist, cache)
 - **Event Bus Redis broadcast** — best-effort, non-blocking (nie blokuje jesli Redis offline)
 - **Encryption fallback** — jesli brak FASTHUB_SECRET_KEY, credentials zapisywane jako plain JSON (nie crash)
+- **Social Login** — 3 providery (Google, GitHub, Microsoft), auto-linking kont po email, auto-tworzenie organizacji
 - **18 tabel w Base.metadata** — 13 oryginalnych + 5 nowych billing (billing_plans, billing_addons, tenant_addons, usage_records, billing_events)
 - **Billing models uzywaja Integer PK** (nie UUID) — BillingPlan, BillingAddon, TenantAddon, UsageRecord, BillingEvent dziedzicza z Base, nie z BaseModel
 - **AutoFlow manifest** — 22 permissions, 4 role, 19 event types, 7 billing resources

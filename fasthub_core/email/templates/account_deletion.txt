@@ -1,0 +1,9 @@
+{% extends "base_layout.txt" %}
+{% block content %}
+Potwierdzenie usuniecia konta
+
+Czesc {{ user_name }}, Twoje konto zostanie usuniete {{ execute_date }}.
+
+Anuluj usuniecie: {{ cancel_url }}
+{% if export_url %}Eksport danych: {{ export_url }}{% endif %}
+{% endblock %}

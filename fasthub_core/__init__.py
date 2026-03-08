@@ -15,6 +15,7 @@ from fasthub_core.contracts import (
     AuditContract,
     NotificationContract,
     EventBusContract,
+    TaskQueueContract,
     DatabaseContract,
 )
 
@@ -57,11 +58,29 @@ from fasthub_core.billing.subscription_check import SubscriptionChecker, require
 # Billing Feature Flags (Brief 14)
 from fasthub_core.billing.feature_flags import check_feature, require_feature, get_plan_features
 
+# Background Tasks (Brief 15)
+from fasthub_core.tasks import (
+    enqueue_task, enqueue_email,
+    get_task_manager, set_task_manager, close_task_manager,
+    TaskQueueBackend, BaseWorkerSettings,
+)
+
+# Tenancy (Brief 17)
+from fasthub_core.tenancy import (
+    TenantMiddleware, get_current_tenant, get_current_tenant_id,
+    require_tenant, require_tenant_admin,
+)
+
+# Social Login (Brief 18)
+from fasthub_core.auth.social_login import SocialLoginService, get_social_login_service
+from fasthub_core.auth.social_routes import router as social_login_router
+from fasthub_core.auth.social_providers import SUPPORTED_PROVIDERS
+
 __all__ = [
     "__version__",
     "AuthContract", "UserContract", "PermissionContract",
     "BillingContract", "AuditContract", "NotificationContract",
-    "EventBusContract", "DatabaseContract",
+    "EventBusContract", "TaskQueueContract", "DatabaseContract",
     "Settings", "get_settings", "get_db", "get_engine",
     "admin_router",
     "rbac_router", "RBACService", "require_permission",
@@ -76,4 +95,14 @@ __all__ = [
     # Billing modules
     "SubscriptionChecker", "require_active_subscription",
     "check_feature", "require_feature", "get_plan_features",
+    # Brief 15 modules
+    "enqueue_task", "enqueue_email",
+    "get_task_manager", "set_task_manager", "close_task_manager",
+    "TaskQueueBackend", "BaseWorkerSettings",
+    # Brief 17 modules
+    "TenantMiddleware", "get_current_tenant", "get_current_tenant_id",
+    "require_tenant", "require_tenant_admin",
+    # Brief 18 — Social Login
+    "SocialLoginService", "get_social_login_service",
+    "social_login_router", "SUPPORTED_PROVIDERS",
 ]

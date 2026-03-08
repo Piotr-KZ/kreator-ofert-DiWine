@@ -2,28 +2,57 @@
 
 **FastHub** is a production-ready SaaS boilerplate built with FastAPI (backend) and React (frontend), featuring multi-tenant organizations, role-based access control, automated tests, and simplified user onboarding.
 
-**🌐 Live Demo:** [https://fasthub-lz4x.onrender.com](https://fasthub-lz4x.onrender.com)
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/Piotr-KZ/Fasthub)
 
 ---
 
-## 🚀 Quick Start
+## Deploy na Render (5 minut)
 
-### **Prerequisites:**
-- Docker Desktop installed
-- Git installed
+1. Kliknij przycisk **Deploy to Render** powyzej
+2. Render utworzy: baze PostgreSQL, Redis, backend i frontend
+3. Poczekaj az wszystko sie zbuduje (~3-5 min)
+4. Po deploy'u ustaw 2 zmienne w Render Dashboard:
 
-### **1. Clone repository:**
+| Serwis | Zmienna | Wartosc |
+|--------|---------|---------|
+| fasthub-frontend | `VITE_API_URL` | `https://<twoj-backend>.onrender.com/api/v1` |
+| fasthub-backend | `BACKEND_CORS_ORIGINS` | `["https://<twoj-frontend>.onrender.com"]` |
+
+5. Kliknij **Manual Deploy** na obu serwisach — gotowe!
+
+**Opcjonalne zmienne** (ustaw jesli potrzebujesz):
+
+| Zmienna | Do czego | Wymagana? |
+|---------|----------|-----------|
+| `STRIPE_SECRET_KEY` | Platnosci Stripe | Nie — do billing |
+| `STRIPE_WEBHOOK_SECRET` | Webhooki Stripe | Nie — do billing |
+| `SENDGRID_API_KEY` | Wysylanie emaili | Nie — do emaili |
+| `SENTRY_DSN` | Monitoring bledow | Nie — do monitoringu |
+| `GOOGLE_CLIENT_ID` | Login przez Google | Nie — do social login |
+| `GOOGLE_CLIENT_SECRET` | Login przez Google | Nie — do social login |
+| `GITHUB_CLIENT_ID` | Login przez GitHub | Nie — do social login |
+| `GITHUB_CLIENT_SECRET` | Login przez GitHub | Nie — do social login |
+
+---
+
+## Uruchomienie lokalne (Docker)
+
+### **Wymagania:**
+- Docker Desktop
+- Git
+
+### **1. Klonuj repozytorium:**
 ```bash
 git clone https://github.com/Piotr-KZ/Fasthub.git
 cd Fasthub
 ```
 
-### **2. Start with Docker:**
+### **2. Uruchom:**
 ```bash
 docker-compose up
 ```
 
-### **3. Access:**
+### **3. Gotowe:**
 - **Frontend:** http://localhost:3000
 - **Backend API:** http://localhost:8000
 - **API Docs:** http://localhost:8000/docs

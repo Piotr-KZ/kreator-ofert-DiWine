@@ -35,6 +35,7 @@ slowapi==0.1.9
 
 # Email Sending
 sendgrid==6.11.0
+jinja2==3.1.6
 
 # External APIs
 requests==2.31.0

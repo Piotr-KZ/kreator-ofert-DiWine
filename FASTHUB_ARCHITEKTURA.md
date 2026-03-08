@@ -402,6 +402,11 @@ Logowanie / Rejestracja
 - **Shared HTTP Clients** — BaseHTTPClient + Fakturownia + Stripe wrapper (Brief 16)
 - 284 testow fasthub_core (zero regresji)
 
+### Gotowe (Faza 4 — Brief 18)
+- **Social Login** — logowanie przez Google, GitHub, Microsoft
+- Automatyczne laczenie kont (ten sam email = to samo konto)
+- Tworzenie nowych kont bez hasla (social login only)
+
 ### Planowane
 - Brief 11: Thin wrappery w AutoFlow (zamiana lokalnych kopii na import z fasthub_core)
 - Brief 20: Kolejne bramki platnosci (PayU, Tpay, Przelewy24)

@@ -1,5 +1,5 @@
 """
-Billing package — models, service, middleware, API.
+Billing package — models, service, middleware, API, payment gateways.
 """
 
 from fasthub_core.billing.models import (
@@ -18,11 +18,14 @@ from fasthub_core.billing.feature_flags import (
 )
 from fasthub_core.billing.stripe_webhooks import StripeWebhookHandler
 from fasthub_core.billing.payment_gateway import (
-    PaymentGateway, PaymentStatus,
-    PaymentMethod, PaymentResult, WebhookResult,
+    PaymentGateway, PaymentMethod, PaymentResult, PaymentStatus, WebhookResult,
 )
 from fasthub_core.billing.payment_registry import PaymentGatewayRegistry, get_payment_registry
 from fasthub_core.billing.gateways.stripe_gateway import StripeGateway
+from fasthub_core.billing.recurring_manager import RecurringManager
+from fasthub_core.billing.ksef_xml import KSeFXMLBuilder
+from fasthub_core.billing.ksef_hook import KSeFInvoiceHook
+from fasthub_core.billing.invoice_router import get_invoice_hook
 
 __all__ = [
     "Subscription", "SubscriptionStatus", "Invoice", "InvoiceStatus",
@@ -35,4 +38,6 @@ __all__ = [
     "PaymentGateway", "PaymentGatewayRegistry", "PaymentStatus",
     "PaymentMethod", "PaymentResult", "WebhookResult",
     "get_payment_registry", "StripeGateway",
+    "RecurringManager",
+    "KSeFXMLBuilder", "KSeFInvoiceHook", "get_invoice_hook",
 ]

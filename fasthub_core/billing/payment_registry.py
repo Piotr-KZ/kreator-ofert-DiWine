@@ -115,20 +115,26 @@ class PaymentGatewayRegistry:
         Stworz registry z konfiguracji.
         Automatycznie rejestruje bramki ktore maja klucze API w env.
         """
+        import importlib
+
         registry = cls()
 
-        try:
-            from fasthub_core.billing.gateways.stripe_gateway import StripeGateway
-            registry.register(StripeGateway())
-        except ImportError:
-            pass
+        gateway_classes = [
+            ("fasthub_core.billing.gateways.stripe_gateway", "StripeGateway"),
+            ("fasthub_core.billing.gateways.payu_gateway", "PayUGateway"),
+            ("fasthub_core.billing.gateways.tpay_gateway", "TpayGateway"),
+            ("fasthub_core.billing.gateways.p24_gateway", "P24Gateway"),
+            ("fasthub_core.billing.gateways.paypal_gateway", "PayPalGateway"),
+        ]
 
-        # Przyszle bramki (Brief 20):
-        # try:
-        #     from fasthub_core.billing.gateways.payu_gateway import PayUGateway
-        #     registry.register(PayUGateway())
-        # except ImportError:
-        #     pass
+        for module_path, class_name in gateway_classes:
+            try:
+                module = importlib.import_module(module_path)
+                gateway_class = getattr(module, class_name)
+                gateway = gateway_class()
+                registry.register(gateway)
+            except ImportError:
+                pass
 
         active = [g.gateway_id for g in registry.get_active_gateways()]
         logger.info(f"Payment gateways active: {active}")

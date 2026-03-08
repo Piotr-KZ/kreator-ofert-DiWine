@@ -1,0 +1,10 @@
+{% extends "base_layout.html" %}
+{% block content %}
+<h2 style="color:#333333; margin-top:0;">Problem z platnoscia</h2>
+<p style="color:#555555; line-height:1.6;">Czesc {{ user_name }}, nie udalo sie pobrac platnosci za plan <strong>{{ plan_name }}</strong> ({{ amount }} {{ currency | default("PLN") }}).</p>
+<p style="color:#555555; line-height:1.6;">Sprawdz dane platnosci i sprobuj ponownie:</p>
+<p style="text-align:center; margin:30px 0;">
+  <a href="{{ retry_url }}" style="background:#dc2626; color:#ffffff; padding:12px 30px; text-decoration:none; border-radius:5px; display:inline-block; font-weight:bold;">Zaktualizuj platnosc</a>
+</p>
+<p style="color:#999999; font-size:13px;">Masz {{ grace_period_days | default(7) }} dni na uregulowanie platnosci zanim dostep zostanie ograniczony.</p>
+{% endblock %}

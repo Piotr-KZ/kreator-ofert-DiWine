@@ -1,0 +1,10 @@
+{% extends "base_layout.txt" %}
+{% block content %}
+Problem z platnoscia
+
+Czesc {{ user_name }}, nie udalo sie pobrac platnosci za plan {{ plan_name }} ({{ amount }} {{ currency | default("PLN") }}).
+
+Zaktualizuj platnosc: {{ retry_url }}
+
+Masz {{ grace_period_days | default(7) }} dni na uregulowanie.
+{% endblock %}
