@@ -1,7 +1,7 @@
 # FastHub — Architektura Systemu
 
 > Dokument biznesowy dla wlasciciela i partnerow.
-> Wersja: 2.1 | Data: 2026-03-02
+> Wersja: 2.2 | Data: 2026-03-09
 
 ---
 
@@ -34,6 +34,7 @@ FastHub ma trzy glowne czesci:
 ┌────────────────────▼────────────────────────────┐
 │              FRONTEND (interfejs)                │
 │     To co uzytkownik widzi i klika.              │
+│     React + TypeScript + Tailwind CSS.           │
 │     Strony: logowanie, dashboard, ustawienia,    │
 │     zespol, faktury.                             │
 └────────────────────┬────────────────────────────┘
@@ -402,24 +403,35 @@ Logowanie / Rejestracja
 - **Shared HTTP Clients** — BaseHTTPClient + Fakturownia + Stripe wrapper (Brief 16)
 - 284 testow fasthub_core (zero regresji)
 
-### Gotowe (Faza 4 — Brief 18)
-- **Social Login** — logowanie przez Google, GitHub, Microsoft
+### Gotowe (Faza 4 — Briefs 17-18)
+- **CLI narzedzia** — typer-based CLI (Brief 17)
+- **Social Login** — logowanie przez Google, GitHub, Microsoft (Brief 18)
 - Automatyczne laczenie kont (ten sam email = to samo konto)
 - Tworzenie nowych kont bez hasla (social login only)
 
+### Gotowe (Faza 5 — Briefs 19-21)
+- **Testy dodatkowe** — 200 testow (151 unit + 49 integration) (Brief 19)
+- **Multi-gateway platnosci** — kolumny gateway_id, amount, currency, renewal tracking (Brief 20)
+- **Workflow CI/CD** — GitHub Actions z auto-testami (Brief 21)
+
+### Gotowe (Brief 1 — Frontend)
+- **Migracja Ant Design → Tailwind CSS** — kompletne przepisanie frontendu
+- Wlasne komponenty UI: Btn, Fld, SectionCard, StatusBadge, Tile, Modal
+- AppShell (responsive layout z sidebar, nawigacja, menu uzytkownika)
+- Zero zaleznosci od antd — czysty Tailwind + custom components
+- Centralizacja konfiguracji: APP_CONFIG (nazwy, URL-e, design tokens)
+
 ### Planowane
-- Brief 11: Thin wrappery w AutoFlow (zamiana lokalnych kopii na import z fasthub_core)
-- Brief 20: Kolejne bramki platnosci (PayU, Tpay, Przelewy24)
 - Szablony HTML emaili (zamiast plain text)
 - WebSocket skalowanie (Redis pub/sub dla multi-server)
-- Dashboard metryki biznesowe
+- Kolejne bramki platnosci (PayU, Tpay implementacja)
 
 ---
 
 ## Wartosc biznesowa FastHub
 
 1. **Oszczednosc czasu:** Nowa aplikacja SaaS startuje w dni, nie miesiace
-2. **Sprawdzone rozwiazania:** Kazdy modul jest przetestowany (327+ testow: 284 fasthub_core + 43 e2e AutoFlow)
+2. **Sprawdzone rozwiazania:** Kazdy modul jest przetestowany (484+ testow: 284 fasthub_core + 200 backend)
 3. **Bezpieczenstwo z automatu:** Bez dodatkowej pracy — szyfrowanie, uprawnienia, audit
 4. **Elastycznosc:** Kazdy modul mozna wymienic lub rozszerzyc niezaleznie
 5. **Skalowalnosc:** System gotowy na wzrost — od startupu do enterprise
@@ -427,5 +439,5 @@ Logowanie / Rejestracja
 
 ---
 
-*Dokument przygotowany 2026-03-01*
+*Dokument zaktualizowany 2026-03-09*
 *FastHub v2.0-alpha*

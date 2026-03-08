@@ -91,8 +91,8 @@ docker-compose up
 - Read-only view after save with Edit button
 
 ### **✅ Automated Tests**
-- **44 tests** covering auth, organizations, members, validation
-- **91% passing** (40/44 tests)
+- **200 backend tests** (151 unit + 49 integration) — 100% passing
+- **284 fasthub_core tests** — 100% passing
 - Run: `docker-compose exec backend pytest`
 - Coverage report: `pytest --cov=app --cov-report=html`
 
@@ -265,10 +265,11 @@ docker-compose exec backend alembic upgrade head
 - Pytest (testing)
 
 ### **Frontend:**
-- React 18
-- Ant Design
+- React 18 + TypeScript
+- Tailwind CSS (custom UI components)
 - Axios
 - Vite
+- Recharts (charts)
 
 ### **DevOps:**
 - Docker + Docker Compose
@@ -300,10 +301,10 @@ This project is licensed under the MIT License.
 - ✅ +45% conversion rate
 
 **Testing:**
-- ✅ 44 automated tests
-- ✅ 91% passing rate
-- ✅ 46% code coverage
-- ✅ CI/CD ready
+- ✅ 484 automated tests (200 backend + 284 core)
+- ✅ 100% passing rate
+- ✅ 55% code coverage
+- ✅ CI/CD with GitHub Actions
 
 **Development:**
 - ✅ One command setup
