@@ -208,8 +208,6 @@ async def test_api_token(db_session: AsyncSession, test_user: User) -> APIToken:
         user_id=test_user.id,
         name="Test Token",
         token_hash=get_password_hash("test-token-secret"),
-        scopes=["read", "write"],
-        is_active=True,
     )
     db_session.add(token)
     await db_session.commit()
@@ -222,13 +220,15 @@ async def test_subscription(
     db_session: AsyncSession, test_organization: Organization
 ) -> Subscription:
     """Create test subscription"""
+    from datetime import datetime, timedelta
+
     subscription = Subscription(
         organization_id=test_organization.id,
         stripe_subscription_id="sub_test123",
         stripe_price_id="price_test123",
         status="active",
-        current_period_start=1234567890,
-        current_period_end=1234567890 + 2592000,  # +30 days
+        current_period_start=datetime.utcnow(),
+        current_period_end=datetime.utcnow() + timedelta(days=30),
     )
     db_session.add(subscription)
     await db_session.commit()
@@ -244,12 +244,9 @@ async def test_invoice(db_session: AsyncSession, test_organization: Organization
         stripe_invoice_id="in_test123",
         invoice_number="INV-TEST-001",
         amount=1000.00,
-        amount_due=1000,
-        amount_paid=1000,
         currency="usd",
         status="paid",
         pdf_url="https://example.com/invoice.pdf",
-        invoice_pdf="https://example.com/invoice.pdf",
     )
     db_session.add(invoice)
     await db_session.commit()

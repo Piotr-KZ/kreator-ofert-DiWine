@@ -39,7 +39,7 @@ async def test_log_action_basic(
     assert audit_log.action == "user.update"
     assert audit_log.resource_type == "user"
     assert audit_log.resource_id == str(test_user.id) or audit_log.resource_id == test_user.id
-    assert audit_log.extra_data is None or audit_log.details is None
+    assert audit_log.extra_data is None
     assert audit_log.ip_address is None
     assert audit_log.user_agent is None
 
@@ -50,7 +50,7 @@ async def test_log_action_with_details(
     test_user: User,
     db_session: AsyncSession
 ):
-    """Test logging action with details"""
+    """Test logging action with extra_data"""
     # Arrange
     details = {
         "old_value": "test@example.com",
@@ -65,14 +65,12 @@ async def test_log_action_with_details(
         resource_type="user",
         resource_id=test_user.id,
         extra_data=details,
-        details=details
     )
     await db_session.commit()
 
-    # Assert - check whichever field name is used by the implementation
-    stored_details = getattr(audit_log, 'extra_data', None) or getattr(audit_log, 'details', None)
-    assert stored_details == details
-    assert stored_details["field"] == "email"
+    # Assert
+    assert audit_log.extra_data == details
+    assert audit_log.extra_data["field"] == "email"
 
 
 @pytest.mark.asyncio
@@ -205,12 +203,10 @@ async def test_log_action_complex_details(
         action="user.bulk_update",
         resource_type="user",
         extra_data=complex_details,
-        details=complex_details
     )
     await db_session.commit()
 
-    # Assert - check whichever field name is used by the implementation
-    stored_details = getattr(audit_log, 'extra_data', None) or getattr(audit_log, 'details', None)
-    assert stored_details["operation"] == "bulk_update"
-    assert len(stored_details["affected_users"]) == 1
-    assert stored_details["changes"]["role"]["to"] == "admin"
+    # Assert
+    assert audit_log.extra_data["operation"] == "bulk_update"
+    assert len(audit_log.extra_data["affected_users"]) == 1
+    assert audit_log.extra_data["changes"]["role"]["to"] == "admin"
