@@ -30,5 +30,7 @@ setup(
         "sentry-sdk[fastapi]>=1.40.0",
         "boto3>=1.34.0",
         "jinja2>=3.1.0",
+        "arq>=0.26.0",
+        "typer>=0.9.0",
     ],
 )
