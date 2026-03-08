@@ -1,181 +1,88 @@
 # FastHub - Automated Tests
 
-## 📋 Test Files
+## Test Structure
 
-### **Core Tests:**
-1. `test_auth.py` - Authentication (register, login, logout)
-2. `test_auth_advanced.py` - Advanced auth (refresh token, password reset)
-3. `test_organizations.py` - Organization management + onboarding
+```
+tests/
+├── conftest.py              # Shared fixtures (db_session, test_user, async_client, etc.)
+├── unit/                    # Unit tests (151 tests)
+│   ├── test_admin_service.py
+│   ├── test_api_token_model.py
+│   ├── test_audit_service.py
+│   ├── test_base_model.py
+│   ├── test_cache.py
+│   ├── test_email_invitations.py
+│   ├── test_member_model.py
+│   ├── test_organization_service.py
+│   └── test_request_logging.py
+├── integration/             # Integration tests (49 tests)
+│   ├── test_admin_api.py
+│   ├── test_api_tokens_api.py
+│   ├── test_auth_api.py
+│   ├── test_auth_edge_cases.py
+│   ├── test_authorization_edge_cases.py
+│   ├── test_database_errors.py
+│   ├── test_health_api.py
+│   ├── test_members_api.py
+│   ├── test_organizations_api.py
+│   ├── test_rate_limiting_api.py
+│   └── test_users_api.py
+```
 
-### **Configuration:**
-- `conftest.py` - Test fixtures and configuration
-- `pytest.ini` - Pytest configuration
+## Running Tests
 
----
-
-## 🚀 Running Tests
-
-### **With Docker (RECOMMENDED):**
+### With Docker:
 
 ```bash
 # All tests
 docker-compose exec backend pytest
 
-# Specific file
-docker-compose exec backend pytest tests/test_auth.py
+# Unit tests only
+docker-compose exec backend pytest tests/unit/ -v
 
-# Specific test
-docker-compose exec backend pytest tests/test_auth.py::test_register_user
+# Integration tests only
+docker-compose exec backend pytest tests/integration/ -v
 
-# With coverage report
+# With coverage
 docker-compose exec backend pytest --cov=app --cov-report=html
-
-# Fail fast (stop on first failure)
-docker-compose exec backend pytest -x
-
-# Verbose output
-docker-compose exec backend pytest -vv
 ```
 
-### **Without Docker:**
+### Without Docker:
 
 ```bash
 cd fasthub-backend
-
-# Activate venv
-source venv/bin/activate  # Linux/Mac
-# OR
-venv\Scripts\activate  # Windows
-
-# Run tests
 pytest
-
-# With coverage
 pytest --cov=app --cov-report=html
 ```
 
----
+## CI/CD
 
-## 📊 Test Coverage
+Tests run automatically via GitHub Actions on every push and PR:
+- **Backend Tests** workflow: runs unit + integration tests with PostgreSQL
+- **Frontend Tests** workflow: runs `npm run build`
 
-After running tests with coverage:
+Both checks must pass before merging to main (branch protection).
 
-```bash
-# View HTML report
-open htmlcov/index.html  # Mac
-start htmlcov/index.html  # Windows
-xdg-open htmlcov/index.html  # Linux
-```
-
----
-
-## ✅ Test Checklist
-
-### **Authentication Tests:**
-- [x] User registration (3 fields)
-- [x] Duplicate email validation
-- [x] Login success
-- [x] Login with wrong password
-- [x] Token refresh
-- [x] Logout (token blacklist)
-- [x] Password reset request
-- [x] Password change
-
-### **Organization Tests:**
-- [x] Get current organization
-- [x] Complete organization onboarding
-- [x] Validate NIP (10 digits)
-- [x] Validate postal code (XX-XXX)
-- [x] Update organization
-
----
-
-## 🔧 Adding New Tests
-
-### **1. Create test file:**
-
-```python
-# tests/test_feature.py
-"""Feature tests"""
-
-def test_feature_works(client, auth_headers):
-    """Test feature functionality"""
-    response = client.get("/api/v1/feature", headers=auth_headers)
-    assert response.status_code == 200
-```
-
-### **2. Run tests:**
-
-```bash
-docker-compose exec backend pytest tests/test_feature.py
-```
-
----
-
-## 📝 Test Fixtures
-
-Available in `conftest.py`:
-
-- `client` - FastAPI test client
-- `db` - Test database session
-- `test_user_data` - Sample user data
-- `auth_headers` - Authenticated headers (Bearer token)
-
----
-
-## 🐛 Debugging Failed Tests
-
-```bash
-# Show full traceback
-docker-compose exec backend pytest -vv --tb=long
-
-# Run only failed tests
-docker-compose exec backend pytest --lf
-
-# Drop into debugger on failure
-docker-compose exec backend pytest --pdb
-```
-
----
-
-## ✅ CI/CD Integration
-
-Tests run automatically in Docker:
-
-```yaml
-# docker-compose.yml
-backend:
-  command: >
-    sh -c "
-      alembic upgrade head &&
-      pytest &&
-      uvicorn app.main:app --reload
-    "
-```
-
----
-
-## 📊 Expected Results
-
-All tests should pass:
+## Test Results
 
 ```
-tests/test_auth.py .................... [ 40%]
-tests/test_auth_advanced.py ........... [ 60%]
-tests/test_organizations.py ........... [100%]
-
-======================== 15 passed in 2.34s ========================
+Unit Tests:        151 passed (100%)
+Integration Tests:  49 passed (100%)
+TOTAL:             200 passed
+Coverage:           55%
 ```
 
----
+## Key Fixtures (conftest.py)
 
-## 🎯 Next Steps
-
-1. ✅ Run tests: `docker-compose exec backend pytest`
-2. ✅ Check coverage: `pytest --cov=app`
-3. ✅ Add new tests for new features
-4. ✅ Keep coverage above 80%
-
----
-
-**Happy Testing!** 🚀
+| Fixture | Description |
+|---------|-------------|
+| `db_session` | Async SQLAlchemy session with auto-cleanup (TRUNCATE) |
+| `test_user` | User test@example.com with membership in test_organization |
+| `test_admin` | SuperUser admin@example.com |
+| `test_organization` | Organization "Test Organization" |
+| `async_client` | AsyncClient with rate limiter disabled |
+| `auth_headers` | JWT Bearer headers for test_user |
+| `admin_headers` | JWT Bearer headers for test_admin |
+| `test_api_token` | API token for test_user |
+| `test_subscription` | Active subscription for test_organization |
+| `test_invoice` | Paid invoice INV-TEST-001 |

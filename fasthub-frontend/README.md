@@ -1,20 +1,19 @@
-# AutoFlow Frontend
+# FastHub Frontend
 
-Modern React 19 + TypeScript frontend for AutoFlow SaaS Boilerplate.
+Modern React 18 + TypeScript frontend for FastHub SaaS Boilerplate.
 
-## 🚀 Tech Stack
+## Tech Stack
 
-- **React 19** - Latest React with modern features
+- **React 18** - UI framework
 - **TypeScript** - Type-safe development
 - **Vite** - Fast build tool and dev server
-- **Ant Design** - Enterprise-grade UI components
-- **Tailwind CSS** - Utility-first CSS framework
+- **Tailwind CSS** - Utility-first CSS framework (custom UI components)
 - **React Router** - Client-side routing
 - **Zustand** - Lightweight state management
 - **Axios** - HTTP client with interceptors
 - **Recharts** - Composable charting library
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 src/
@@ -26,10 +25,28 @@ src/
 │   ├── organizations.ts   # Organization management
 │   └── superadmin.ts      # SuperAdmin features
 ├── components/            # Reusable components
+│   ├── ui/               # Custom Tailwind UI components
+│   │   ├── Btn.tsx       # Button (primary/secondary/ghost/danger)
+│   │   ├── Fld.tsx       # Form field with label/error
+│   │   ├── SectionCard.tsx # Card container
+│   │   ├── StatusBadge.tsx # Badge (success/warning/error/info)
+│   │   ├── Tile.tsx      # Stat tile
+│   │   ├── Rad.tsx       # Radio
+│   │   ├── Chk.tsx       # Checkbox
+│   │   ├── Toggle.tsx    # Toggle switch
+│   │   └── Lbl.tsx       # Label
+│   ├── shared/           # Shared components
+│   │   ├── Modal.tsx     # Modal dialog
+│   │   ├── EmptyState.tsx # Empty state placeholder
+│   │   └── ErrorBoundary.tsx # Error boundary
+│   ├── layout/           # Layout components
+│   │   ├── AppShell.tsx  # Main responsive layout
+│   │   ├── SidebarLayout.tsx # Sidebar layout
+│   │   └── WizardLayout.tsx  # Wizard/step layout
 │   ├── auth/             # Auth-related components
-│   ├── layout/           # Layout components (AppLayout)
-│   ├── common/           # Common UI components
-│   └── tables/           # Table components
+│   └── common/           # Common UI components
+├── config/
+│   └── app.config.ts     # Centralized app configuration
 ├── pages/                # Page components
 │   ├── auth/            # Auth pages (Login, Register, etc.)
 │   ├── superadmin/      # SuperAdmin pages
@@ -48,11 +65,11 @@ src/
 └── main.tsx            # Entry point
 ```
 
-## 🔧 Setup & Installation
+## Setup & Installation
 
 ### Prerequisites
 
-- Node.js 18+ 
+- Node.js 18+
 - npm or yarn
 - Backend API running on `http://localhost:8000`
 
@@ -76,7 +93,7 @@ VITE_API_URL=http://localhost:8000/api/v1
 npm run dev
 ```
 
-Frontend will start on `http://localhost:3000` (or 3001 if 3000 is occupied).
+Frontend will start on `http://localhost:3000`.
 
 ### Build for Production
 
@@ -84,122 +101,89 @@ Frontend will start on `http://localhost:3000` (or 3001 if 3000 is occupied).
 npm run build
 ```
 
-## 🎨 Features
+## UI Components
+
+All UI components are custom-built with Tailwind CSS (no external UI library):
+
+### `components/ui/` — Atomic Components
+
+| Component | Description |
+|-----------|-------------|
+| `Btn` | Button with variants: primary, secondary, ghost, danger. Loading state. |
+| `Fld` | Form field with label, error message, type support (text, email, password, select, textarea) |
+| `SectionCard` | Card container with title and description |
+| `StatusBadge` | Badge with variants: success, warning, error, info, neutral |
+| `Tile` | Stat card with icon, value, label |
+| `Rad`, `Chk`, `Toggle` | Radio, checkbox, toggle inputs |
+| `Lbl` | Form label |
+
+### `components/shared/` — Composite Components
+
+| Component | Description |
+|-----------|-------------|
+| `Modal` | Fullscreen modal with header, body, footer |
+| `EmptyState` | Empty state with icon, title, description, action |
+| `ErrorBoundary` | React error boundary |
+
+### `components/layout/` — Layout Components
+
+| Component | Description |
+|-----------|-------------|
+| `AppShell` | Main app layout with sidebar, topbar, user menu |
+| `SidebarLayout` | Sidebar + content layout |
+| `WizardLayout` | Step-by-step wizard layout |
+
+## Centralized Configuration
+
+`src/config/app.config.ts` — single source of truth for:
+- Product name, tagline, logo
+- API base URL
+- Auth settings (token keys, expiry)
+- Theme tokens (colors, radius, spacing)
+
+## Features
 
 ### Authentication
-- ✅ Login with email/password
-- ✅ Registration with organization setup
-- ✅ Password reset flow
-- ✅ Token refresh with automatic retry
-- ✅ Protected routes with role-based access
+- Login with email/password
+- Registration with organization setup
+- Password reset flow
+- Token refresh with automatic retry
+- Protected routes with role-based access
 
 ### Dashboard
-- ✅ Key metrics cards (users, organizations, subscriptions, revenue)
-- ✅ Growth charts (Line & Bar charts)
-- ✅ Recent users list
-- ✅ Role-specific views (SuperAdmin vs regular user)
+- Key metrics cards
+- Growth charts (Line & Bar charts)
+- Recent users list
+- Role-specific views
 
-### Users Management
-- ✅ Users table with pagination
-- ✅ Search functionality
-- ✅ Edit user (name, email, role, position)
-- ✅ Delete user with confirmation
-- ✅ Role badges (SuperAdmin, Admin, User, Viewer)
-- ✅ Status indicators (Active/Inactive, Verified)
+### Users Management (SuperAdmin)
+- Custom Tailwind table with pagination
+- Search functionality
+- Edit/delete user with modals
 
 ### Team Management
-- ✅ Team members list
-- ✅ Invite new members (modal form)
-- ✅ Role assignment
-- ✅ Last login tracking
+- Team members list
+- Invite new members
+- Role assignment
 
 ### Billing & Subscriptions
-- ✅ Current subscription status
-- ✅ Available plans (Free, Pro, Enterprise)
-- ✅ Upgrade/downgrade functionality
-- ✅ Cancel subscription
-- ✅ Invoices table
-- ✅ Download invoice PDF
+- Current subscription status
+- Available plans
+- Upgrade/downgrade
+- Invoices table
 
 ### Settings
-- ✅ Profile management (name, email, position)
-- ✅ Password change
-- ✅ Organization details
-- ✅ Billing address
-- ✅ Tabbed interface (Profile, Organization)
+- Profile management
+- Password change
+- Organization details
+- Billing address
 
 ### SuperAdmin
-- ✅ System metrics dashboard
-- ✅ Organizations list
-- ✅ Advanced charts (growth trends, plan distribution, revenue)
-- ✅ Recent users monitoring
+- System metrics dashboard with recharts
+- Organizations management
+- Stat cards with Tailwind
 
-## 🔐 Authentication Flow
-
-1. User logs in → receives `access_token` + `refresh_token`
-2. Tokens stored in `localStorage`
-3. `access_token` added to all API requests via Axios interceptor
-4. On 401 error → automatic token refresh using `refresh_token`
-5. If refresh fails → redirect to login
-
-## 🎯 API Integration
-
-### Axios Client (`src/api/client.ts`)
-
-- Automatic token injection
-- Token refresh on 401
-- Error handling
-- Base URL configuration
-
-### API Modules
-
-- `auth.ts` - Login, register, logout, password reset
-- `users.ts` - Users CRUD operations
-- `billing.ts` - Subscriptions and invoices
-- `organizations.ts` - Organization management
-- `superadmin.ts` - Admin metrics and stats
-
-## 🧩 State Management
-
-### Zustand Stores
-
-**authStore** (`src/store/authStore.ts`)
-- Current user
-- Authentication status
-- Login/logout actions
-- Token management
-
-**orgStore** (`src/store/orgStore.ts`)
-- Current organization
-- Update organization
-- Organization state
-
-## 🎨 Styling
-
-### Ant Design Theme
-
-Custom theme configuration in `App.tsx`:
-
-```typescript
-theme={{
-  token: {
-    colorPrimary: '#667eea',
-    borderRadius: 6,
-  },
-}}
-```
-
-### Tailwind CSS
-
-Configured with Ant Design compatibility:
-
-```javascript
-corePlugins: {
-  preflight: false, // Don't conflict with Ant Design
-}
-```
-
-## 🚦 Routing
+## Routing
 
 ### Public Routes
 - `/login` - Login page
@@ -207,96 +191,31 @@ corePlugins: {
 - `/forgot-password` - Password reset request
 - `/reset-password` - Password reset confirmation
 
-### Protected Routes (require authentication)
-- `/` - Redirects to `/dashboard`
+### Protected Routes
 - `/dashboard` - Main dashboard
 - `/users` - Users management
 - `/team` - Team management
 - `/billing` - Billing & subscriptions
 - `/settings` - User & organization settings
 
-### SuperAdmin Routes (require `superadmin` role)
+### SuperAdmin Routes
 - `/superadmin/organizations` - Organizations list
 - `/superadmin/metrics` - System metrics
 
-## 📊 Charts & Visualizations
-
-Using **Recharts** library:
-
-- Line charts (growth trends)
-- Bar charts (revenue)
-- Pie charts (plan distribution)
-- Responsive containers
-- Custom tooltips and legends
-
-## 🐛 Known Limitations
-
-1. **Team Invite** - Backend `/team/invite` endpoint not implemented yet (shows placeholder message)
-2. **Profile Update** - Backend `/users/me` PATCH endpoint not fully implemented (shows placeholder message)
-3. **Google OAuth** - Not implemented in backend yet
-4. **Organization Suspend** - Not implemented in backend yet
-
-## 📝 Backend API Compatibility
-
-Frontend is designed to work with FastAPI backend at `http://localhost:8000/api/v1`.
-
-### Adjusted Endpoint Names
-
-Some endpoints use adjusted names to match backend:
-
-- `/auth/password-reset/request` (instead of `/auth/forgot-password`)
-- `/auth/password-reset/confirm` (instead of `/auth/reset-password`)
-- `/subscriptions/current` (instead of `/billing/subscription`)
-- `/subscriptions/change-plan` (instead of `/billing/subscription/upgrade`)
-- `/admin/stats` (instead of `/admin/metrics`)
-
-## 🚀 Deployment
-
-### Build
-
-```bash
-npm run build
-```
-
-Output in `dist/` directory.
-
-### Serve
-
-Use any static file server:
-
-```bash
-npm install -g serve
-serve -s dist
-```
-
-Or deploy to:
-- Vercel
-- Netlify
-- AWS S3 + CloudFront
-- Nginx
-
-### Environment Variables
-
-Set `VITE_API_URL` to production API URL.
-
-## 📦 Dependencies
+## Dependencies
 
 ### Core
-- react@19.0.0
-- react-dom@19.0.0
-- react-router-dom@7.1.3
-- typescript@5.6.2
+- react, react-dom, react-router-dom
+- typescript
 
-### UI
-- antd@5.23.6
-- @ant-design/icons@5.5.2
-- tailwindcss@4.0.0
+### UI & Styling
+- tailwindcss (utility-first CSS)
+- recharts (charts)
 
 ### State & Data
-- zustand@5.0.3
-- axios@1.7.9
-- recharts@2.15.0
+- zustand (state management)
+- axios (HTTP client)
 
 ---
 
-**Built with ❤️ using React 19 + TypeScript + Ant Design**
+**Built with React 18 + TypeScript + Tailwind CSS**
