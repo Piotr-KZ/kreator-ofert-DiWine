@@ -1,0 +1,2438 @@
+# BRIEF DLA WYKONAWCY — FASTHUB FINALIZACJA, ZADANIE 16
+## Payment Gateway (multi-bramka) + Stripe Implementation + Shared Clients
+
+### Data: 2026-03-02
+### Zlecający: Strateg (Opus w projekcie Claude)
+### Wykonawca: Opus w Claude Code CLI
+### Repo: https://github.com/Piotr-KZ/Fasthub
+### Folder: C:\Projekty internetowe\Fasthub
+### Branch: feature/payment-gateway
+
+---
+
+## KONTEKST
+
+### Problem architektoniczny
+
+Obecny fasthub_core ma Stripe "na twardo" — `handle_stripe_webhook()` w BillingService, `create_checkout_session()` z Stripe SDK. Jeśli developer chce użyć PayU albo Tpay — musi przepisać billing od zera.
+
+**To nie jest przełącznik "albo-albo".** Bramki płatnicze działają JEDNOCZEŚNIE — właściciel aplikacji włącza te które chce (np. PayU + PayPal), a klient końcowy na stronie płatności widzi wszystkie metody i SAM WYBIERA czym płaci (BLIK, karta, przelew, Google Pay, PayPal).
+
+### Architektura dwupoziomowa
+
+**Poziom 1 — Bramki (gateway):** PayU, Tpay, Przelewy24, Stripe, PayPal, iMoje, CashBill, itd.
+Właściciel aplikacji włącza bramki w konfiguracji (podaje klucze API).
+
+**Poziom 2 — Metody płatności:** BLIK, karta (3D Secure), przelew, Apple Pay, Google Pay, PayPal, Tuba.
+Jedna bramka obsługuje wiele metod. Klient końcowy widzi dostępne metody ze WSZYSTKICH aktywnych bramek.
+
+```
+Config:
+    PAYMENT_GATEWAYS=payu,paypal
+    PAYU_POS_ID=xxx
+    PAYPAL_CLIENT_ID=xxx
+
+Registry (wiele bramek jednocześnie):
+    ├── PayUGateway (aktywna) → BLIK, karta, przelew, Google Pay, Apple Pay
+    ├── PayPalGateway (aktywna) → PayPal
+    ├── StripeGateway (nieaktywna — brak kluczy)
+    └── TpayGateway (nieaktywna — brak kluczy)
+
+Klient widzi:
+    ☑ BLIK          (→ PayU)
+    ☑ Visa          (→ PayU)
+    ☑ Mastercard    (→ PayU)
+    ☑ Przelew       (→ PayU)
+    ☑ Google Pay    (→ PayU)
+    ☑ PayPal        (→ PayPal)
+```
+
+### Co Brief 16 robi
+
+1. **PaymentGateway(ABC)** — kontrakt (interfejs) dla WSZYSTKICH bramek
+2. **PaymentGatewayRegistry** — rejestr aktywnych bramek (wiele jednocześnie)
+3. **StripeGateway** — PIERWSZA implementacja (wzorzec dla reszty)
+4. **StripeWebhookHandler** — pełny lifecycle webhooków Stripe
+5. **Shared HTTP Clients** — BaseHTTPClient, FakturowniaClient, StripeClient
+6. **Rozszerzony checkout** — plan + addon + billing_interval
+7. **Dokumentacja** — wzorzec "jak dodać nową bramkę" + shared clients
+
+Implementacje polskich bramek (PayU, Tpay, Przelewy24, iMoje, CashBill) → **Brief 20** (osobny).
+
+### Lista bramek na przyszłość (Brief 20+)
+
+Polskie: PayU, Tpay/Autopay, Przelewy24, iMoje (ING), HotPay, CashBill, PayNow (mBank), Elavon
+Międzynarodowe: Stripe, PayPal, Revolut
+Metody: BLIK, Visa, Mastercard, Maestro (3D Secure 2.0), przelewy, Apple Pay, Google Pay, Tuba
+
+---
+
+## ZANIM ZACZNIESZ
+
+```bash
+cd "C:\Projekty internetowe\Fasthub"
+git checkout main
+git pull
+git checkout -b feature/payment-gateway
+
+pip install stripe httpx --break-system-packages
+python -c "import stripe; print(f'Stripe {stripe.VERSION}')"
+python -c "import httpx; print(f'httpx {httpx.__version__}')"
+```
+
+---
+
+## KROK 1: Payment Gateway Contract — `fasthub_core/billing/payment_gateway.py`
+
+Abstrakcyjny interfejs — co KAŻDA bramka płatnicza musi umieć.
+
+### Plik: `fasthub_core/billing/payment_gateway.py`
+
+```python
+"""
+Payment Gateway Contract — interfejs dla wszystkich bramek płatniczych.
+
+Implementacje:
+- StripeGateway     → Brief 16 (ten brief)
+- PayUGateway       → Brief 20 (przyszłość)
+- TpayGateway       → Brief 20
+- PayPalGateway     → Brief 20
+- P24Gateway        → Brief 20
+
+Bramki działają JEDNOCZEŚNIE — PaymentGatewayRegistry trzyma wszystkie aktywne.
+Klient końcowy widzi metody płatności ze WSZYSTKICH aktywnych bramek.
+
+Użycie:
+    from fasthub_core.billing.payment_gateway import PaymentGatewayRegistry
+    
+    registry = PaymentGatewayRegistry.from_config()
+    
+    # Jakie metody płatności dostępne?
+    methods = registry.get_available_methods()
+    # → [{"id": "blik", "name": "BLIK", "gateway": "payu"},
+    #    {"id": "card", "name": "Karta", "gateway": "stripe"}, ...]
+    
+    # Stwórz płatność wybraną metodą
+    result = await registry.create_payment(
+        gateway_id="stripe",
+        amount=19900,  # grosze
+        currency="PLN",
+        description="Plan Pro — miesięczny",
+        return_url="https://app.example.com/billing/success",
+        metadata={"tenant_id": "org-123", "plan_slug": "pro"},
+    )
+    # → {"payment_url": "https://checkout.stripe.com/...", "payment_id": "pi_xxx"}
+"""
+
+from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+
+class PaymentStatus(str, Enum):
+    """Status płatności — ujednolicony dla wszystkich bramek."""
+    pending = "pending"          # Oczekuje na płatność
+    processing = "processing"    # W trakcie (klient na stronie bramki)
+    completed = "completed"      # Zapłacone
+    failed = "failed"            # Nieudane
+    canceled = "canceled"        # Anulowane przez klienta
+    refunded = "refunded"        # Zwrócone
+
+
+@dataclass
+class PaymentMethod:
+    """Metoda płatności dostępna w bramce."""
+    id: str             # "blik", "card", "transfer", "google_pay", "apple_pay", "paypal"
+    name: str           # "BLIK", "Karta płatnicza", "Przelew", "Google Pay"
+    gateway_id: str     # "stripe", "payu", "tpay"
+    icon: str = ""      # URL ikony lub emoji
+
+
+@dataclass
+class PaymentResult:
+    """Wynik utworzenia płatności."""
+    success: bool
+    payment_id: Optional[str] = None     # ID płatności w bramce
+    payment_url: Optional[str] = None    # URL do przekierowania klienta
+    gateway_id: str = ""
+    raw_response: Dict[str, Any] = field(default_factory=dict)
+    error: Optional[str] = None
+
+
+@dataclass
+class WebhookResult:
+    """Wynik przetworzenia webhooka."""
+    status: str             # "processed", "duplicate", "ignored"
+    event_type: str = ""
+    payment_id: str = ""
+    payment_status: Optional[PaymentStatus] = None
+    tenant_id: str = ""
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+class PaymentGateway(ABC):
+    """
+    Kontrakt bramki płatniczej.
+    
+    Każda bramka implementuje te metody.
+    Bramki rejestrowane w PaymentGatewayRegistry.
+    """
+
+    @property
+    @abstractmethod
+    def gateway_id(self) -> str:
+        """Unikalny identyfikator bramki: "stripe", "payu", "tpay", "paypal"."""
+        ...
+
+    @property
+    @abstractmethod
+    def display_name(self) -> str:
+        """Nazwa wyświetlana: "Stripe", "PayU", "Tpay"."""
+        ...
+
+    @abstractmethod
+    def get_payment_methods(self) -> List[PaymentMethod]:
+        """
+        Jakie metody płatności obsługuje ta bramka.
+        
+        Returns:
+            Lista PaymentMethod dostępnych w tej bramce.
+            Np. PayU: [BLIK, karta, przelew, Google Pay, Apple Pay]
+        """
+        ...
+
+    @abstractmethod
+    async def create_payment(
+        self,
+        amount: int,
+        currency: str,
+        description: str,
+        return_url: str,
+        cancel_url: str = "",
+        method: Optional[str] = None,
+        metadata: Dict[str, Any] = None,
+    ) -> PaymentResult:
+        """
+        Utwórz płatność.
+        
+        Args:
+            amount: kwota w GROSZACH (19900 = 199.00 PLN)
+            currency: "PLN", "EUR", "USD"
+            description: opis płatności
+            return_url: URL po udanej płatności
+            cancel_url: URL po anulowaniu
+            method: metoda płatności ("blik", "card") — None = bramka pokaże wybór
+            metadata: dane do zwrócenia w webhooku (tenant_id, plan_slug, itp.)
+        
+        Returns:
+            PaymentResult z URL do przekierowania klienta
+        """
+        ...
+
+    @abstractmethod
+    async def verify_payment(self, payment_id: str) -> PaymentStatus:
+        """
+        Sprawdź status płatności.
+        
+        Używane do weryfikacji po powrocie klienta z bramki,
+        ZANIM webhook dotrze (webhook może mieć opóźnienie).
+        """
+        ...
+
+    @abstractmethod
+    async def handle_webhook(
+        self, payload: bytes, headers: Dict[str, str],
+    ) -> WebhookResult:
+        """
+        Przetwórz webhook/callback z bramki.
+        
+        Każda bramka wysyła powiadomienia inaczej:
+        - Stripe: webhook z podpisem w nagłówku
+        - PayU: notify z auth
+        - Tpay: callback POST
+        - P24: callback POST z CRC
+        
+        Returns:
+            WebhookResult z ujednoliconym statusem
+        """
+        ...
+
+    @abstractmethod
+    async def create_subscription(
+        self,
+        plan_id: str,
+        amount: int,
+        currency: str,
+        interval: str,
+        metadata: Dict[str, Any] = None,
+        return_url: str = "",
+        cancel_url: str = "",
+    ) -> PaymentResult:
+        """
+        Utwórz subskrypcję (recurring payment).
+        
+        Bramki z natywnymi subskrypcjami (Stripe, PayPal):
+            → tworzą subskrypcję w bramce
+        
+        Bramki bez subskrypcji (PayU, Tpay, P24):
+            → tworzą jednorazową płatność, fasthub_core zarządza cyklem
+        
+        Args:
+            plan_id: ID planu w naszej bazie
+            amount: kwota w groszach per okres
+            currency: waluta
+            interval: "monthly" | "yearly"
+        """
+        ...
+
+    @abstractmethod
+    async def cancel_subscription(self, subscription_id: str) -> bool:
+        """Anuluj subskrypcję. True = sukces."""
+        ...
+
+    @abstractmethod
+    async def refund_payment(self, payment_id: str, amount: Optional[int] = None) -> bool:
+        """
+        Zwrot płatności. amount=None → pełny zwrot.
+        """
+        ...
+
+    def is_configured(self) -> bool:
+        """
+        Czy bramka jest skonfigurowana (ma klucze API).
+        Domyślna implementacja — nadpisz w bramce.
+        """
+        return False
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: PaymentGateway contract + PaymentStatus + PaymentMethod + PaymentResult"
+```
+
+---
+
+## KROK 2: Payment Gateway Registry — `fasthub_core/billing/payment_registry.py`
+
+Rejestr aktywnych bramek — wiele jednocześnie.
+
+### Plik: `fasthub_core/billing/payment_registry.py`
+
+
+Config:
+    PAYMENT_GATEWAYS=stripe,payu,paypal    ← włączone bramki
+    STRIPE_SECRET_KEY=sk_xxx               ← klucze per bramka
+    PAYU_POS_ID=xxx
+    PAYPAL_CLIENT_ID=xxx
+
+Użycie:
+    registry = PaymentGatewayRegistry()
+    registry.register(StripeGateway())
+    registry.register(PayUGateway())
+    
+    # Albo automatycznie z config:
+    registry = PaymentGatewayRegistry.from_config()
+    
+    # Dostępne metody płatności (ze wszystkich aktywnych bramek):
+    methods = registry.get_available_methods()
+    
+    # Płatność przez konkretną bramkę:
+    result = await registry.create_payment("stripe", amount=19900, ...)
+    
+    # Webhook — automatycznie route do właściwej bramki:
+    result = await registry.handle_webhook("stripe", payload, headers)
+"""
+
+import logging
+from typing import Dict, List, Optional
+
+from fasthub_core.billing.payment_gateway import (
+    PaymentGateway, PaymentMethod, PaymentResult, PaymentStatus, WebhookResult,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class PaymentGatewayRegistry:
+    """
+    Rejestr bramek płatniczych — wiele jednocześnie.
+    """
+
+    def __init__(self):
+        self._gateways: Dict[str, PaymentGateway] = {}
+
+    def register(self, gateway: PaymentGateway) -> None:
+        """
+        Zarejestruj bramkę. Tylko jeśli skonfigurowana (ma klucze API).
+        """
+        if gateway.is_configured():
+            self._gateways[gateway.gateway_id] = gateway
+            logger.info(f"Payment gateway registered: {gateway.gateway_id} ({gateway.display_name})")
+        else:
+            logger.debug(f"Payment gateway skipped (not configured): {gateway.gateway_id}")
+
+    def get_gateway(self, gateway_id: str) -> Optional[PaymentGateway]:
+        """Pobierz bramkę po ID."""
+        return self._gateways.get(gateway_id)
+
+    def get_active_gateways(self) -> List[PaymentGateway]:
+        """Lista aktywnych (skonfigurowanych) bramek."""
+        return list(self._gateways.values())
+
+    def get_available_methods(self) -> List[PaymentMethod]:
+        """
+        Wszystkie metody płatności ze WSZYSTKICH aktywnych bramek.
+        
+        To jest to co klient końcowy widzi na stronie płatności:
+        BLIK (PayU), Karta (Stripe), PayPal, Google Pay (PayU), itp.
+        """
+        methods = []
+        seen_ids = set()
+        
+        for gateway in self._gateways.values():
+            for method in gateway.get_payment_methods():
+                # Deduplikacja — jeśli BLIK jest i w PayU i w Tpay,
+                # pokaż tylko raz (z pierwszej zarejestrowanej bramki)
+                if method.id not in seen_ids:
+                    methods.append(method)
+                    seen_ids.add(method.id)
+        
+        return methods
+
+    def get_methods_with_gateways(self) -> List[Dict]:
+        """
+        Metody płatności z informacją która bramka obsługuje.
+        
+        Dla frontendu — żeby wiedzieć do której bramki wysłać płatność.
+        Returns:
+            [{"method": PaymentMethod, "gateways": ["payu", "stripe"]}]
+        """
+        method_map = {}
+        
+        for gateway in self._gateways.values():
+            for method in gateway.get_payment_methods():
+                if method.id not in method_map:
+                    method_map[method.id] = {
+                        "method": method,
+                        "gateways": [],
+                    }
+                method_map[method.id]["gateways"].append(gateway.gateway_id)
+        
+        return list(method_map.values())
+
+    async def create_payment(
+        self, gateway_id: str, **kwargs,
+    ) -> PaymentResult:
+        """Stwórz płatność przez wskazaną bramkę."""
+        gateway = self._gateways.get(gateway_id)
+        if not gateway:
+            return PaymentResult(
+                success=False,
+                error=f"Gateway '{gateway_id}' not available. Active: {list(self._gateways.keys())}",
+            )
+        return await gateway.create_payment(**kwargs)
+
+    async def handle_webhook(
+        self, gateway_id: str, payload: bytes, headers: Dict[str, str],
+    ) -> WebhookResult:
+        """Route webhook do właściwej bramki."""
+        gateway = self._gateways.get(gateway_id)
+        if not gateway:
+            return WebhookResult(status="ignored", event_type=f"unknown_gateway:{gateway_id}")
+        return await gateway.handle_webhook(payload, headers)
+
+    @classmethod
+    def from_config(cls) -> "PaymentGatewayRegistry":
+        """
+        Stwórz registry z konfiguracji.
+        
+        Automatycznie rejestruje bramki które mają klucze API w env.
+        """
+        registry = cls()
+        
+        # Próbuj zarejestrować każdą znaną bramkę
+        # Bramka sama sprawdza is_configured() — jeśli brak kluczy, pomija
+        
+        try:
+            from fasthub_core.billing.gateways.stripe_gateway import StripeGateway
+            registry.register(StripeGateway())
+        except ImportError:
+            pass
+
+        # Przyszłe bramki (Brief 20):
+        # try:
+        #     from fasthub_core.billing.gateways.payu_gateway import PayUGateway
+        #     registry.register(PayUGateway())
+        # except ImportError:
+        #     pass
+        #
+        # try:
+        #     from fasthub_core.billing.gateways.tpay_gateway import TpayGateway
+        #     registry.register(TpayGateway())
+        # except ImportError:
+        #     pass
+        
+        active = [g.gateway_id for g in registry.get_active_gateways()]
+        logger.info(f"Payment gateways active: {active}")
+        
+        return registry
+
+
+# Singleton
+_registry: Optional[PaymentGatewayRegistry] = None
+
+
+def get_payment_registry() -> PaymentGatewayRegistry:
+    """Singleton — zwróć globalny registry."""
+    global _registry
+    if _registry is None:
+        _registry = PaymentGatewayRegistry.from_config()
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: PaymentGatewayRegistry (multi-gateway, auto-detect from config)"
+```
+
+---
+
+## KROK 3: Stripe Gateway — `fasthub_core/billing/gateways/stripe_gateway.py`
+
+Implementacja kontraktu dla Stripe — wzorzec dla pozostałych bramek.
+
+### Plik: `fasthub_core/billing/gateways/__init__.py`
+
+```python
+from fasthub_core.billing.gateways.stripe_gateway import StripeGateway
+
+__all__ = ["StripeGateway"]
+```
+
+### Plik: `fasthub_core/billing/gateways/stripe_gateway.py`
+
+"""
+
+import logging
+from typing import Any, Dict, List, Optional
+
+from fasthub_core.billing.payment_gateway import (
+    PaymentGateway, PaymentMethod, PaymentResult, PaymentStatus, WebhookResult,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class StripeGateway(PaymentGateway):
+
+    def __init__(self, api_key: str = None, webhook_secret: str = None):
+        try:
+            from fasthub_core.config import get_settings
+            settings = get_settings()
+            self._api_key = api_key or getattr(settings, "STRIPE_SECRET_KEY", None)
+            self._webhook_secret = webhook_secret or getattr(settings, "STRIPE_WEBHOOK_SECRET", None)
+        except Exception:
+            self._api_key = api_key
+            self._webhook_secret = webhook_secret
+
+    @property
+    def gateway_id(self) -> str:
+        return "stripe"
+
+    @property
+    def display_name(self) -> str:
+        return "Stripe"
+
+    def is_configured(self) -> bool:
+        return bool(self._api_key)
+
+    def _stripe(self):
+        import stripe
+        stripe.api_key = self._api_key
+        return stripe
+
+    def get_payment_methods(self) -> List[PaymentMethod]:
+        return [
+            PaymentMethod(id="card_visa", name="Visa", gateway_id="stripe", icon="💳"),
+            PaymentMethod(id="card_mastercard", name="Mastercard", gateway_id="stripe", icon="💳"),
+            PaymentMethod(id="card_maestro", name="Maestro", gateway_id="stripe", icon="💳"),
+            PaymentMethod(id="blik", name="BLIK", gateway_id="stripe", icon="📱"),
+            PaymentMethod(id="google_pay", name="Google Pay", gateway_id="stripe", icon="🟢"),
+            PaymentMethod(id="apple_pay", name="Apple Pay", gateway_id="stripe", icon="🍎"),
+        ]
+
+    async def create_payment(
+        self, amount, currency, description, return_url,
+        cancel_url="", method=None, metadata=None,
+    ) -> PaymentResult:
+        try:
+            stripe = self._stripe()
+            session = stripe.checkout.Session.create(
+                mode="payment",
+                line_items=[{
+                    "price_data": {
+                        "currency": currency.lower(),
+                        "unit_amount": amount,
+                        "product_data": {"name": description},
+                    },
+                    "quantity": 1,
+                }],
+                success_url=return_url,
+                cancel_url=cancel_url or return_url,
+                metadata=metadata or {},
+            )
+            return PaymentResult(
+                success=True,
+                payment_id=session.id,
+                payment_url=session.url,
+                gateway_id="stripe",
+                raw_response={"session_id": session.id},
+            )
+        except Exception as e:
+            logger.error(f"Stripe create_payment error: {e}")
+            return PaymentResult(success=False, gateway_id="stripe", error=str(e))
+
+    async def verify_payment(self, payment_id: str) -> PaymentStatus:
+        try:
+            stripe = self._stripe()
+            session = stripe.checkout.Session.retrieve(payment_id)
+            status_map = {
+                "complete": PaymentStatus.completed,
+                "expired": PaymentStatus.canceled,
+                "open": PaymentStatus.pending,
+            }
+            return status_map.get(session.status, PaymentStatus.pending)
+        except Exception as e:
+            logger.error(f"Stripe verify error: {e}")
+            return PaymentStatus.failed
+
+    async def handle_webhook(self, payload, headers) -> WebhookResult:
+        """
+        Obsługa webhooków Stripe.
+        
+        Deleguje do StripeWebhookHandler (ten sam plik co wcześniej w briefie).
+        """
+        try:
+            stripe = self._stripe()
+            sig_header = headers.get("stripe-signature", "")
+            
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, self._webhook_secret
+            )
+            
+            event_type = event["type"]
+            data = event["data"]["object"]
+            
+            # Mapowanie Stripe event → PaymentStatus
+            status_map = {
+                "checkout.session.completed": PaymentStatus.completed,
+                "invoice.payment_succeeded": PaymentStatus.completed,
+                "invoice.payment_failed": PaymentStatus.failed,
+                "customer.subscription.deleted": PaymentStatus.canceled,
+            }
+            
+            return WebhookResult(
+                status="processed",
+                event_type=event_type,
+                payment_id=data.get("id", ""),
+                payment_status=status_map.get(event_type),
+                tenant_id=data.get("metadata", {}).get("tenant_id", "unknown"),
+                metadata=data.get("metadata", {}),
+            )
+        except Exception as e:
+            logger.error(f"Stripe webhook error: {e}")
+            return WebhookResult(status="error", event_type="stripe_error")
+
+    async def create_subscription(
+        self, plan_id, amount, currency, interval,
+        metadata=None, return_url="", cancel_url="",
+    ) -> PaymentResult:
+        try:
+            stripe = self._stripe()
+            
+            # Stripe ma natywne subskrypcje
+            interval_map = {"monthly": "month", "yearly": "year"}
+            
+            session = stripe.checkout.Session.create(
+                mode="subscription",
+                line_items=[{
+                    "price_data": {
+                        "currency": currency.lower(),
+                        "unit_amount": amount,
+                        "recurring": {"interval": interval_map.get(interval, "month")},
+                        "product_data": {"name": f"Plan {plan_id}"},
+                    },
+                    "quantity": 1,
+                }],
+                success_url=return_url,
+                cancel_url=cancel_url or return_url,
+                metadata=metadata or {},
+            )
+            return PaymentResult(
+                success=True,
+                payment_id=session.id,
+                payment_url=session.url,
+                gateway_id="stripe",
+            )
+        except Exception as e:
+            logger.error(f"Stripe subscription error: {e}")
+            return PaymentResult(success=False, gateway_id="stripe", error=str(e))
+
+    async def cancel_subscription(self, subscription_id: str) -> bool:
+        try:
+            stripe = self._stripe()
+            stripe.Subscription.delete(subscription_id)
+            return True
+        except Exception as e:
+            logger.error(f"Stripe cancel subscription error: {e}")
+            return False
+
+    async def refund_payment(self, payment_id: str, amount=None) -> bool:
+        try:
+            stripe = self._stripe()
+            kwargs = {"payment_intent": payment_id}
+            if amount:
+                kwargs["amount"] = amount
+            stripe.Refund.create(**kwargs)
+            return True
+        except Exception as e:
+            logger.error(f"Stripe refund error: {e}")
+            return False
+```
+
+### Commit:
+```bash
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: StripeGateway (PaymentGateway implementation, subscriptions, refunds)"
+```
+
+---
+
+## KROK 4: Stripe Webhook Handler — `fasthub_core/billing/stripe_webhooks.py`
+
+Szczegółowa obsługa webhooków Stripe z hook points dla aplikacji.
+
+### Plik: `fasthub_core/billing/stripe_webhooks.py`
+
+4. customer.subscription.deleted — anulowanie subskrypcji
+5. invoice.payment_failed — nieudana płatność
+6. invoice.payment_succeeded — udana płatność (opcjonalny hook)
+
+Architektura:
+    Stripe → POST /billing/webhooks → verify signature → route event → handler → hook → commit
+
+Hook points (aplikacja może nadpisać):
+    - on_checkout_completed(db, tenant_id, plan, addon_info)
+    - on_subscription_canceled(db, tenant_id, old_plan)
+    - on_payment_failed(db, tenant_id, invoice_data)
+    - on_payment_succeeded(db, tenant_id, invoice_data)
+
+Bezpieczeństwo:
+    - Weryfikacja podpisu (stripe.Webhook.construct_event)
+    - Deduplikacja eventów (stripe_event_id UNIQUE)
+    - Idempotentność (ten sam event 2x → skip)
+
+Użycie:
+    from fasthub_core.billing.stripe_webhooks import StripeWebhookHandler
+    
+    handler = StripeWebhookHandler(db)
+    result = await handler.process(payload=body, sig_header=sig)
+"""
+
+import logging
+from datetime import datetime
+from typing import Any, Callable, Coroutine, Dict, List, Optional
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from fasthub_core.billing.models import (
+    BillingEvent, BillingPlan, Subscription, SubscriptionStatus,
+    BillingAddon, TenantAddon,
+)
+
+logger = logging.getLogger(__name__)
+
+# Type alias dla hooków
+WebhookHook = Callable[..., Coroutine[Any, Any, None]]
+
+
+class StripeWebhookHandler:
+    """
+    Obsługa webhooków Stripe z hook points dla aplikacji.
+    
+    Podstawowe użycie:
+        handler = StripeWebhookHandler(db)
+        result = await handler.process(payload, sig_header)
+    
+    Z hookami (np. w AutoFlow):
+        handler = StripeWebhookHandler(db)
+        handler.on_checkout_completed = my_checkout_hook
+        handler.on_payment_failed = my_failure_hook
+        result = await handler.process(payload, sig_header)
+    """
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+        
+        # Hook points — aplikacja może nadpisać
+        self.on_checkout_completed: Optional[WebhookHook] = None
+        self.on_subscription_canceled: Optional[WebhookHook] = None
+        self.on_payment_failed: Optional[WebhookHook] = None
+        self.on_payment_succeeded: Optional[WebhookHook] = None
+
+    # =========================================================================
+    # MAIN ENTRY POINT
+    # =========================================================================
+
+    async def process(
+        self, payload: bytes, sig_header: str
+    ) -> Dict[str, Any]:
+        """
+        Przetwórz webhook od Stripe.
+        
+        1. Zweryfikuj podpis
+        2. Sprawdź deduplikację
+        3. Route do handlera
+        4. Wywołaj hook
+        5. Zapisz BillingEvent
+        
+        Returns:
+            {"status": "processed"|"duplicate"|"ignored", "event_type": str, ...}
+        
+        Raises:
+            ValueError: Nieprawidłowy podpis
+        """
+        import stripe
+        from fasthub_core.config import get_settings
+        settings = get_settings()
+        
+        stripe.api_key = settings.STRIPE_SECRET_KEY
+        
+        if not settings.STRIPE_WEBHOOK_SECRET:
+            logger.error("STRIPE_WEBHOOK_SECRET not configured")
+            raise ValueError("Stripe webhook secret not configured")
+
+        # 1. Weryfikacja podpisu
+        try:
+            event = stripe.Webhook.construct_event(
+                payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
+            )
+        except stripe.error.SignatureVerificationError:
+            logger.warning("Stripe webhook: invalid signature")
+            raise ValueError("Invalid webhook signature")
+
+        event_type = event["type"]
+        event_id = event["id"]
+        data = event["data"]["object"]
+        
+        logger.info(f"[STRIPE] Webhook received: {event_type} (id={event_id})")
+
+        # 2. Deduplikacja — ten sam event nie przetwarzamy 2x
+        existing = await self.db.execute(
+            select(BillingEvent).where(BillingEvent.stripe_event_id == event_id)
+        )
+        if existing.scalar_one_or_none():
+            logger.info(f"[STRIPE] Duplicate event skipped: {event_id}")
+            return {"status": "duplicate", "event_type": event_type, "event_id": event_id}
+
+        # 3. Route do handlera
+        result = {"status": "processed", "event_type": event_type, "event_id": event_id}
+
+        handler_map = {
+            "checkout.session.completed": self._handle_checkout_completed,
+            "customer.subscription.updated": self._handle_subscription_updated,
+            "customer.subscription.created": self._handle_subscription_updated,
+            "customer.subscription.deleted": self._handle_subscription_deleted,
+            "invoice.payment_failed": self._handle_payment_failed,
+            "invoice.payment_succeeded": self._handle_payment_succeeded,
+        }
+
+        handler = handler_map.get(event_type)
+        if handler:
+            handler_result = await handler(data)
+            result.update(handler_result)
+        else:
+            logger.info(f"[STRIPE] Unhandled event type: {event_type}")
+            result["status"] = "ignored"
+
+        # 4. Audit trail — zapisz event
+        tenant_id = self._extract_tenant_id(data)
+        billing_event = BillingEvent(
+            tenant_id=tenant_id,
+            event_type=event_type,
+            stripe_event_id=event_id,
+            data={
+                "object_id": data.get("id"),
+                "status": data.get("status"),
+                "result": result,
+            },
+        )
+        self.db.add(billing_event)
+        await self.db.commit()
+
+        logger.info(f"[STRIPE] Event processed: {event_type} → {result.get('status')}")
+        return result
+
+    # =========================================================================
+    # EVENT HANDLERS
+    # =========================================================================
+
+    async def _handle_checkout_completed(self, session: dict) -> Dict[str, Any]:
+        """
+        checkout.session.completed — klient kupił plan lub addon.
+        
+        Metadata od Stripe:
+            - tenant_id: ID organizacji
+            - plan_slug: slug planu (jeśli plan purchase)
+            - addon_slug: slug addona (jeśli addon purchase)
+            - quantity: ilość addonów
+            - billing_interval: "monthly" | "yearly"
+        """
+        tenant_id = self._extract_tenant_id(session)
+        if not tenant_id:
+            return {"warning": "no tenant_id in metadata"}
+
+        addon_slug = session.get("metadata", {}).get("addon_slug")
+
+        if addon_slug:
+            result = await self._process_addon_purchase(tenant_id, session)
+        else:
+            result = await self._process_plan_purchase(tenant_id, session)
+
+        # Hook: aplikacja może dodać logikę (email powitalny, onboarding, etc.)
+        if self.on_checkout_completed:
+            try:
+                await self.on_checkout_completed(
+                    self.db, tenant_id, result,
+                )
+            except Exception as e:
+                logger.error(f"on_checkout_completed hook error: {e}")
+
+        return result
+
+    async def _process_plan_purchase(self, tenant_id: str, session: dict) -> Dict[str, Any]:
+        """Klient kupił/zmienił plan."""
+        plan_slug = session.get("metadata", {}).get("plan_slug")
+        
+        # Znajdź plan
+        plan = None
+        if plan_slug:
+            result = await self.db.execute(
+                select(BillingPlan).where(BillingPlan.slug == plan_slug)
+            )
+            plan = result.scalar_one_or_none()
+        
+        if not plan:
+            # Fallback: default plan
+            result = await self.db.execute(
+                select(BillingPlan).where(BillingPlan.is_default == True)
+            )
+            plan = result.scalar_one_or_none()
+        
+        if not plan:
+            return {"error": "plan not found", "plan_slug": plan_slug}
+
+        # Update lub create subscription
+        sub_result = await self.db.execute(
+            select(Subscription).where(Subscription.tenant_id == tenant_id)
+        )
+        sub = sub_result.scalar_one_or_none()
+
+        billing_interval = session.get("metadata", {}).get("billing_interval", "monthly")
+
+        if sub:
+            sub.plan_id = plan.id
+            sub.status = SubscriptionStatus.active
+            sub.stripe_subscription_id = session.get("subscription")
+            sub.stripe_customer_id = session.get("customer")
+            sub.billing_interval = billing_interval
+            sub.current_period_start = datetime.utcnow()
+            sub.updated_at = datetime.utcnow()
+        else:
+            sub = Subscription(
+                tenant_id=tenant_id,
+                plan_id=plan.id,
+                status=SubscriptionStatus.active,
+                stripe_subscription_id=session.get("subscription"),
+                stripe_customer_id=session.get("customer"),
+                billing_interval=billing_interval,
+                current_period_start=datetime.utcnow(),
+            )
+            self.db.add(sub)
+
+        await self.db.flush()
+        logger.info(f"[STRIPE] Plan purchased: tenant={tenant_id}, plan={plan.slug}")
+        return {"tenant_id": tenant_id, "plan": plan.slug, "action": "plan_purchased"}
+
+    async def _process_addon_purchase(self, tenant_id: str, session: dict) -> Dict[str, Any]:
+        """Klient kupił addon."""
+        addon_slug = session.get("metadata", {}).get("addon_slug")
+        quantity = int(session.get("metadata", {}).get("quantity", "1"))
+
+        result = await self.db.execute(
+            select(BillingAddon).where(BillingAddon.slug == addon_slug)
+        )
+        addon = result.scalar_one_or_none()
+
+        if not addon:
+            return {"warning": f"addon not found: {addon_slug}"}
+
+        tenant_addon = TenantAddon(
+            tenant_id=tenant_id,
+            addon_id=addon.id,
+            quantity=quantity,
+            is_active=True,
+            stripe_subscription_item_id=session.get("subscription"),
+        )
+        self.db.add(tenant_addon)
+        await self.db.flush()
+
+        logger.info(f"[STRIPE] Addon purchased: tenant={tenant_id}, addon={addon_slug}, qty={quantity}")
+        return {"tenant_id": tenant_id, "addon": addon_slug, "quantity": quantity, "action": "addon_purchased"}
+
+    async def _handle_subscription_updated(self, stripe_sub: dict) -> Dict[str, Any]:
+        """
+        customer.subscription.updated/created — Stripe synchronizuje status.
+        
+        Synchronizuje:
+            - status (active, past_due, unpaid, trialing, canceled)
+            - current_period_start / current_period_end
+            - canceled_at
+        """
+        stripe_sub_id = stripe_sub.get("id")
+        
+        result = await self.db.execute(
+            select(Subscription).where(
+                Subscription.stripe_subscription_id == stripe_sub_id
+            )
+        )
+        sub = result.scalar_one_or_none()
+
+        if not sub:
+            logger.warning(f"[STRIPE] Subscription not found: {stripe_sub_id}")
+            return {"warning": f"subscription {stripe_sub_id} not found in DB"}
+
+        # Sync status
+        new_status = stripe_sub.get("status")
+        if new_status and hasattr(SubscriptionStatus, new_status):
+            sub.status = SubscriptionStatus(new_status)
+
+        # Sync period
+        period_start = stripe_sub.get("current_period_start")
+        period_end = stripe_sub.get("current_period_end")
+        if period_start:
+            sub.current_period_start = datetime.utcfromtimestamp(period_start)
+        if period_end:
+            sub.current_period_end = datetime.utcfromtimestamp(period_end)
+
+        # Sync canceled_at
+        canceled_at = stripe_sub.get("canceled_at")
+        if canceled_at:
+            sub.canceled_at = datetime.utcfromtimestamp(canceled_at)
+
+        sub.updated_at = datetime.utcnow()
+        await self.db.flush()
+
+        logger.info(f"[STRIPE] Subscription updated: {stripe_sub_id} → status={sub.status}")
+        return {
+            "subscription_id": stripe_sub_id,
+            "status": sub.status.value if hasattr(sub.status, 'value') else str(sub.status),
+            "action": "subscription_updated",
+        }
+
+    async def _handle_subscription_deleted(self, stripe_sub: dict) -> Dict[str, Any]:
+        """
+        customer.subscription.deleted — anulowanie subskrypcji.
+        
+        Akcje:
+        1. Znajdź subskrypcję po stripe_subscription_id
+        2. Ustaw status = canceled
+        3. Downgrade do darmowego planu (is_default=True)
+        4. Deaktywuj wszystkie addony tenanta
+        5. Wywołaj hook on_subscription_canceled
+        """
+        stripe_sub_id = stripe_sub.get("id")
+
+        result = await self.db.execute(
+            select(Subscription).where(
+                Subscription.stripe_subscription_id == stripe_sub_id
+            )
+        )
+        sub = result.scalar_one_or_none()
+
+        if not sub:
+            return {"warning": f"subscription {stripe_sub_id} not found"}
+
+        tenant_id = sub.tenant_id
+        old_plan_id = sub.plan_id
+
+        # Downgrade do free plan
+        free_plan_result = await self.db.execute(
+            select(BillingPlan).where(BillingPlan.is_default == True)
+        )
+        free_plan = free_plan_result.scalar_one_or_none()
+
+        sub.status = SubscriptionStatus.canceled
+        sub.canceled_at = datetime.utcnow()
+        if free_plan:
+            sub.plan_id = free_plan.id
+
+        # Deaktywuj addony
+        addons_result = await self.db.execute(
+            select(TenantAddon).where(
+                TenantAddon.tenant_id == tenant_id,
+                TenantAddon.is_active == True,
+            )
+        )
+        deactivated_addons = 0
+        for addon in addons_result.scalars().all():
+            addon.is_active = False
+            deactivated_addons += 1
+
+        await self.db.flush()
+
+        logger.info(f"[STRIPE] Subscription canceled: tenant={tenant_id}, downgraded to free, {deactivated_addons} addons deactivated")
+
+        # Hook
+        if self.on_subscription_canceled:
+            try:
+                await self.on_subscription_canceled(
+                    self.db, tenant_id, {"old_plan_id": old_plan_id}
+                )
+            except Exception as e:
+                logger.error(f"on_subscription_canceled hook error: {e}")
+
+        return {
+            "tenant_id": tenant_id,
+            "action": "subscription_canceled",
+            "downgraded_to": free_plan.slug if free_plan else "none",
+            "addons_deactivated": deactivated_addons,
+        }
+
+    async def _handle_payment_failed(self, invoice: dict) -> Dict[str, Any]:
+        """
+        invoice.payment_failed — nieudana płatność.
+        
+        Akcje:
+        1. Znajdź subskrypcję po stripe_subscription_id z faktury
+        2. Ustaw status = past_due
+        3. Wywołaj hook (email do klienta, notyfikacja admina)
+        """
+        stripe_sub_id = invoice.get("subscription")
+        if not stripe_sub_id:
+            return {"warning": "no subscription in invoice"}
+
+        result = await self.db.execute(
+            select(Subscription).where(
+                Subscription.stripe_subscription_id == stripe_sub_id
+            )
+        )
+        sub = result.scalar_one_or_none()
+
+        if not sub:
+            return {"warning": f"subscription {stripe_sub_id} not found"}
+
+        sub.status = SubscriptionStatus.past_due
+        sub.updated_at = datetime.utcnow()
+        await self.db.flush()
+
+        logger.warning(f"[STRIPE] Payment failed: tenant={sub.tenant_id}, sub={stripe_sub_id}")
+
+        # Hook — email do klienta, powiadomienie
+        if self.on_payment_failed:
+            try:
+                await self.on_payment_failed(
+                    self.db, sub.tenant_id, {
+                        "subscription_id": stripe_sub_id,
+                        "amount_due": invoice.get("amount_due"),
+                        "attempt_count": invoice.get("attempt_count"),
+                        "next_attempt": invoice.get("next_payment_attempt"),
+                    }
+                )
+            except Exception as e:
+                logger.error(f"on_payment_failed hook error: {e}")
+
+        return {
+            "tenant_id": sub.tenant_id,
+            "action": "payment_failed",
+            "status": "past_due",
+        }
+
+    async def _handle_payment_succeeded(self, invoice: dict) -> Dict[str, Any]:
+        """
+        invoice.payment_succeeded — udana płatność.
+        
+        Opcjonalny handler — przywraca status active jeśli był past_due.
+        Hook point: aplikacja może wystawić fakturę (Fakturownia, wFirma, KSeF).
+        """
+        stripe_sub_id = invoice.get("subscription")
+        if not stripe_sub_id:
+            return {"status": "ignored", "reason": "no subscription"}
+
+        result = await self.db.execute(
+            select(Subscription).where(
+                Subscription.stripe_subscription_id == stripe_sub_id
+            )
+        )
+        sub = result.scalar_one_or_none()
+
+        if sub and sub.status == SubscriptionStatus.past_due:
+            sub.status = SubscriptionStatus.active
+            sub.updated_at = datetime.utcnow()
+            await self.db.flush()
+            logger.info(f"[STRIPE] Payment succeeded, restored active: tenant={sub.tenant_id}")
+
+        # Hook — wystawienie faktury (Fakturownia, wFirma, KSeF)
+        if self.on_payment_succeeded:
+            try:
+                await self.on_payment_succeeded(
+                    self.db,
+                    sub.tenant_id if sub else "unknown",
+                    {
+                        "invoice_id": invoice.get("id"),
+                        "amount_paid": invoice.get("amount_paid"),
+                        "currency": invoice.get("currency"),
+                        "customer_email": invoice.get("customer_email"),
+                        "invoice_pdf": invoice.get("invoice_pdf"),
+                    }
+                )
+            except Exception as e:
+                logger.error(f"on_payment_succeeded hook error: {e}")
+
+        return {
+            "tenant_id": sub.tenant_id if sub else "unknown",
+            "action": "payment_succeeded",
+        }
+
+    # =========================================================================
+    # HELPERS
+    # =========================================================================
+
+    def _extract_tenant_id(self, data: dict) -> str:
+        """Wyciągnij tenant_id z metadata Stripe."""
+        metadata = data.get("metadata", {})
+        return metadata.get("tenant_id", "unknown")
+```
+
+### Commit:
+```bash
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: StripeWebhookHandler (6 event handlers, hook points, dedup, audit)"
+```
+
+---
+
+## KROK 5: Rozszerz create_checkout_session + delegacja webhooków
+
+### A) W `fasthub_core/billing/service.py`, **zastąp** istniejącą metodę `create_checkout_session`:
+
+        plan_slug: Optional[str] = None,
+        addon_slug: Optional[str] = None,
+        quantity: int = 1,
+        billing_interval: str = "monthly",
+        success_url: str = "",
+        cancel_url: str = "",
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Create Stripe Checkout Session.
+        
+        Obsługuje dwa scenariusze:
+        1. Plan purchase: plan_slug → zmiana planu
+        2. Addon purchase: addon_slug + quantity → dokupienie zasobów
+        
+        Args:
+            tenant_id: ID organizacji
+            plan_slug: slug planu (plan purchase)
+            addon_slug: slug addona (addon purchase)
+            quantity: ilość addonów (default 1)
+            billing_interval: "monthly" lub "yearly"
+            success_url: URL po udanej płatności
+            cancel_url: URL po anulowaniu
+        
+        Returns:
+            {"session_id": str, "url": str} lub None
+        """
+        try:
+            import stripe
+            from fasthub_core.config import get_settings
+            stripe.api_key = get_settings().STRIPE_SECRET_KEY
+            if not stripe.api_key:
+                logger.warning("Stripe API key not configured")
+                return None
+
+            # Resolve price_id i metadata
+            metadata = {"tenant_id": tenant_id, "billing_interval": billing_interval}
+
+            if addon_slug:
+                # Addon purchase
+                result = await self.db.execute(
+                    select(BillingAddon).where(BillingAddon.slug == addon_slug)
+                )
+                addon = result.scalar_one_or_none()
+                if not addon:
+                    raise ValueError(f"Addon '{addon_slug}' not found")
+                
+                price_id = (addon.stripe_price_monthly_id 
+                           if billing_interval == "monthly" 
+                           else addon.stripe_price_yearly_id)
+                if not price_id:
+                    raise ValueError(f"Addon '{addon_slug}' has no Stripe price for '{billing_interval}'")
+                
+                metadata["addon_slug"] = addon_slug
+                metadata["quantity"] = str(quantity)
+            else:
+                # Plan purchase
+                result = await self.db.execute(
+                    select(BillingPlan).where(BillingPlan.slug == plan_slug)
+                )
+                plan = result.scalar_one_or_none()
+                if not plan:
+                    raise ValueError(f"Plan '{plan_slug}' not found")
+                
+                price_id = (plan.stripe_price_monthly_id 
+                           if billing_interval == "monthly" 
+                           else plan.stripe_price_yearly_id)
+                if not price_id:
+                    raise ValueError(f"Plan '{plan_slug}' has no Stripe price for '{billing_interval}'")
+                
+                metadata["plan_slug"] = plan_slug
+                quantity = 1
+
+            # Resolve Stripe customer
+            sub_result = await self.db.execute(
+                select(Subscription).where(Subscription.tenant_id == tenant_id)
+            )
+            sub = sub_result.scalar_one_or_none()
+            
+            session_kwargs = {
+                "mode": "subscription",
+                "line_items": [{"price": price_id, "quantity": quantity}],
+                "success_url": success_url,
+                "cancel_url": cancel_url,
+                "metadata": metadata,
+            }
+
+            # Jeśli klient już ma Stripe customer — dołącz
+            if sub and getattr(sub, "stripe_customer_id", None):
+                session_kwargs["customer"] = sub.stripe_customer_id
+            
+            session = stripe.checkout.Session.create(**session_kwargs)
+            
+            logger.info(f"[STRIPE] Checkout session created: {session.id} for tenant={tenant_id}")
+            return {"session_id": session.id, "url": session.url}
+            
+        except Exception as e:
+            logger.error(f"Stripe checkout failed: {e}")
+            return None
+```
+
+**WAŻNE:** Zastąp CAŁĄ starą metodę `create_checkout_session` (ta z jednym `price_id` parametrem). Nowa obsługuje oba scenariusze.
+
+### Commit:
+
+### B) **Zastąp** stary `handle_stripe_webhook` w BillingService — delegacja do nowego handlera:
+
+```python
+    async def handle_stripe_webhook(self, payload: bytes, sig_header: str) -> Optional[Dict]:
+        """
+        Process Stripe webhook event.
+        
+        Deleguje do StripeWebhookHandler (fasthub_core.billing.stripe_webhooks).
+        Aplikacja może nadpisać handler z hookami:
+        
+            handler = StripeWebhookHandler(db)
+            handler.on_checkout_completed = my_hook
+            result = await handler.process(payload, sig_header)
+        """
+        from fasthub_core.billing.stripe_webhooks import StripeWebhookHandler
+        handler = StripeWebhookHandler(self.db)
+        return await handler.process(payload, sig_header)
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: enhanced checkout (plan+addon) + webhook delegation to StripeWebhookHandler"
+```
+
+---
+
+## KROK 6: Subscription model — upewnij się że ma potrzebne pola
+
+Sprawdź czy `fasthub_core/billing/models.py` → `Subscription` ma te pola. **Jeśli brakuje któregokolwiek — DODAJ:**
+
+```python
+class Subscription(Base):
+    __tablename__ = "subscriptions"
+    
+    # ... istniejące pola ...
+    
+    # Te pola MUSZĄ istnieć (dodaj jeśli brakuje):
+    stripe_subscription_id = Column(String(100), nullable=True, index=True)
+    stripe_customer_id = Column(String(100), nullable=True)
+    billing_interval = Column(String(20), default="monthly")  # "monthly" | "yearly"
+    current_period_start = Column(DateTime, nullable=True)
+    current_period_end = Column(DateTime, nullable=True)
+    trial_end = Column(DateTime, nullable=True)
+    canceled_at = Column(DateTime, nullable=True)
+    
+    # Status musi być SubscriptionStatus enum (nie zwykły string!)
+    status = Column(Enum(SubscriptionStatus), default=SubscriptionStatus.active)
+```
+
+Sprawdź też `TenantAddon`:
+```python
+class TenantAddon(Base):
+    # ... musi mieć:
+    stripe_subscription_item_id = Column(String(100), nullable=True)
+    is_active = Column(Boolean, default=True)
+```
+
+**Jeśli dodajesz nowe kolumny — stwórz migrację Alembic.**
+
+### Commit (jeśli były zmiany):
+```bash
+git add -A
+git commit -m "fix: ensure Subscription + TenantAddon have all payment gateway fields"
+```
+
+---
+
+## KROK 7: Shared HTTP Clients — `fasthub_core/clients/`
+
+### Wzorzec: Wspólny klient HTTP
+
+Niektóre systemy zewnętrzne (Fakturownia, Stripe, SendGrid) są używane w DWÓCH kontekstach:
+1. **Provider (AutoFlow)** — klient automatyzuje SWOJE dane, SWÓJ token
+2. **Billing/System (my)** — MY jako firma używamy tego systemu, NASZ token
+
+Kod HTTP (połącz, wyślij, obsłuż błąd) jest identyczny. Różni się TYLKO token i powód wywołania.
+
+```
+FakturowniaClient (umie gadać z API)
+    ↑ token klienta              ↑ nasz token z .env
+Provider w workflow             BillingHook po płatności
+(pani Zosia automatyzuje)       (my wystawiamy fakturę)
+```
+
+### Systemy z dwoma kontekstami (potrzebują wspólnego klienta):
+
+| System | Provider (klient) | Wewnętrznie (my) |
+|---|---|---|
+| Fakturownia | Automatyzacja faktur klienta | Wystawianie faktur za subskrypcję |
+| iFirma | Automatyzacja faktur klienta | Wystawianie faktur za subskrypcję |
+| Stripe | Klient sprawdza płatności | Obsługa płatności za plany |
+| SendGrid/SMTP | Klient wysyła maile w workflow | Maile systemowe (reset hasła) |
+
+### Systemy z jednym kontekstem (NIE potrzebują wspólnego klienta):
+Google Drive, Slack, Trello, itp. — używane TYLKO przez klientów w workflow.
+
+Bazowy klient HTTP — retry, logging, error handling.
+
+Wszystkie klienty dziedziczą po BaseHTTPClient.
+"""
+
+import logging
+import httpx
+from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class BaseHTTPClient:
+    """
+    Bazowy klient HTTP z retry i error handling.
+    
+    Użycie:
+        client = BaseHTTPClient(
+            base_url="https://api.fakturownia.pl",
+            default_headers={"Authorization": f"Token {token}"},
+        )
+        response = await client.get("/invoices.json")
+        response = await client.post("/invoices.json", json=data)
+    """
+
+    def __init__(
+        self,
+        base_url: str,
+        default_headers: Optional[Dict[str, str]] = None,
+        timeout: float = 30.0,
+        max_retries: int = 2,
+    ):
+        self.base_url = base_url.rstrip("/")
+        self.default_headers = default_headers or {}
+        self.timeout = timeout
+        self.max_retries = max_retries
+
+    async def get(self, path: str, params: Dict = None) -> Dict[str, Any]:
+        return await self._request("GET", path, params=params)
+
+    async def post(self, path: str, json: Dict = None) -> Dict[str, Any]:
+        return await self._request("POST", path, json=json)
+
+    async def put(self, path: str, json: Dict = None) -> Dict[str, Any]:
+        return await self._request("PUT", path, json=json)
+
+    async def delete(self, path: str) -> Dict[str, Any]:
+        return await self._request("DELETE", path)
+
+    async def _request(
+        self, method: str, path: str, **kwargs
+    ) -> Dict[str, Any]:
+        url = f"{self.base_url}{path}"
+        last_error = None
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.request(
+                        method, url, headers=self.default_headers, **kwargs
+                    )
+                    response.raise_for_status()
+                    return response.json() if response.content else {}
+            except httpx.HTTPStatusError as e:
+                logger.warning(f"HTTP {e.response.status_code} for {method} {url} (attempt {attempt+1})")
+                last_error = e
+                if e.response.status_code < 500:
+                    raise  # 4xx — nie retryuj
+            except Exception as e:
+                logger.warning(f"Request error {method} {url} (attempt {attempt+1}): {e}")
+                last_error = e
+
+        raise last_error or Exception(f"Request failed after {self.max_retries + 1} attempts")
+```
+
+### Plik: `fasthub_core/clients/fakturownia_client.py`
+
+```python
+"""
+Fakturownia HTTP Client — czyste wywołania API.
+
+Używany przez:
+- Provider Fakturownia (AutoFlow) — token KLIENTA
+- Billing hook (fasthub_core) — token NASZ firmowy
+
+Użycie:
+    # Kontekst 1: Provider (token klienta)
+    client = FakturowniaClient(account="klient-firma", api_token="abc123")
+    
+    # Kontekst 2: Billing (nasz token z .env)
+    client = FakturowniaClient.from_config()  # czyta FAKTUROWNIA_* z env
+    
+    # Operacje identyczne w obu kontekstach:
+    invoice = await client.create_invoice(buyer_name="Jan Kowalski", ...)
+    invoices = await client.list_invoices(period="this_month")
+    invoice = await client.get_invoice(invoice_id=12345)
+"""
+
+import logging
+from typing import Any, Dict, List, Optional
+
+from fasthub_core.clients.base_client import BaseHTTPClient
+
+logger = logging.getLogger(__name__)
+
+
+class FakturowniaClient(BaseHTTPClient):
+    """
+    Klient API Fakturownia.pl.
+    
+    API docs: https://app.fakturownia.pl/api
+    """
+
+    def __init__(self, account: str, api_token: str):
+        """
+        Args:
+            account: nazwa konta (np. "mojafirma" → mojafirma.fakturownia.pl)
+            api_token: token API
+        """
+        self.account = account
+        self.api_token = api_token
+        super().__init__(
+            base_url=f"https://{account}.fakturownia.pl",
+            default_headers={"Accept": "application/json", "Content-Type": "application/json"},
+        )
+
+    @classmethod
+    def from_config(cls) -> "FakturowniaClient":
+        """Stwórz klienta z config (.env) — NASZ firmowy token."""
+        try:
+            from fasthub_core.config import get_settings
+            settings = get_settings()
+            account = getattr(settings, "FAKTUROWNIA_ACCOUNT", None)
+            token = getattr(settings, "FAKTUROWNIA_API_TOKEN", None)
+            if not account or not token:
+                raise ValueError("FAKTUROWNIA_ACCOUNT and FAKTUROWNIA_API_TOKEN required")
+            return cls(account=account, api_token=token)
+        except Exception as e:
+            raise ValueError(f"Fakturownia config error: {e}")
+
+    def _with_token(self, params: dict = None) -> dict:
+        """Dodaj api_token do parametrów (Fakturownia wymaga go w query)."""
+        params = params or {}
+        params["api_token"] = self.api_token
+        return params
+
+    # === FAKTURY ===
+
+    async def create_invoice(self, invoice_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Utwórz fakturę.
+        
+        invoice_data powinien zawierać:
+            - kind: "vat" | "proforma" | "receipt"
+            - number: numer (opcjonalnie, auto-generowany)
+            - buyer_name, buyer_tax_no, buyer_email, ...
+            - positions: [{"name": "Plan Pro", "quantity": 1, "total_price_gross": 199.0}]
+        """
+        return await self.post(
+            "/invoices.json",
+            json={"invoice": invoice_data, "api_token": self.api_token},
+        )
+
+    async def get_invoice(self, invoice_id: int) -> Dict[str, Any]:
+        """Pobierz fakturę po ID."""
+        return await self.get(f"/invoices/{invoice_id}.json", params=self._with_token())
+
+    async def list_invoices(
+        self, page: int = 1, period: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Lista faktur.
+        period: "this_month", "last_month", "this_year", etc.
+        """
+        params = self._with_token({"page": page})
+        if period:
+            params["period"] = period
+        return await self.get("/invoices.json", params=params)
+
+    async def send_invoice_by_email(self, invoice_id: int) -> Dict[str, Any]:
+        """Wyślij fakturę emailem do kupującego."""
+        return await self.post(
+            f"/invoices/{invoice_id}/send_by_email.json",
+            json={"api_token": self.api_token},
+        )
+```
+
+### Plik: `fasthub_core/clients/stripe_client.py`
+
+```python
+"""
+Stripe Client — wrapper na Stripe SDK.
+
+Używany przez:
+- Provider Stripe (AutoFlow) — klient sprawdza swoje płatności (ew. przyszłość)
+- Billing (fasthub_core) — checkout, portal, webhook verification
+
+Na razie thin wrapper — głównie po to żeby:
+1. Trzymać import stripe w jednym miejscu
+2. Mieć spójny error handling
+3. Móc zamockować w testach
+"""
+
+import logging
+from typing import Any, Dict, Optional
+
+logger = logging.getLogger(__name__)
+
+
+class StripeClient:
+    """
+    Wrapper na Stripe SDK.
+    """
+
+    def __init__(self, api_key: str = None):
+        import stripe
+        if api_key:
+            self.api_key = api_key
+        else:
+            from fasthub_core.config import get_settings
+            self.api_key = get_settings().STRIPE_SECRET_KEY
+        stripe.api_key = self.api_key
+        self._stripe = stripe
+
+    @classmethod
+    def from_config(cls) -> "StripeClient":
+        return cls()
+
+    def create_checkout_session(self, **kwargs) -> Dict[str, Any]:
+        session = self._stripe.checkout.Session.create(**kwargs)
+        return {"session_id": session.id, "url": session.url}
+
+    def create_portal_session(self, customer_id: str, return_url: str) -> Dict[str, Any]:
+        session = self._stripe.billing_portal.Session.create(
+            customer=customer_id, return_url=return_url,
+        )
+        return {"url": session.url}
+
+    def construct_webhook_event(self, payload: bytes, sig_header: str, secret: str):
+        return self._stripe.Webhook.construct_event(payload, sig_header, secret)
+
+    def create_customer(self, **kwargs):
+        return self._stripe.Customer.create(**kwargs)
+```
+
+### Testy klientów — dodaj do `tests/test_stripe_webhooks.py`:
+
+```python
+# ============================================================================
+# SHARED HTTP CLIENTS
+# ============================================================================
+
+class TestBaseHTTPClient:
+
+    def test_class_exists(self):
+        from fasthub_core.clients.base_client import BaseHTTPClient
+        client = BaseHTTPClient(base_url="https://example.com")
+        assert client.base_url == "https://example.com"
+
+    def test_default_headers(self):
+        from fasthub_core.clients.base_client import BaseHTTPClient
+        client = BaseHTTPClient(
+            base_url="https://example.com",
+            default_headers={"Authorization": "Bearer xxx"},
+        )
+        assert "Authorization" in client.default_headers
+
+    def test_has_crud_methods(self):
+        from fasthub_core.clients.base_client import BaseHTTPClient
+        client = BaseHTTPClient(base_url="https://example.com")
+        assert callable(client.get)
+        assert callable(client.post)
+        assert callable(client.put)
+        assert callable(client.delete)
+
+
+class TestFakturowniaClient:
+
+    def test_class_exists(self):
+        from fasthub_core.clients.fakturownia_client import FakturowniaClient
+        client = FakturowniaClient(account="testfirma", api_token="abc123")
+        assert client.account == "testfirma"
+        assert "testfirma.fakturownia.pl" in client.base_url
+
+    def test_from_config_requires_env(self):
+        from fasthub_core.clients.fakturownia_client import FakturowniaClient
+        # Bez env vars powinno rzucić ValueError
+        try:
+            client = FakturowniaClient.from_config()
+        except ValueError:
+            pass  # Expected
+
+    def test_has_invoice_methods(self):
+        from fasthub_core.clients.fakturownia_client import FakturowniaClient
+        client = FakturowniaClient(account="test", api_token="xxx")
+        assert callable(client.create_invoice)
+        assert callable(client.get_invoice)
+        assert callable(client.list_invoices)
+        assert callable(client.send_invoice_by_email)
+
+
+class TestStripeClient:
+
+    def test_class_exists(self):
+        from fasthub_core.clients.stripe_client import StripeClient
+        assert StripeClient is not None
+
+    def test_has_methods(self):
+        # Nie inicjalizujemy bez klucza, sprawdzamy klasę
+        assert hasattr(StripeClient, "create_checkout_session")
+        assert hasattr(StripeClient, "create_portal_session")
+        assert hasattr(StripeClient, "construct_webhook_event")
+
+
+class TestClientsExports:
+
+    def test_clients_init(self):
+        from fasthub_core.clients import BaseHTTPClient, FakturowniaClient, StripeClient
+        assert BaseHTTPClient is not None
+        assert FakturowniaClient is not None
+        assert StripeClient is not None
+```
+
+### Dodaj `httpx` do zależności
+
+W `setup.py`:
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: shared HTTP clients (BaseHTTPClient, FakturowniaClient, StripeClient)"
+```
+
+---
+
+## KROK 8: Exports + Dependencies
+
+### A) `fasthub_core/billing/__init__.py` — dodaj:
+
+```python
+from fasthub_core.billing.stripe_webhooks import StripeWebhookHandler
+from fasthub_core.billing.payment_gateway import (
+    PaymentGateway, PaymentGatewayRegistry, PaymentStatus,
+    PaymentMethod, PaymentResult, WebhookResult,
+)
+from fasthub_core.billing.payment_registry import get_payment_registry
+from fasthub_core.billing.gateways.stripe_gateway import StripeGateway
+```
+
+### B) `fasthub_core/clients/__init__.py` — stwórz:
+
+```python
+from fasthub_core.clients.base_client import BaseHTTPClient
+from fasthub_core.clients.fakturownia_client import FakturowniaClient
+from fasthub_core.clients.stripe_client import StripeClient
+
+__all__ = ["BaseHTTPClient", "FakturowniaClient", "StripeClient"]
+```
+
+### C) `setup.py` — dodaj zależności:
+
+```python
+"stripe>=7.0.0",
+"httpx>=0.25.0",
+```
+
+### D) `fasthub_core/config.py` — dodaj ustawienia:
+
+```python
+    # Payment Gateways
+    STRIPE_SECRET_KEY: Optional[str] = None
+    STRIPE_PUBLISHABLE_KEY: Optional[str] = None
+    STRIPE_WEBHOOK_SECRET: Optional[str] = None
+    
+    # Fakturownia (wystawianie faktur za subskrypcje)
+    FAKTUROWNIA_ACCOUNT: Optional[str] = None
+    FAKTUROWNIA_API_TOKEN: Optional[str] = None
+```
+
+**UWAGA:** STRIPE_SECRET_KEY, STRIPE_PUBLISHABLE_KEY, STRIPE_WEBHOOK_SECRET, STRIPE_STARTER_PRICE_ID, STRIPE_PRO_PRICE_ID, STRIPE_ENTERPRISE_PRICE_ID **już istnieją** w config. NIE duplikuj. Dodaj TYLKO FAKTUROWNIA_*.
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: exports, deps (stripe, httpx), config (Fakturownia)"
+```
+
+---
+
+## KROK 9: Testy — `tests/test_payment_gateway.py`
+
+```python
+"""
+Testy Payment Gateway — kontrakt, registry, Stripe, webhook handler, shared clients.
+"""
+
+import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
+from datetime import datetime
+
+
+# ============================================================================
+# PAYMENT GATEWAY CONTRACT
+# ============================================================================
+
+class TestPaymentGatewayContract:
+
+    def test_contract_is_abstract(self):
+        from fasthub_core.billing.payment_gateway import PaymentGateway
+        with pytest.raises(TypeError):
+            PaymentGateway()
+
+    def test_payment_status_enum(self):
+        from fasthub_core.billing.payment_gateway import PaymentStatus
+        assert PaymentStatus.completed.value == "completed"
+        assert PaymentStatus.pending.value == "pending"
+        assert PaymentStatus.failed.value == "failed"
+        assert PaymentStatus.canceled.value == "canceled"
+        assert PaymentStatus.refunded.value == "refunded"
+
+    def test_payment_method_dataclass(self):
+        from fasthub_core.billing.payment_gateway import PaymentMethod
+        method = PaymentMethod(id="blik", name="BLIK", gateway_id="payu")
+        assert method.id == "blik"
+        assert method.gateway_id == "payu"
+
+    def test_payment_result_success(self):
+        from fasthub_core.billing.payment_gateway import PaymentResult
+        result = PaymentResult(success=True, payment_id="pi_123", payment_url="https://pay.com")
+        assert result.success
+        assert result.payment_id == "pi_123"
+
+    def test_payment_result_failure(self):
+        from fasthub_core.billing.payment_gateway import PaymentResult
+        result = PaymentResult(success=False, error="Card declined")
+        assert not result.success
+        assert result.error == "Card declined"
+
+    def test_webhook_result(self):
+        from fasthub_core.billing.payment_gateway import WebhookResult, PaymentStatus
+        result = WebhookResult(status="processed", event_type="checkout", payment_status=PaymentStatus.completed)
+        assert result.status == "processed"
+
+
+# ============================================================================
+# PAYMENT GATEWAY REGISTRY
+# ============================================================================
+
+class TestPaymentGatewayRegistry:
+
+    def test_create_registry(self):
+        from fasthub_core.billing.payment_registry import PaymentGatewayRegistry
+        registry = PaymentGatewayRegistry()
+        assert registry.get_active_gateways() == []
+
+    def test_register_configured_gateway(self):
+        from fasthub_core.billing.payment_registry import PaymentGatewayRegistry
+        from fasthub_core.billing.gateways.stripe_gateway import StripeGateway
+        
+        registry = PaymentGatewayRegistry()
+        gw = StripeGateway(api_key="sk_test_xxx", webhook_secret="whsec_xxx")
+        registry.register(gw)
+        assert len(registry.get_active_gateways()) == 1
+        assert registry.get_gateway("stripe") is gw
+
+    def test_skip_unconfigured_gateway(self):
+        from fasthub_core.billing.payment_registry import PaymentGatewayRegistry
+        from fasthub_core.billing.gateways.stripe_gateway import StripeGateway
+        
+        registry = PaymentGatewayRegistry()
+        gw = StripeGateway(api_key=None)  # not configured
+        registry.register(gw)
+        assert len(registry.get_active_gateways()) == 0
+
+    def test_get_available_methods(self):
+        from fasthub_core.billing.payment_registry import PaymentGatewayRegistry
+        from fasthub_core.billing.gateways.stripe_gateway import StripeGateway
+        
+        registry = PaymentGatewayRegistry()
+        gw = StripeGateway(api_key="sk_test_xxx", webhook_secret="whsec_xxx")
+        registry.register(gw)
+        methods = registry.get_available_methods()
+        assert len(methods) >= 1
+        method_ids = [m.id for m in methods]
+        assert "card_visa" in method_ids
+
+    def test_get_methods_with_gateways(self):
+        from fasthub_core.billing.payment_registry import PaymentGatewayRegistry
+        from fasthub_core.billing.gateways.stripe_gateway import StripeGateway
+        
+        registry = PaymentGatewayRegistry()
+        gw = StripeGateway(api_key="sk_test_xxx", webhook_secret="whsec_xxx")
+        registry.register(gw)
+        results = registry.get_methods_with_gateways()
+        assert len(results) >= 1
+        assert "stripe" in results[0]["gateways"]
+
+    @pytest.mark.asyncio
+    async def test_create_payment_unknown_gateway(self):
+        from fasthub_core.billing.payment_registry import PaymentGatewayRegistry
+        registry = PaymentGatewayRegistry()
+        result = await registry.create_payment("nonexistent", amount=100, currency="PLN", description="Test", return_url="http://x")
+        assert not result.success
+
+
+# ============================================================================
+# STRIPE GATEWAY
+# ============================================================================
+
+class TestStripeGateway:
+
+    def test_gateway_id(self):
+        from fasthub_core.billing.gateways.stripe_gateway import StripeGateway
+        gw = StripeGateway(api_key="sk_test_xxx")
+        assert gw.gateway_id == "stripe"
+        assert gw.display_name == "Stripe"
+
+    def test_is_configured_with_key(self):
+        from fasthub_core.billing.gateways.stripe_gateway import StripeGateway
+        gw = StripeGateway(api_key="sk_test_xxx")
+        assert gw.is_configured()
+
+    def test_not_configured_without_key(self):
+        from fasthub_core.billing.gateways.stripe_gateway import StripeGateway
+        gw = StripeGateway(api_key=None)
+        assert not gw.is_configured()
+
+    def test_payment_methods(self):
+        from fasthub_core.billing.gateways.stripe_gateway import StripeGateway
+        gw = StripeGateway(api_key="sk_test_xxx")
+        methods = gw.get_payment_methods()
+        assert len(methods) >= 2
+        ids = [m.id for m in methods]
+        assert "card" in ids
+        assert "blik" in ids
+
+    def test_implements_contract(self):
+        from fasthub_core.billing.payment_gateway import PaymentGateway
+        from fasthub_core.billing.gateways.stripe_gateway import StripeGateway
+        assert issubclass(StripeGateway, PaymentGateway)
+
+
+# ============================================================================
+# STRIPE WEBHOOK HANDLER
+# ============================================================================
+
+class TestStripeWebhookHandler:
+
+    def test_class_exists(self):
+        from fasthub_core.billing.stripe_webhooks import StripeWebhookHandler
+        assert StripeWebhookHandler is not None
+
+    def test_hook_points_exist(self):
+        from fasthub_core.billing.stripe_webhooks import StripeWebhookHandler
+        handler = StripeWebhookHandler(db=MagicMock())
+        assert hasattr(handler, "on_checkout_completed")
+        assert hasattr(handler, "on_subscription_canceled")
+        assert hasattr(handler, "on_payment_failed")
+        assert hasattr(handler, "on_payment_succeeded")
+
+    def test_hooks_default_none(self):
+        from fasthub_core.billing.stripe_webhooks import StripeWebhookHandler
+        handler = StripeWebhookHandler(db=MagicMock())
+        assert handler.on_checkout_completed is None
+        assert handler.on_subscription_canceled is None
+
+    def test_hooks_settable(self):
+        from fasthub_core.billing.stripe_webhooks import StripeWebhookHandler
+        handler = StripeWebhookHandler(db=MagicMock())
+        mock_hook = AsyncMock()
+        handler.on_checkout_completed = mock_hook
+        assert handler.on_checkout_completed is mock_hook
+
+    def test_extract_tenant_id(self):
+        from fasthub_core.billing.stripe_webhooks import StripeWebhookHandler
+        handler = StripeWebhookHandler(db=MagicMock())
+        assert handler._extract_tenant_id({"metadata": {"tenant_id": "org-123"}}) == "org-123"
+        assert handler._extract_tenant_id({}) == "unknown"
+        assert handler._extract_tenant_id({"metadata": {}}) == "unknown"
+
+    def test_all_handlers_exist(self):
+        from fasthub_core.billing.stripe_webhooks import StripeWebhookHandler
+        handler = StripeWebhookHandler(db=MagicMock())
+        assert hasattr(handler, "_handle_checkout_completed")
+        assert hasattr(handler, "_handle_subscription_updated")
+        assert hasattr(handler, "_handle_subscription_deleted")
+        assert hasattr(handler, "_handle_payment_failed")
+        assert hasattr(handler, "_handle_payment_succeeded")
+        assert callable(handler.process)
+
+
+# ============================================================================
+# BILLING SERVICE — DELEGACJA
+# ============================================================================
+
+class TestBillingServiceDelegation:
+
+    def test_has_webhook_method(self):
+        from fasthub_core.billing.service import BillingService
+        assert hasattr(BillingService, "handle_stripe_webhook")
+
+    def test_has_checkout_method(self):
+        from fasthub_core.billing.service import BillingService
+        assert hasattr(BillingService, "create_checkout_session")
+
+    def test_checkout_accepts_new_params(self):
+        import inspect
+        from fasthub_core.billing.service import BillingService
+        sig = inspect.signature(BillingService.create_checkout_session)
+        params = list(sig.parameters.keys())
+        assert "addon_slug" in params
+        assert "billing_interval" in params
+
+
+# ============================================================================
+# SHARED HTTP CLIENTS
+# ============================================================================
+
+class TestBaseHTTPClient:
+
+    def test_create(self):
+        from fasthub_core.clients.base_client import BaseHTTPClient
+        client = BaseHTTPClient(base_url="https://example.com")
+        assert client.base_url == "https://example.com"
+
+    def test_default_headers(self):
+        from fasthub_core.clients.base_client import BaseHTTPClient
+        client = BaseHTTPClient(
+            base_url="https://example.com",
+            default_headers={"Authorization": "Bearer xxx"},
+        )
+        assert "Authorization" in client.default_headers
+
+    def test_has_crud_methods(self):
+        from fasthub_core.clients.base_client import BaseHTTPClient
+        client = BaseHTTPClient(base_url="https://example.com")
+        assert callable(client.get)
+        assert callable(client.post)
+        assert callable(client.put)
+        assert callable(client.delete)
+
+
+class TestFakturowniaClient:
+
+    def test_create(self):
+        from fasthub_core.clients.fakturownia_client import FakturowniaClient
+        client = FakturowniaClient(account="testfirma", api_token="abc123")
+        assert client.account == "testfirma"
+        assert "testfirma.fakturownia.pl" in client.base_url
+
+    def test_from_config_requires_env(self):
+        from fasthub_core.clients.fakturownia_client import FakturowniaClient
+        try:
+            FakturowniaClient.from_config()
+        except ValueError:
+            pass  # Expected — brak env vars
+
+    def test_invoice_methods(self):
+        from fasthub_core.clients.fakturownia_client import FakturowniaClient
+        client = FakturowniaClient(account="test", api_token="xxx")
+        assert callable(client.create_invoice)
+        assert callable(client.get_invoice)
+        assert callable(client.list_invoices)
+        assert callable(client.send_invoice_by_email)
+
+
+class TestStripeClient:
+
+    def test_class_exists(self):
+        from fasthub_core.clients.stripe_client import StripeClient
+        assert StripeClient is not None
+
+    def test_has_methods(self):
+        from fasthub_core.clients.stripe_client import StripeClient
+        assert hasattr(StripeClient, "create_checkout_session")
+        assert hasattr(StripeClient, "create_portal_session")
+        assert hasattr(StripeClient, "construct_webhook_event")
+
+
+# ============================================================================
+# SUBSCRIPTION STATUS
+# ============================================================================
+
+class TestSubscriptionStatus:
+
+    def test_all_stripe_statuses(self):
+        from fasthub_core.billing.models import SubscriptionStatus
+        assert hasattr(SubscriptionStatus, "active")
+        assert hasattr(SubscriptionStatus, "canceled")
+        assert hasattr(SubscriptionStatus, "past_due")
+        assert hasattr(SubscriptionStatus, "trialing")
+
+    def test_billing_event_unique(self):
+        from fasthub_core.billing.models import BillingEvent
+        col = BillingEvent.__table__.columns["stripe_event_id"]
+        assert col.unique == True
+
+
+# ============================================================================
+# EXPORTS
+# ============================================================================
+
+class TestExports:
+
+    def test_billing_exports(self):
+        from fasthub_core.billing import (
+            StripeWebhookHandler, PaymentGateway, PaymentGatewayRegistry,
+            PaymentStatus, PaymentResult, StripeGateway,
+        )
+        assert StripeWebhookHandler is not None
+        assert PaymentGateway is not None
+
+    def test_clients_exports(self):
+        from fasthub_core.clients import BaseHTTPClient, FakturowniaClient, StripeClient
+        assert BaseHTTPClient is not None
+        assert FakturowniaClient is not None
+        assert StripeClient is not None
+```
+
+### Uruchom:
+```bash
+pip install stripe httpx --break-system-packages
+python -m pytest tests/test_payment_gateway.py -v --tb=short
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "test: payment gateway tests (~40 tests: contract, registry, stripe, webhooks, clients)"
+```
+
+---
+
+## KROK 10: Dokumentacja
+
+### A) W `DOKUMENTACJA_AI.md` **DODAJ** sekcję:
+
+```markdown
+## Bramki płatnicze (Payment Gateways) — architektura multi-bramka
+
+### Model
+
+Bramki płatnicze NIE działają jako "albo-albo". Wiele bramek działa JEDNOCZEŚNIE:
+- Właściciel aplikacji włącza bramki (podaje klucze API w config)
+- Klient końcowy widzi metody płatności ze WSZYSTKICH aktywnych bramek
+- Sam wybiera czym płaci (BLIK, karta, przelew, Google Pay, PayPal)
+
+### Architektura
+
+```
+PaymentGateway (ABC)                     ← kontrakt
+    ├── StripeGateway                    ← Brief 16 (gotowe)
+    ├── PayUGateway                      ← Brief 20 (przyszłość)
+    ├── TpayGateway                      ← Brief 20
+    ├── Przelewy24Gateway                ← Brief 20
+    └── PayPalGateway                    ← Brief 20
+
+PaymentGatewayRegistry                   ← trzyma WSZYSTKIE aktywne bramki
+    registry.register(StripeGateway())   ← auto z config (jeśli ma klucze)
+    registry.register(PayUGateway())
+
+Klient widzi:
+    ☑ BLIK (→ PayU)
+    ☑ Karta (→ Stripe)
+    ☑ PayPal (→ PayPal)
+```
+
+### Hook points (logika aplikacji)
+
+StripeWebhookHandler (i przyszłe handlery) mają 4 hook points:
+- on_checkout_completed — email powitalny, onboarding
+- on_subscription_canceled — cleanup, downgrade
+- on_payment_failed — email, powiadomienie
+- on_payment_succeeded — wystawienie faktury (Fakturownia/iFirma/KSeF)
+
+### Jak dodać nową bramkę
+
+1. Stwórz klasę dziedziczącą po PaymentGateway
+2. Zaimplementuj: gateway_id, get_payment_methods(), create_payment(), handle_webhook(), create_subscription(), cancel_subscription(), refund_payment(), is_configured()
+3. Zarejestruj w PaymentGatewayRegistry.from_config()
+4. Dodaj klucze API do config.py
+
+### Lista bramek docelowych
+
+Polskie: PayU, Tpay/Autopay, Przelewy24, iMoje (ING), HotPay, CashBill, PayNow (mBank), Elavon
+Międzynarodowe: Stripe, PayPal, Revolut
+Metody: BLIK, Visa, Mastercard, Maestro (3D Secure 2.0), przelewy, Apple Pay, Google Pay, Tuba
+```
+
+### B) W `DOKUMENTACJA_AI.md` **DODAJ** sekcję "Wspólni klienci HTTP":
+
+```markdown
+## Wspólni klienci HTTP (Shared Clients)
+
+### Problem
+
+Niektóre systemy (Fakturownia, Stripe, SendGrid) są używane w DWÓCH kontekstach:
+1. Provider — klient automatyzuje SWOJE dane, SWÓJ token
+2. Billing/System — MY jako firma używamy systemu, NASZ token
+
+### Rozwiązanie
+
+Wspólny klient HTTP w `fasthub_core/clients/`:
+- BaseHTTPClient — retry, logging, error handling
+- FakturowniaClient — API Fakturownia.pl
+- StripeClient — wrapper na Stripe SDK
+
+Dwa tryby:
+- FakturowniaClient(account="klient", api_token=klient_token)  ← provider
+- FakturowniaClient.from_config()  ← billing (nasz token z .env)
+
+### Kiedy stosować
+
+| System | Provider | Wewnętrznie | Wspólny klient? |
+|---|---|---|---|
+| Fakturownia | ✅ | ✅ faktury | ✅ TAK |
+| iFirma | ✅ | ✅ faktury | ✅ TAK |
+| Stripe | ✅ | ✅ płatności | ✅ TAK |
+| SendGrid | ✅ | ✅ maile | ✅ TAK |
+| Google Drive | ✅ | ❌ | ❌ NIE |
+```
+
+### C) W `ARCHITEKTURA_FUNKCJONALNA.md` **DODAJ** diagram:
+
+```markdown
+## Przełączalne komponenty — pełna lista
+
+| Komponent | Interfejs (ABC) | Implementacje | Config |
+|---|---|---|---|
+| Email | EmailTransport | SMTP, Console | SMTP_HOST |
+| Storage | StorageBackend | Local, S3 | STORAGE_BACKEND |
+| Task Queue | TaskQueueBackend | ARQ, Sync | TASK_BACKEND |
+| **Płatności** | **PaymentGateway** | **Stripe** (PayU, Tpay w Brief 20) | **Klucze API per bramka** |
+
+## Payment Gateway — diagram
+
+```
+PaymentGatewayRegistry (wiele jednocześnie)
+    ├── StripeGateway (is_configured=True)
+    │   └── metody: card, blik, google_pay, apple_pay
+    ├── PayUGateway (is_configured=True)
+    │   └── metody: blik, card, transfer, google_pay
+    └── PayPalGateway (is_configured=False → pominięta)
+
+Frontend → "Wybierz metodę" → registry.get_available_methods()
+Klient wybiera → registry.create_payment(gateway_id, amount, ...)
+Webhook → registry.handle_webhook(gateway_id, payload, headers)
+```
+
+## Shared Clients — diagram
+
+```
+fasthub_core/clients/
+    base_client.py          ← BaseHTTPClient (retry, logging)
+    fakturownia_client.py   ← FakturowniaClient(account, token)
+    stripe_client.py        ← StripeClient(api_key)
+
+    Provider (token KLIENTA)        Billing (token NASZ)
+         ↓                              ↓
+    FakturowniaClient(...)         FakturowniaClient.from_config()
+         └──── ten sam kod HTTP ────────┘
+```
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "docs: payment gateway architecture, shared clients, przełączalne komponenty"
+```
+
+---
+
+## KROK 11: Push i PR
+
+```bash
+python -m pytest tests/ -v --tb=short -q 2>&1 | tail -10
+
+git push -u origin feature/payment-gateway
+
+gh pr create \
+  --title "Brief 16: Payment Gateway (multi-bramka) + Stripe + Shared Clients" \
+  --body "Nowa architektura płatności — multi-bramka z jednoczesnym działaniem wielu bramek:
+
+**Payment Gateway Contract:**
+- PaymentGateway(ABC) — kontrakt dla WSZYSTKICH bramek
+- PaymentGatewayRegistry — rejestr wielu bramek jednocześnie
+- PaymentStatus, PaymentMethod, PaymentResult — ujednolicone typy
+
+**Stripe Gateway (pierwsza implementacja):**
+- StripeGateway(PaymentGateway) — karta, BLIK, Google Pay, Apple Pay
+- StripeWebhookHandler — 6 event types, 4 hook points, deduplikacja
+- Enhanced create_checkout_session (plan + addon + billing_interval)
+
+**Shared HTTP Clients:**
+- BaseHTTPClient — retry, logging, error handling
+- FakturowniaClient — dual mode (provider token / billing config)
+- StripeClient — wrapper na SDK
+
+**Multi-gateway model:**
+- Właściciel włącza bramki (klucze API w config)
+- Klient widzi metody ze WSZYSTKICH aktywnych bramek
+- Przyszłe bramki: PayU, Tpay, P24, PayPal (Brief 20)
+
+~40 testów." \
+  --base main
+```
+
+---
+
+## CZEGO NIE ROBIĆ
+
+- ❌ NIE implementuj PayU/Tpay/P24 — to Brief 20
+- ❌ NIE twórz Billing REST API (endpointy /billing/plans, /billing/checkout) — to per aplikacja
+- ❌ NIE twórz klienta iFirma — analogiczny do Fakturownia, dodasz później
+- ❌ NIE twórz klienta SendGrid — maile systemowe mają EmailTransport
+- ❌ NIE modyfikuj BillingPlan model — pola features, pricing, limits są OK
+- ❌ NIE twórz Stripe test fixtures z prawdziwymi kluczami — mock construct_event
+- ❌ NIE rób retry webhook (Stripe sam retryuje 3x)
+
+---
+
+## JAK AUTOFLOW TO WYKORZYSTA
+
+```python
+# autoflow/api/billing.py
+from fasthub_core.billing import get_payment_registry, StripeWebhookHandler
+
+# Checkout — klient wybiera bramkę
+@router.post("/billing/checkout")
+async def checkout(data: CheckoutRequest, db = Depends(get_db)):
+    registry = get_payment_registry()
+    result = await registry.create_payment(
+        gateway_id=data.gateway,  # "stripe" | "payu" | "paypal"
+        amount=plan.price_monthly * 100,
+        currency="PLN",
+        description=f"AutoFlow — plan {plan.name}",
+        return_url=f"{FRONTEND_URL}/billing/success",
+        metadata={"tenant_id": tenant_id, "plan_slug": plan.slug},
+    )
+    return {"payment_url": result.payment_url}
+
+# Webhook — route do właściwej bramki
+@router.post("/billing/webhooks/{gateway_id}")
+async def webhook(gateway_id: str, request: Request, db = Depends(get_db)):
+    registry = get_payment_registry()
+    result = await registry.handle_webhook(
+        gateway_id, await request.body(), dict(request.headers),
+    )
+    return result
+
+# Dostępne metody płatności (dla frontendu)
+@router.get("/billing/payment-methods")
+async def get_methods():
+    registry = get_payment_registry()
+    return registry.get_methods_with_gateways()
+    # → [{"method": {"id": "blik", "name": "BLIK"}, "gateways": ["payu", "stripe"]}]
+```
+
+---
+
+## DELIVERABLES
+
+1. **`fasthub_core/billing/payment_gateway.py`** — PaymentGateway(ABC), PaymentStatus, PaymentMethod, PaymentResult, WebhookResult
+2. **`fasthub_core/billing/payment_registry.py`** — PaymentGatewayRegistry (multi-gateway, singleton)
+3. **`fasthub_core/billing/gateways/stripe_gateway.py`** — StripeGateway (pełna implementacja)
+4. **`fasthub_core/billing/stripe_webhooks.py`** — StripeWebhookHandler (6 handlers, 4 hooks, dedup)
+5. **`fasthub_core/clients/base_client.py`** — BaseHTTPClient (retry, logging)
+6. **`fasthub_core/clients/fakturownia_client.py`** — FakturowniaClient (dual mode)
+7. **`fasthub_core/clients/stripe_client.py`** — StripeClient (wrapper)
+8. **Zaktualizowany `fasthub_core/billing/service.py`** — enhanced checkout, webhook delegation
+9. **Zaktualizowany `fasthub_core/billing/models.py`** — ewentualne brakujące pola
+10. **Zaktualizowany `setup.py`** — stripe + httpx
+11. **Zaktualizowany `fasthub_core/config.py`** — FAKTUROWNIA_*
+12. **`tests/test_payment_gateway.py`** — ~40 testów
+13. **DOKUMENTACJA_AI.md** — payment gateways, shared clients, hooks
+14. **ARCHITEKTURA_FUNKCJONALNA.md** — diagramy, przełączalne komponenty
+15. **Git commit + push + PR**
+
+---
+
+## PO TYM BRIEFIE
+
+| Moduł fasthub_core | Status |
+|---|---|
+| Auth, RBAC, Audit, Notifications, WebSocket | ✅ Brief 4-9 |
+| Redis, Encryption, Events, OAuth, Webhooks, Billing | ✅ Brief 10 |
+| Logging, Monitoring, Rate Limiting, Sub Check, Health | ✅ Brief 13 |
+| File Storage (Local + S3), Feature Flags | ✅ Brief 14 |
+| Background Tasks (ARQ + Sync, pluggable) | ✅ Brief 15 |
+| **Payment Gateway (multi-bramka) + Stripe + Shared Clients** | ✅ **Brief 16** |
+| Multi-tenancy Middleware + CLI | 🔜 Brief 17 |
+| Data Export (GDPR) | 🔜 Brief 18 |
+| Email Templates + Invitations | 🔜 Brief 19 |
+| Polskie bramki płatnicze (PayU, Tpay, P24, iMoje, CashBill) | 🔜 Brief 20 |
+
+---
+
+*Brief #16 przygotowany przez Stratega, 2026-03-02*
+*Seria: FastHub Finalizacja (4/7)*
+*Następny brief: #17 — Multi-tenancy Middleware + CLI commands*

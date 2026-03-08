@@ -514,22 +514,86 @@ class BillingService:
     # === STRIPE ===
 
     async def create_checkout_session(
-        self, tenant_id: str, price_id: str, success_url: str, cancel_url: str,
+        self,
+        tenant_id: str,
+        plan_slug: Optional[str] = None,
+        addon_slug: Optional[str] = None,
+        quantity: int = 1,
+        billing_interval: str = "monthly",
+        success_url: str = "",
+        cancel_url: str = "",
     ) -> Optional[Dict[str, Any]]:
-        """Create Stripe Checkout Session."""
+        """
+        Create Stripe Checkout Session.
+
+        Obsluguje dwa scenariusze:
+        1. Plan purchase: plan_slug -> zmiana planu
+        2. Addon purchase: addon_slug + quantity -> dokupienie zasobow
+        """
         try:
             import stripe
             from fasthub_core.config import get_settings
             stripe.api_key = get_settings().STRIPE_SECRET_KEY
             if not stripe.api_key:
+                logger.warning("Stripe API key not configured")
                 return None
-            session = stripe.checkout.Session.create(
-                mode="subscription",
-                line_items=[{"price": price_id, "quantity": 1}],
-                success_url=success_url, cancel_url=cancel_url,
-                metadata={"tenant_id": tenant_id},
+
+            metadata = {"tenant_id": tenant_id, "billing_interval": billing_interval}
+
+            if addon_slug:
+                result = await self.db.execute(
+                    select(BillingAddon).where(BillingAddon.slug == addon_slug)
+                )
+                addon = result.scalar_one_or_none()
+                if not addon:
+                    raise ValueError(f"Addon '{addon_slug}' not found")
+
+                price_id = (addon.stripe_price_monthly_id
+                           if billing_interval == "monthly"
+                           else addon.stripe_price_yearly_id)
+                if not price_id:
+                    raise ValueError(f"Addon '{addon_slug}' has no Stripe price for '{billing_interval}'")
+
+                metadata["addon_slug"] = addon_slug
+                metadata["quantity"] = str(quantity)
+            else:
+                result = await self.db.execute(
+                    select(BillingPlan).where(BillingPlan.slug == plan_slug)
+                )
+                plan = result.scalar_one_or_none()
+                if not plan:
+                    raise ValueError(f"Plan '{plan_slug}' not found")
+
+                price_id = (plan.stripe_price_monthly_id
+                           if billing_interval == "monthly"
+                           else plan.stripe_price_yearly_id)
+                if not price_id:
+                    raise ValueError(f"Plan '{plan_slug}' has no Stripe price for '{billing_interval}'")
+
+                metadata["plan_slug"] = plan_slug
+                quantity = 1
+
+            sub_result = await self.db.execute(
+                select(Subscription).where(Subscription.organization_id == tenant_id)
             )
+            sub = sub_result.scalar_one_or_none()
+
+            session_kwargs = {
+                "mode": "subscription",
+                "line_items": [{"price": price_id, "quantity": quantity}],
+                "success_url": success_url,
+                "cancel_url": cancel_url,
+                "metadata": metadata,
+            }
+
+            if sub and getattr(sub, "stripe_customer_id", None):
+                session_kwargs["customer"] = sub.stripe_customer_id
+
+            session = stripe.checkout.Session.create(**session_kwargs)
+
+            logger.info(f"[STRIPE] Checkout session created: {session.id} for tenant={tenant_id}")
             return {"session_id": session.id, "url": session.url}
+
         except Exception as e:
             logger.error(f"Stripe checkout failed: {e}")
             return None
@@ -551,27 +615,19 @@ class BillingService:
             return None
 
     async def handle_stripe_webhook(self, payload: bytes, sig_header: str) -> Optional[Dict]:
-        """Process Stripe webhook event."""
-        try:
-            import stripe
-            from fasthub_core.config import get_settings
-            settings = get_settings()
-            stripe.api_key = settings.STRIPE_SECRET_KEY
-            event = stripe.Webhook.construct_event(
-                payload, sig_header, settings.STRIPE_WEBHOOK_SECRET
-            )
-            billing_event = BillingEvent(
-                tenant_id=event.get("data", {}).get("object", {}).get("metadata", {}).get("tenant_id", "unknown"),
-                event_type=event["type"],
-                stripe_event_id=event["id"],
-                data=event.get("data", {}),
-            )
-            self.db.add(billing_event)
-            await self.db.flush()
-            return {"event_type": event["type"], "event_id": event["id"]}
-        except Exception as e:
-            logger.error(f"Stripe webhook failed: {e}")
-            return None
+        """
+        Process Stripe webhook event.
+
+        Deleguje do StripeWebhookHandler (fasthub_core.billing.stripe_webhooks).
+        Aplikacja moze nadpisac handler z hookami:
+
+            handler = StripeWebhookHandler(db)
+            handler.on_checkout_completed = my_hook
+            result = await handler.process(payload, sig_header)
+        """
+        from fasthub_core.billing.stripe_webhooks import StripeWebhookHandler
+        handler = StripeWebhookHandler(self.db)
+        return await handler.process(payload, sig_header)
 
     # === SEED ===
 

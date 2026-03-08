@@ -1,0 +1,252 @@
+# POPRAWKI FASTHUB — przed integracją z AutoFlow
+## Zlecenie dla Opus CLI
+
+### Data: 2026-03-02
+### Repo: https://github.com/Piotr-KZ/Fasthub
+### Priorytet: WYSOKI — bez tych poprawek integracja z AutoFlow będzie problematyczna
+
+---
+
+## PROBLEM 1: Dwa Base classes — niespójność modeli
+
+### Co jest źle
+
+W `fasthub_core/` modele dziedziczą z DWÓCH różnych bazowych klas:
+
+**Używają `BaseModel`** (z auto UUID id + created_at + updated_at):
+- `fasthub_core/users/models.py` — User, Organization, Member
+- `fasthub_core/auth/models.py` — APIToken
+- `fasthub_core/billing/models.py` — Subscription, Invoice
+- `fasthub_core/notifications/models.py` — Notification, NotificationPreference
+
+**Używają gołego `Base`** (sami definiują id i timestamps):
+- `fasthub_core/rbac/models.py` — Permission, Role, RolePermission, UserRole
+- `fasthub_core/audit/models.py` — AuditLog
+
+### Dlaczego to problem
+
+Każdy kto pisze nowy moduł musi zgadywać: "użyć Base czy BaseModel?". Modele RBAC i Audit mają własne `id = Column(UUID...)` i `created_at = Column(DateTime...)` zamiast dziedziczyć z BaseModel. To duplikacja i ryzyko niespójności (np. audit nie ma `updated_at`).
+
+### Co zrobić
+
+1. Otwórz `fasthub_core/rbac/models.py`
+2. Zmień `from fasthub_core.db.session import Base` → `from fasthub_core.db.base import BaseModel`
+3. Zmień klasy: `class Permission(Base)` → `class Permission(BaseModel)`
+4. **Usuń** ręcznie definiowane pola `id` i `created_at` z Permission, Role, RolePermission, UserRole (bo BaseModel je daje automatycznie)
+5. Zostaw `updated_at` w Role (bo ma `onupdate`) — BaseModel też je ma, więc można usunąć
+
+Powtórz dla `fasthub_core/audit/models.py`:
+1. Zmień import na BaseModel
+2. Zmień `class AuditLog(Base)` → `class AuditLog(BaseModel)`
+3. Usuń ręczne `id` i `created_at`
+
+**UWAGA:** Po zmianach sprawdź czy migracja sync nie wymaga aktualizacji. BaseModel generuje `__tablename__` automatycznie (lowercase + "s"). AuditLog → `auditlogs` ≠ `audit_logs`. Dlatego w AuditLog ZACHOWAJ jawne `__tablename__ = "audit_logs"`.
+
+### Branch
+```bash
+git checkout -b fix/unified-base-model
+```
+
+### Testy
+```bash
+python -m pytest tests/ -v
+python -c "from fasthub_core.rbac.models import Permission, Role; print('RBAC OK')"
+python -c "from fasthub_core.audit.models import AuditLog; print('Audit OK')"
+```
+
+---
+
+## PROBLEM 2: RBAC nie podłączony do endpointów backendu
+
+### Co jest źle
+
+FastHub ma DWA systemy kontroli dostępu jednocześnie:
+
+**Stary system** (używany przez backend): `Member.role` = enum ADMIN/VIEWER
+```python
+# fasthub-backend/app/api/ — endpointy sprawdzają:
+if member.role != MemberRole.ADMIN:
+    raise HTTPException(403)
+```
+
+**Nowy system** (RBAC z Fazy 1.2): tabele `permissions`, `roles`, `user_roles` + middleware `require_permission("team.view_members")`
+
+Nowy system istnieje w kodzie ale ŻADEN endpoint go nie używa. Backend dalej patrzy na `member.role == ADMIN`.
+
+### Dlaczego to problem
+
+Gdy AutoFlow zacznie rejestrować swoje permissions (`processes.view`, `approvals.approve` itd.) — system RBAC musi działać end-to-end. Teraz jest martwy kod.
+
+### Co zrobić
+
+**To NIE jest "zamień stary na nowy od razu".** To wymaga:
+
+1. **Seed permissions przy starcie** — dodaj do `fasthub-backend/app/main.py` startup event:
+```python
+from fasthub_core.rbac.service import RBACService
+from fasthub_core.rbac.defaults import CORE_PERMISSIONS, SYSTEM_ROLES
+
+@app.on_event("startup")
+async def seed_rbac():
+    async for db in get_db():
+        rbac = RBACService(db)
+        await rbac.seed_permissions(CORE_PERMISSIONS)
+        # Nie seed ról — role tworzone per organizacja
+        break
+```
+
+2. **Przy tworzeniu organizacji — automatycznie twórz 3 role systemowe** (Owner, Admin, Member) i przypisz twórcę jako Owner.
+
+3. **Dodaj fallback** do `require_permission()` — jeśli user nie ma RBAC ról, sprawdź stary `Member.role`:
+```python
+# Jeśli user jest ADMIN w starym systemie → traktuj jak Owner w RBAC
+# Jeśli user jest VIEWER → traktuj jak Member w RBAC
+```
+
+4. **NIE usuwaj** starego `Member.role` — zostaw jako backward compatibility. RBAC jest dodatkowy.
+
+### Branch
+```bash
+git checkout -b fix/rbac-activation
+```
+
+### Zakres
+- `fasthub-backend/app/main.py` — startup seed
+- `fasthub_core/rbac/service.py` — metoda `setup_organization_roles(org_id)`
+- `fasthub_core/rbac/middleware.py` — fallback na stary Member.role
+
+---
+
+## PROBLEM 3: Kontrakt PermissionContract nieaktualny
+
+### Co jest źle
+
+`fasthub_core/contracts.py` mówi:
+```python
+"""UWAGA: Ten kontrakt będzie ROZSZERZONY w FastHub v2.0 (Advanced RBAC).
+Na razie mamy podstawowy system: admin / viewer."""
+```
+
+Ale RBAC JUŻ JEST zaimplementowany w Fazie 1.2. Kontrakt powinien to odzwierciedlać.
+
+### Co zrobić
+
+1. Zaktualizuj docstring PermissionContract — usuń "Na razie mamy podstawowy system"
+2. Dodaj brakujące metody do kontraktu:
+
+```python
+class PermissionContract(ABC):
+    """
+    Kontrakt uprawnień — RBAC z rolami i granularnymi permissions.
+    Zaimplementowany w Fazie 1.2.
+    """
+
+    @abstractmethod
+    async def check_permission(self, user_id: str, organization_id: str, permission: str, db) -> bool:
+        ...
+
+    @abstractmethod
+    async def get_user_permissions(self, user_id: str, organization_id: str, db) -> Set[str]:
+        ...
+
+    # NOWE — z RBAC Fazy 1.2:
+    @abstractmethod
+    async def assign_role(self, user_id: str, role_id: str, organization_id: str, db) -> None:
+        ...
+
+    @abstractmethod
+    async def create_custom_role(self, organization_id: str, name: str, permissions: List[str], db) -> Any:
+        ...
+
+    @abstractmethod
+    async def register_app_permissions(self, permissions: Dict[str, List[tuple]], db) -> None:
+        """Aplikacja (AutoFlow) rejestruje swoje permissions przy starcie"""
+        ...
+```
+
+3. Zaktualizuj `contracts_impl.py` — podepnij nowe metody do `RBACService`.
+
+### Branch
+Ten sam co Problem 2: `fix/rbac-activation`
+
+---
+
+## PROBLEM 4: Brak Event Bus w FastHub
+
+### Co jest źle
+
+AutoFlow ma Event Bus (Redis Pub/Sub z wildcard handlers, 6 typów eventów). FastHub tego nie ma. Gdy AutoFlow przejdzie na FastHub jako fundament — straci Event Bus chyba że go dostarczymy.
+
+### Co zrobić TERAZ
+
+**Nie buduj pełnego Event Bus teraz.** Zamiast tego:
+
+1. Dodaj kontrakt `EventBusContract` do `contracts.py`:
+```python
+class EventBusContract(ABC):
+    @abstractmethod
+    async def emit(self, event_type: str, data: dict) -> None: ...
+
+    @abstractmethod
+    async def on(self, event_pattern: str, handler: callable) -> None: ...
+```
+
+2. Dodaj stub w `contracts_impl.py` z `NotImplementedError`
+
+3. Zanotuj w `docs/CONTRACT_API.md` że Event Bus jest planowany na v2.1
+
+**Pełna implementacja** przyjdzie gdy AutoFlow zacznie integrację — wtedy przeniesiemy wzorzec z AutoFlow do fasthub_core.
+
+### Branch
+```bash
+git checkout -b fix/eventbus-contract
+```
+
+---
+
+## PROBLEM 5: Dwa pliki blacklist
+
+### Co jest źle
+
+`fasthub_core/auth/` ma DWA pliki z blacklistą:
+- `blacklist.py` — 114 linii
+- `token_blacklist.py` — 186 linii
+
+Jeden jest prawdopodobnie starszą wersją lub duplikatem.
+
+### Co zrobić
+
+1. Porównaj oba pliki — który jest kompletniejszy
+2. Zostaw jeden (nowszy/lepszy)
+3. Usuń drugi
+4. Zaktualizuj importy w `dependencies.py` i `routes.py`
+
+### Branch
+```bash
+git checkout -b fix/cleanup-blacklist
+```
+
+---
+
+## KOLEJNOŚĆ REALIZACJI
+
+| # | Problem | Trudność | Wpływ na AutoFlow |
+|---|---------|----------|-------------------|
+| 1 | Unified BaseModel | Mała | Porządek, ale nie blokuje |
+| 2 | RBAC activation | **Duża** | **KRYTYCZNY** — bez tego AutoFlow nie ma uprawnień |
+| 3 | PermissionContract update | Mała | Dokumentacyjny, ale ważny dla kontraktu |
+| 4 | EventBus contract | Mała | Placeholder, nie blokuje |
+| 5 | Cleanup blacklist | Mała | Porządek |
+
+**Rekomendacja:** Problemy 1, 3, 5 to szybkie porządki (1-2h). Problem 2 (RBAC activation) to 1-2 dni roboty ale KLUCZOWY — bez niego integracja AutoFlow z RBAC nie zadziała. Problem 4 to placeholder na przyszłość.
+
+**Sugerowany branch flow:**
+1. `fix/unified-base-model` → PR → merge
+2. `fix/cleanup-blacklist` → PR → merge
+3. `fix/rbac-activation` (zawiera też Problem 3) → PR → merge
+4. `fix/eventbus-contract` → PR → merge
+
+---
+
+*Dokument przygotowany przez Stratega, 2026-03-02*
+*Na podstawie analizy kodu FastHub v2.0 z GitHuba (commit 83c1aea)*

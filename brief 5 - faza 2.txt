@@ -1,0 +1,1089 @@
+# BRIEF DLA WYKONAWCY — FAZA 1, ZADANIE 2
+## Advanced RBAC — elastyczny system ról i uprawnień
+
+### Data: 2026-03-01
+### Zlecający: Strateg (Opus w projekcie Claude)
+### Wykonawca: Opus w Claude Code CLI
+### Repo: https://github.com/Piotr-KZ/Fasthub
+### Folder: C:\Projekty internetowe\Fasthub
+### Branch: feature/rbac
+
+---
+
+## KONTEKST
+
+FastHub v1.0 ma prostą kontrolę dostępu: admin albo member. To za mało dla profesjonalnego SaaS.
+
+**Problem:** W firmie Budimex (50 osób) sekretarka, kierownik projektu i dyrektor finansowy mają dzisiaj ten sam dostęp. Albo widzą wszystko (admin) albo nic (member). Nie ma niczego pomiędzy.
+
+**Rozwiązanie:** RBAC (Role-Based Access Control) — system gdzie tworzysz role (np. "Księgowy", "Kierownik", "Pracownik") i przypisujesz im konkretne uprawnienia (np. Księgowy może widzieć faktury ale nie może usuwać użytkowników).
+
+**Dlaczego to ważne:** AutoFlow ma 4 hardcoded role (system_admin, process_admin, department_mgr, employee). Po integracji z FastHub — AutoFlow zamapuje swoje role na elastyczny system FastHub RBAC. Inne aplikacje (CRM, HR) zrobią to samo ze swoimi rolami.
+
+---
+
+## CO ZROBIĆ — KROK PO KROKU
+
+### Krok 1: Przeczytaj istniejący kod
+
+Przeczytaj:
+- `fasthub_core/users/models.py` — model User, Organization, Member (jakie pola, jakie relacje)
+- `fasthub_core/auth/dependencies.py` — get_current_user (jak działa obecna autoryzacja)
+- `fasthub_core/admin/` — Super Admin (żeby wiedzieć jak wygląda wzorzec routes/service/schemas)
+- `fasthub_core/contracts.py` — PermissionContract (interfejs który obiecaliśmy)
+
+### Krok 2: Stwórz nowy branch
+
+```bash
+git checkout main
+git pull
+git checkout -b feature/rbac
+```
+
+### Krok 3: Stwórz modele bazy danych
+
+Nowy plik `fasthub_core/rbac/models.py`:
+
+```python
+"""
+Modele RBAC — Role, Permission, powiązania.
+
+Struktura:
+  Organization --has many--> Roles --has many--> Permissions
+  User --has many--> UserRoles --belongs to--> Role
+
+Każda organizacja ma SWOJE role (oprócz systemowych).
+Permissions są globalne — wspólne dla wszystkich organizacji.
+"""
+
+from sqlalchemy import Column, String, Boolean, ForeignKey, Table, Text, DateTime
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import relationship
+from datetime import datetime
+import uuid
+
+from fasthub_core.db.base import Base
+
+
+class Permission(Base):
+    """
+    Pojedyncze uprawnienie, np. "team.view_members" lub "billing.change_plan".
+    Permissions są GLOBALNE — nie per organizacja.
+    Aplikacja (AutoFlow, CRM) rejestruje swoje permissions przy starcie.
+    """
+    __tablename__ = "permissions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name = Column(String(100), unique=True, nullable=False, index=True)
+    # name format: "category.action" np. "team.view_members", "processes.edit"
+    category = Column(String(50), nullable=False, index=True)
+    # category: "team", "billing", "settings", "audit", "admin"
+    # Aplikacje dodają swoje: "processes", "approvals", "monitoring"
+    description = Column(Text, nullable=True)
+    is_system = Column(Boolean, default=False)
+    # is_system=True → nie można usunąć (core FastHub permissions)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class Role(Base):
+    """
+    Rola w organizacji, np. "Admin", "Księgowy", "Kierownik Projektu".
+    Każda organizacja może mieć własne role + role systemowe (wspólne).
+    """
+    __tablename__ = "roles"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id"), nullable=True)
+    # organization_id=NULL → rola systemowa (dostępna dla wszystkich org)
+    # organization_id=UUID → rola custom (tylko w tej organizacji)
+    name = Column(String(100), nullable=False)
+    description = Column(Text, nullable=True)
+    is_system = Column(Boolean, default=False)
+    # is_system=True → "Owner", "Admin", "Member" — nie można usunąć
+    is_default = Column(Boolean, default=False)
+    # is_default=True → nowi członkowie dostają tę rolę automatycznie
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    # Relacje
+    permissions = relationship("RolePermission", back_populates="role", cascade="all, delete-orphan")
+    user_roles = relationship("UserRole", back_populates="role", cascade="all, delete-orphan")
+
+
+class RolePermission(Base):
+    """Powiązanie Role ↔ Permission (many-to-many)"""
+    __tablename__ = "role_permissions"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    role_id = Column(UUID(as_uuid=True), ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
+    permission_id = Column(UUID(as_uuid=True), ForeignKey("permissions.id", ondelete="CASCADE"), nullable=False)
+
+    role = relationship("Role", back_populates="permissions")
+    permission = relationship("Permission")
+
+
+class UserRole(Base):
+    """Powiązanie User ↔ Role w kontekście organizacji"""
+    __tablename__ = "user_roles"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role_id = Column(UUID(as_uuid=True), ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
+    organization_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False)
+    assigned_at = Column(DateTime, default=datetime.utcnow)
+    assigned_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+
+    role = relationship("Role", back_populates="user_roles")
+```
+
+### Krok 4: Stwórz domyślne role i uprawnienia
+
+Nowy plik `fasthub_core/rbac/defaults.py`:
+
+```python
+"""
+Domyślne role i uprawnienia FastHub.
+Tworzone automatycznie przy pierwszym uruchomieniu lub przy tworzeniu nowej organizacji.
+
+Aplikacje (AutoFlow, CRM) ROZSZERZAJĄ te uprawnienia o swoje —
+nie zmieniają istniejących.
+"""
+
+# === UPRAWNIENIA BAZOWE FastHub ===
+# Format: "kategoria.akcja"
+
+CORE_PERMISSIONS = {
+    "team": [
+        ("team.view_members", "Podgląd listy członków organizacji"),
+        ("team.invite_member", "Zapraszanie nowych członków"),
+        ("team.remove_member", "Usuwanie członków z organizacji"),
+        ("team.change_roles", "Zmiana ról członków"),
+    ],
+    "billing": [
+        ("billing.view_plans", "Podgląd dostępnych planów"),
+        ("billing.change_plan", "Zmiana planu subskrypcji"),
+        ("billing.view_invoices", "Podgląd faktur"),
+        ("billing.manage_addons", "Zarządzanie dodatkami do planu"),
+    ],
+    "settings": [
+        ("settings.view", "Podgląd ustawień organizacji"),
+        ("settings.edit", "Edycja ustawień organizacji"),
+        ("settings.manage_integrations", "Zarządzanie integracjami"),
+    ],
+    "audit": [
+        ("audit.view_log", "Podgląd logów aktywności"),
+        ("audit.export_log", "Eksport logów do CSV/PDF"),
+    ],
+}
+
+# === ROLE SYSTEMOWE ===
+# Tworzone dla KAŻDEJ nowej organizacji
+
+SYSTEM_ROLES = {
+    "owner": {
+        "name": "Owner",
+        "description": "Właściciel organizacji — pełne uprawnienia",
+        "is_system": True,
+        "is_default": False,
+        "permissions": "*",  # WSZYSTKIE uprawnienia
+    },
+    "admin": {
+        "name": "Admin",
+        "description": "Administrator — zarządza zespołem i ustawieniami",
+        "is_system": True,
+        "is_default": False,
+        "permissions": [
+            "team.view_members", "team.invite_member", "team.remove_member", "team.change_roles",
+            "billing.view_plans", "billing.view_invoices",
+            "settings.view", "settings.edit", "settings.manage_integrations",
+            "audit.view_log",
+        ],
+    },
+    "member": {
+        "name": "Member",
+        "description": "Zwykły członek — podstawowe uprawnienia",
+        "is_system": True,
+        "is_default": True,  # Nowi członkowie dostają tę rolę
+        "permissions": [
+            "team.view_members",
+            "billing.view_plans",
+            "settings.view",
+        ],
+    },
+}
+
+
+def get_all_core_permission_names() -> list:
+    """Zwraca flat listę nazw wszystkich bazowych uprawnień"""
+    result = []
+    for category, perms in CORE_PERMISSIONS.items():
+        for name, description in perms:
+            result.append(name)
+    return result
+```
+
+### Krok 5: Stwórz serwis RBAC
+
+Nowy plik `fasthub_core/rbac/service.py`:
+
+```python
+"""
+Logika RBAC — sprawdzanie uprawnień, przypisywanie ról, seedowanie.
+To jest SERCE systemu uprawnień.
+"""
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, delete
+from typing import Optional, Set, List
+from uuid import UUID
+
+from fasthub_core.rbac.models import Permission, Role, RolePermission, UserRole
+from fasthub_core.rbac.defaults import CORE_PERMISSIONS, SYSTEM_ROLES
+
+
+class RBACService:
+    """Serwis zarządzania rolami i uprawnieniami"""
+
+    def __init__(self, db: AsyncSession):
+        self.db = db
+
+    # === SPRAWDZANIE UPRAWNIEŃ ===
+
+    async def check_permission(
+        self, user_id: UUID, organization_id: UUID, permission: str
+    ) -> bool:
+        """
+        Sprawdza czy user ma dane uprawnienie w organizacji.
+        Używane jako: if await rbac.check_permission(user.id, org.id, "processes.edit"):
+        
+        Logika:
+        1. Pobierz wszystkie role usera w tej organizacji
+        2. Pobierz wszystkie permissions tych ról
+        3. Sprawdź czy szukane permission jest w zbiorze
+        """
+        permissions = await self.get_user_permissions(user_id, organization_id)
+        return permission in permissions
+
+    async def get_user_permissions(
+        self, user_id: UUID, organization_id: UUID
+    ) -> Set[str]:
+        """
+        Zwraca ZBIÓR wszystkich uprawnień usera w organizacji.
+        Agreguje permissions ze WSZYSTKICH ról usera.
+        """
+        # Pobierz role usera w tej organizacji
+        query = (
+            select(Permission.name)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(Role, Role.id == RolePermission.role_id)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(
+                UserRole.user_id == user_id,
+                UserRole.organization_id == organization_id,
+            )
+        )
+        result = await self.db.execute(query)
+        return set(result.scalars().all())
+
+    async def get_user_roles(
+        self, user_id: UUID, organization_id: UUID
+    ) -> List[dict]:
+        """Zwraca listę ról usera w organizacji"""
+        query = (
+            select(Role)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(
+                UserRole.user_id == user_id,
+                UserRole.organization_id == organization_id,
+            )
+        )
+        result = await self.db.execute(query)
+        roles = result.scalars().all()
+        return [{"id": r.id, "name": r.name, "is_system": r.is_system} for r in roles]
+
+    # === ZARZĄDZANIE ROLAMI ===
+
+    async def assign_role(
+        self,
+        user_id: UUID,
+        role_id: UUID,
+        organization_id: UUID,
+        assigned_by: Optional[UUID] = None,
+    ) -> UserRole:
+        """Przypisz rolę użytkownikowi w organizacji"""
+        # Sprawdź czy już nie ma tej roli
+        existing = await self.db.execute(
+            select(UserRole).where(
+                UserRole.user_id == user_id,
+                UserRole.role_id == role_id,
+                UserRole.organization_id == organization_id,
+            )
+        )
+        if existing.scalar_one_or_none():
+            return None  # Już ma tę rolę
+
+        user_role = UserRole(
+            user_id=user_id,
+            role_id=role_id,
+            organization_id=organization_id,
+            assigned_by=assigned_by,
+        )
+        self.db.add(user_role)
+        await self.db.flush()
+        return user_role
+
+    async def remove_role(
+        self, user_id: UUID, role_id: UUID, organization_id: UUID
+    ) -> bool:
+        """Usuń rolę użytkownikowi"""
+        result = await self.db.execute(
+            delete(UserRole).where(
+                UserRole.user_id == user_id,
+                UserRole.role_id == role_id,
+                UserRole.organization_id == organization_id,
+            )
+        )
+        return result.rowcount > 0
+
+    async def create_custom_role(
+        self,
+        organization_id: UUID,
+        name: str,
+        description: str,
+        permission_names: List[str],
+    ) -> Role:
+        """
+        Tworzy nową rolę custom w organizacji.
+        Np. firma Budimex tworzy rolę "Kierownik Budowy" z uprawnieniami
+        do procesów i monitoringu ale bez dostępu do billingu.
+        """
+        role = Role(
+            organization_id=organization_id,
+            name=name,
+            description=description,
+            is_system=False,
+        )
+        self.db.add(role)
+        await self.db.flush()
+
+        # Przypisz permissions
+        for perm_name in permission_names:
+            perm = await self.db.execute(
+                select(Permission).where(Permission.name == perm_name)
+            )
+            perm = perm.scalar_one_or_none()
+            if perm:
+                rp = RolePermission(role_id=role.id, permission_id=perm.id)
+                self.db.add(rp)
+
+        await self.db.flush()
+        return role
+
+    async def update_role_permissions(
+        self, role_id: UUID, permission_names: List[str]
+    ) -> None:
+        """Nadpisz permissions roli (usuń stare, dodaj nowe)"""
+        # Sprawdź czy rola nie jest systemowa
+        role = await self.db.get(Role, role_id)
+        if role and role.is_system:
+            raise ValueError("Nie można modyfikować uprawnień roli systemowej")
+
+        # Usuń stare
+        await self.db.execute(
+            delete(RolePermission).where(RolePermission.role_id == role_id)
+        )
+
+        # Dodaj nowe
+        for perm_name in permission_names:
+            perm = await self.db.execute(
+                select(Permission).where(Permission.name == perm_name)
+            )
+            perm = perm.scalar_one_or_none()
+            if perm:
+                rp = RolePermission(role_id=role_id, permission_id=perm.id)
+                self.db.add(rp)
+
+        await self.db.flush()
+
+    async def delete_role(self, role_id: UUID) -> bool:
+        """Usuń rolę custom (systemowych nie można usunąć)"""
+        role = await self.db.get(Role, role_id)
+        if not role:
+            return False
+        if role.is_system:
+            raise ValueError("Nie można usunąć roli systemowej")
+
+        await self.db.delete(role)
+        await self.db.flush()
+        return True
+
+    async def list_organization_roles(self, organization_id: UUID) -> List[Role]:
+        """Lista ról dostępnych w organizacji (systemowe + custom)"""
+        query = select(Role).where(
+            (Role.organization_id == organization_id) | (Role.organization_id.is_(None))
+        ).order_by(Role.is_system.desc(), Role.name)
+        result = await self.db.execute(query)
+        return result.scalars().all()
+
+    async def list_permissions(self, category: Optional[str] = None) -> List[Permission]:
+        """Lista wszystkich uprawnień (opcjonalnie filtr po kategorii)"""
+        query = select(Permission)
+        if category:
+            query = query.where(Permission.category == category)
+        query = query.order_by(Permission.category, Permission.name)
+        result = await self.db.execute(query)
+        return result.scalars().all()
+
+    # === SEEDOWANIE ===
+
+    async def seed_permissions(self, extra_permissions: dict = None) -> None:
+        """
+        Tworzy bazowe uprawnienia w bazie danych.
+        Wywoływane przy starcie aplikacji.
+
+        extra_permissions: dodatkowe uprawnienia z aplikacji
+        Np. AutoFlow dodaje:
+        {
+            "processes": [
+                ("processes.view", "Podgląd procesów"),
+                ("processes.create", "Tworzenie procesów"),
+            ],
+            "approvals": [
+                ("approvals.approve", "Zatwierdzanie"),
+            ],
+        }
+        """
+        all_permissions = dict(CORE_PERMISSIONS)
+        if extra_permissions:
+            all_permissions.update(extra_permissions)
+
+        for category, perms in all_permissions.items():
+            for name, description in perms:
+                existing = await self.db.execute(
+                    select(Permission).where(Permission.name == name)
+                )
+                if not existing.scalar_one_or_none():
+                    perm = Permission(
+                        name=name,
+                        category=category,
+                        description=description,
+                        is_system=(category in CORE_PERMISSIONS),
+                    )
+                    self.db.add(perm)
+
+        await self.db.commit()
+
+    async def seed_organization_roles(self, organization_id: UUID) -> None:
+        """
+        Tworzy domyślne role systemowe dla nowej organizacji.
+        Wywoływane przy tworzeniu organizacji.
+        """
+        all_perm_names = []
+        for category, perms in CORE_PERMISSIONS.items():
+            for name, desc in perms:
+                all_perm_names.append(name)
+
+        for role_key, role_def in SYSTEM_ROLES.items():
+            # Sprawdź czy rola już istnieje
+            existing = await self.db.execute(
+                select(Role).where(
+                    Role.organization_id == organization_id,
+                    Role.name == role_def["name"],
+                    Role.is_system == True,
+                )
+            )
+            if existing.scalar_one_or_none():
+                continue
+
+            role = Role(
+                organization_id=organization_id,
+                name=role_def["name"],
+                description=role_def["description"],
+                is_system=role_def["is_system"],
+                is_default=role_def["is_default"],
+            )
+            self.db.add(role)
+            await self.db.flush()
+
+            # Przypisz permissions
+            if role_def["permissions"] == "*":
+                perm_names = all_perm_names
+            else:
+                perm_names = role_def["permissions"]
+
+            for perm_name in perm_names:
+                perm = await self.db.execute(
+                    select(Permission).where(Permission.name == perm_name)
+                )
+                perm = perm.scalar_one_or_none()
+                if perm:
+                    rp = RolePermission(role_id=role.id, permission_id=perm.id)
+                    self.db.add(rp)
+
+        await self.db.commit()
+
+    async def register_app_permissions(self, app_permissions: dict) -> None:
+        """
+        Rejestruje uprawnienia specyficzne dla aplikacji.
+        Wywoływane przy starcie aplikacji (np. AutoFlow).
+
+        Przykład:
+        await rbac.register_app_permissions({
+            "processes": [
+                ("processes.view", "Podgląd procesów"),
+                ("processes.create", "Tworzenie procesów"),
+                ("processes.edit", "Edycja procesów"),
+                ("processes.delete", "Usuwanie procesów"),
+                ("processes.execute", "Uruchamianie procesów"),
+            ],
+            "approvals": [
+                ("approvals.approve", "Zatwierdzanie kroków"),
+                ("approvals.reject", "Odrzucanie kroków"),
+                ("approvals.delegate", "Delegowanie akceptacji"),
+                ("approvals.view_pending", "Podgląd oczekujących"),
+            ],
+        })
+        """
+        await self.seed_permissions(extra_permissions=app_permissions)
+```
+
+### Krok 6: Stwórz middleware (dependency)
+
+Nowy plik `fasthub_core/rbac/middleware.py`:
+
+```python
+"""
+FastAPI dependency do sprawdzania uprawnień w endpointach.
+
+Użycie:
+  @router.get("/processes", dependencies=[Depends(require_permission("processes.view"))])
+  async def list_processes(...):
+      ...
+
+  # Lub z dostępem do usera:
+  @router.post("/processes")
+  async def create_process(user = Depends(require_permission("processes.create"))):
+      ...
+"""
+
+from fastapi import Depends, HTTPException, status, Request
+from sqlalchemy.ext.asyncio import AsyncSession
+from functools import wraps
+
+from fasthub_core.db.session import get_db
+from fasthub_core.auth.dependencies import get_current_user
+from fasthub_core.rbac.service import RBACService
+
+
+def require_permission(permission: str):
+    """
+    Factory function — tworzy dependency które sprawdza uprawnienie.
+    
+    Parametr permission: np. "processes.edit", "billing.change_plan"
+    
+    Logika:
+    1. Pobierz zalogowanego usera (z JWT tokenu)
+    2. Pobierz organization_id z headera X-Organization-Id lub z tokenu
+    3. Sprawdź czy user ma permission w tej organizacji
+    4. Jeśli nie — 403 Forbidden
+    5. Jeśli tak — zwróć usera
+    """
+    async def _check_permission(
+        request: Request,
+        current_user = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
+    ):
+        # Pobierz organization_id — z headera lub z tokenu
+        org_id = request.headers.get("X-Organization-Id")
+        if not org_id:
+            # Spróbuj z tokenu/usera
+            org_id = getattr(current_user, 'organization_id', None)
+        
+        if not org_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Brak X-Organization-Id header"
+            )
+        
+        # Super Admin omija sprawdzanie uprawnień
+        if getattr(current_user, 'is_superadmin', False):
+            return current_user
+        
+        # Sprawdź uprawnienie
+        rbac = RBACService(db)
+        has_permission = await rbac.check_permission(
+            user_id=current_user.id,
+            organization_id=org_id,
+            permission=permission,
+        )
+        
+        if not has_permission:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Brak uprawnienia: {permission}"
+            )
+        
+        return current_user
+    
+    return _check_permission
+```
+
+### Krok 7: Stwórz schemas i routes
+
+**Nowy plik `fasthub_core/rbac/schemas.py`:**
+
+```python
+"""Pydantic schemas dla RBAC API"""
+
+from pydantic import BaseModel
+from typing import List, Optional
+from uuid import UUID
+from datetime import datetime
+
+
+class PermissionResponse(BaseModel):
+    id: UUID
+    name: str
+    category: str
+    description: Optional[str] = None
+    is_system: bool
+
+    class Config:
+        from_attributes = True
+
+
+class RoleResponse(BaseModel):
+    id: UUID
+    name: str
+    description: Optional[str] = None
+    is_system: bool
+    is_default: bool
+    permissions: List[str] = []  # Lista nazw permissions
+
+    class Config:
+        from_attributes = True
+
+
+class RoleCreateRequest(BaseModel):
+    name: str
+    description: Optional[str] = None
+    permissions: List[str]  # Lista nazw permissions np. ["team.view_members", "billing.view_plans"]
+
+
+class RoleUpdateRequest(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    permissions: Optional[List[str]] = None
+
+
+class AssignRoleRequest(BaseModel):
+    user_id: UUID
+    role_id: UUID
+
+
+class UserPermissionsResponse(BaseModel):
+    user_id: UUID
+    organization_id: UUID
+    roles: List[RoleResponse]
+    permissions: List[str]  # Flat lista wszystkich permissions
+```
+
+**Nowy plik `fasthub_core/rbac/routes.py`:**
+
+```python
+"""
+API endpoints RBAC.
+Zarządzanie rolami i uprawnieniami w organizacji.
+Prefix: /api/rbac
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
+from typing import Optional
+
+from fasthub_core.db.session import get_db
+from fasthub_core.auth.dependencies import get_current_user
+from fasthub_core.rbac.service import RBACService
+from fasthub_core.rbac.middleware import require_permission
+from fasthub_core.rbac.schemas import (
+    PermissionResponse, RoleResponse, RoleCreateRequest,
+    RoleUpdateRequest, AssignRoleRequest, UserPermissionsResponse,
+)
+
+router = APIRouter(prefix="/api/rbac", tags=["RBAC"])
+
+
+# === PERMISSIONS ===
+
+@router.get("/permissions", response_model=list[PermissionResponse])
+async def list_permissions(
+    category: Optional[str] = Query(None, description="Filtr po kategorii np. 'team', 'billing'"),
+    current_user = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista wszystkich dostępnych uprawnień"""
+    rbac = RBACService(db)
+    permissions = await rbac.list_permissions(category=category)
+    return permissions
+
+
+# === ROLES ===
+
+@router.get("/roles", response_model=list[RoleResponse])
+async def list_roles(
+    organization_id: UUID = Query(..., description="ID organizacji"),
+    current_user = Depends(require_permission("team.view_members")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista ról w organizacji (systemowe + custom)"""
+    rbac = RBACService(db)
+    roles = await rbac.list_organization_roles(organization_id)
+    
+    # Dodaj nazwy permissions do każdej roli
+    result = []
+    for role in roles:
+        perm_names = []
+        for rp in role.permissions:
+            perm = await db.get(type(rp.permission), rp.permission_id) if rp.permission else None
+            if perm:
+                perm_names.append(perm.name)
+        result.append(RoleResponse(
+            id=role.id,
+            name=role.name,
+            description=role.description,
+            is_system=role.is_system,
+            is_default=role.is_default,
+            permissions=perm_names,
+        ))
+    
+    return result
+
+
+@router.post("/roles", response_model=RoleResponse, status_code=201)
+async def create_role(
+    organization_id: UUID,
+    request: RoleCreateRequest,
+    current_user = Depends(require_permission("team.change_roles")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stwórz nową rolę custom w organizacji"""
+    rbac = RBACService(db)
+    role = await rbac.create_custom_role(
+        organization_id=organization_id,
+        name=request.name,
+        description=request.description,
+        permission_names=request.permissions,
+    )
+    await db.commit()
+    return RoleResponse(
+        id=role.id,
+        name=role.name,
+        description=role.description,
+        is_system=role.is_system,
+        is_default=role.is_default,
+        permissions=request.permissions,
+    )
+
+
+@router.put("/roles/{role_id}")
+async def update_role(
+    role_id: UUID,
+    request: RoleUpdateRequest,
+    current_user = Depends(require_permission("team.change_roles")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Aktualizuj rolę (tylko custom, nie systemowe)"""
+    rbac = RBACService(db)
+    role = await db.get(type(Role), role_id)
+    if not role:
+        raise HTTPException(status_code=404, detail="Rola nie znaleziona")
+    if role.is_system:
+        raise HTTPException(status_code=403, detail="Nie można edytować roli systemowej")
+    
+    if request.name:
+        role.name = request.name
+    if request.description is not None:
+        role.description = request.description
+    if request.permissions is not None:
+        await rbac.update_role_permissions(role_id, request.permissions)
+    
+    await db.commit()
+    return {"status": "updated"}
+
+
+@router.delete("/roles/{role_id}")
+async def delete_role(
+    role_id: UUID,
+    current_user = Depends(require_permission("team.change_roles")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Usuń rolę custom (systemowych nie można usunąć)"""
+    rbac = RBACService(db)
+    try:
+        deleted = await rbac.delete_role(role_id)
+    except ValueError as e:
+        raise HTTPException(status_code=403, detail=str(e))
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Rola nie znaleziona")
+    await db.commit()
+    return {"status": "deleted"}
+
+
+# === USER-ROLE ASSIGNMENTS ===
+
+@router.post("/assign")
+async def assign_role_to_user(
+    request: AssignRoleRequest,
+    organization_id: UUID = Query(...),
+    current_user = Depends(require_permission("team.change_roles")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Przypisz rolę użytkownikowi w organizacji"""
+    rbac = RBACService(db)
+    result = await rbac.assign_role(
+        user_id=request.user_id,
+        role_id=request.role_id,
+        organization_id=organization_id,
+        assigned_by=current_user.id,
+    )
+    if result is None:
+        raise HTTPException(status_code=409, detail="Użytkownik już ma tę rolę")
+    await db.commit()
+    return {"status": "assigned"}
+
+
+@router.post("/unassign")
+async def unassign_role_from_user(
+    request: AssignRoleRequest,
+    organization_id: UUID = Query(...),
+    current_user = Depends(require_permission("team.change_roles")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Usuń rolę użytkownikowi"""
+    rbac = RBACService(db)
+    removed = await rbac.remove_role(
+        user_id=request.user_id,
+        role_id=request.role_id,
+        organization_id=organization_id,
+    )
+    if not removed:
+        raise HTTPException(status_code=404, detail="Użytkownik nie ma tej roli")
+    await db.commit()
+    return {"status": "unassigned"}
+
+
+# === USER PERMISSIONS CHECK ===
+
+@router.get("/user-permissions", response_model=UserPermissionsResponse)
+async def get_user_permissions(
+    user_id: UUID = Query(...),
+    organization_id: UUID = Query(...),
+    current_user = Depends(require_permission("team.view_members")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Pobierz wszystkie role i uprawnienia użytkownika w organizacji"""
+    rbac = RBACService(db)
+    roles = await rbac.get_user_roles(user_id, organization_id)
+    permissions = await rbac.get_user_permissions(user_id, organization_id)
+    return UserPermissionsResponse(
+        user_id=user_id,
+        organization_id=organization_id,
+        roles=roles,
+        permissions=list(permissions),
+    )
+```
+
+### Krok 8: Stwórz `__init__.py`
+
+**`fasthub_core/rbac/__init__.py`:**
+```python
+from fasthub_core.rbac.routes import router as rbac_router
+from fasthub_core.rbac.service import RBACService
+from fasthub_core.rbac.middleware import require_permission
+from fasthub_core.rbac.defaults import CORE_PERMISSIONS, SYSTEM_ROLES
+
+__all__ = [
+    "rbac_router",
+    "RBACService",
+    "require_permission",
+    "CORE_PERMISSIONS",
+    "SYSTEM_ROLES",
+]
+```
+
+### Krok 9: Zaktualizuj eksporty w `fasthub_core/__init__.py`
+
+Dodaj:
+```python
+from fasthub_core.rbac import rbac_router, RBACService, require_permission
+```
+
+### Krok 10: Zaktualizuj PermissionContract w contracts_impl.py
+
+W `fasthub_core/contracts_impl.py` zaktualizuj implementację PermissionContract żeby używała RBACService zamiast starego check_permission.
+
+### Krok 11: Testy
+
+Stwórz `tests/test_rbac.py`:
+
+```python
+"""Testy RBAC"""
+
+def test_rbac_models_exist():
+    from fasthub_core.rbac.models import Permission, Role, RolePermission, UserRole
+    assert Permission is not None
+    assert Role is not None
+
+def test_rbac_service_exists():
+    from fasthub_core.rbac.service import RBACService
+    assert RBACService is not None
+    assert hasattr(RBACService, 'check_permission')
+    assert hasattr(RBACService, 'get_user_permissions')
+    assert hasattr(RBACService, 'assign_role')
+    assert hasattr(RBACService, 'create_custom_role')
+    assert hasattr(RBACService, 'seed_permissions')
+    assert hasattr(RBACService, 'register_app_permissions')
+
+def test_rbac_middleware():
+    from fasthub_core.rbac.middleware import require_permission
+    # require_permission zwraca callable (dependency)
+    dep = require_permission("team.view_members")
+    assert callable(dep)
+
+def test_rbac_defaults():
+    from fasthub_core.rbac.defaults import CORE_PERMISSIONS, SYSTEM_ROLES
+    # Musi mieć minimum te kategorie
+    assert "team" in CORE_PERMISSIONS
+    assert "billing" in CORE_PERMISSIONS
+    assert "settings" in CORE_PERMISSIONS
+    assert "audit" in CORE_PERMISSIONS
+    # Musi mieć 3 role systemowe
+    assert "owner" in SYSTEM_ROLES
+    assert "admin" in SYSTEM_ROLES
+    assert "member" in SYSTEM_ROLES
+    # Owner ma wszystkie permissions
+    assert SYSTEM_ROLES["owner"]["permissions"] == "*"
+    # Member jest domyślną rolą
+    assert SYSTEM_ROLES["member"]["is_default"] == True
+
+def test_rbac_router():
+    from fasthub_core.rbac.routes import router
+    assert router.prefix == "/api/rbac"
+    routes = [r for r in router.routes]
+    assert len(routes) >= 8  # permissions, roles CRUD, assign, unassign, user-perms
+
+def test_rbac_schemas():
+    from fasthub_core.rbac.schemas import (
+        PermissionResponse, RoleResponse, RoleCreateRequest,
+        AssignRoleRequest, UserPermissionsResponse,
+    )
+    # Test tworzenia roli wymaga name i permissions
+    req = RoleCreateRequest(
+        name="Kierownik Budowy",
+        permissions=["team.view_members", "processes.view", "processes.execute"]
+    )
+    assert req.name == "Kierownik Budowy"
+    assert len(req.permissions) == 3
+
+def test_permission_name_format():
+    """Wszystkie permissions muszą mieć format 'category.action'"""
+    from fasthub_core.rbac.defaults import CORE_PERMISSIONS
+    for category, perms in CORE_PERMISSIONS.items():
+        for name, description in perms:
+            assert "." in name, f"Brak '.' w permission: {name}"
+            assert name.startswith(category + "."), f"Permission {name} nie zaczyna się od {category}."
+
+def test_all_core_permission_names():
+    from fasthub_core.rbac.defaults import get_all_core_permission_names
+    names = get_all_core_permission_names()
+    assert len(names) >= 13  # minimum 13 bazowych permissions
+    assert "team.view_members" in names
+    assert "billing.change_plan" in names
+```
+
+Uruchom:
+```bash
+python -m pytest tests/test_rbac.py -v
+```
+
+### Krok 12: Commit i push
+
+```bash
+git add -A
+git commit -m "Faza 1.2: Advanced RBAC — modele, serwis, middleware, routes, defaults, testy"
+git push -u origin feature/rbac
+```
+
+---
+
+## CZEGO NIE ROBIĆ
+
+- ❌ NIE rób migracji Alembic — tylko kod, migracja osobno
+- ❌ NIE zmieniaj istniejących endpointów — RBAC jest DODATKOWY
+- ❌ NIE usuwaj starego pola `role` z modelu Member — zachowaj backward compatibility
+- ❌ NIE rób frontendu — tylko backend API
+- ❌ NIE hardcoduj permissions AutoFlow — to AutoFlow zarejestruje swoje przy starcie
+
+---
+
+## JAK AUTOFLOW TO WYKORZYSTA (informacja, nie do implementacji teraz)
+
+```python
+# autoflow/app/main.py — przy starcie aplikacji
+from fasthub_core.rbac import RBACService
+
+async def startup():
+    rbac = RBACService(db)
+    await rbac.register_app_permissions({
+        "processes": [
+            ("processes.view", "Podgląd procesów"),
+            ("processes.create", "Tworzenie procesów"),
+            ("processes.edit", "Edycja procesów"),
+            ("processes.delete", "Usuwanie procesów"),
+            ("processes.execute", "Uruchamianie procesów"),
+        ],
+        "approvals": [
+            ("approvals.approve", "Zatwierdzanie kroków"),
+            ("approvals.reject", "Odrzucanie kroków"),
+            ("approvals.delegate", "Delegowanie akceptacji"),
+            ("approvals.view_pending", "Podgląd oczekujących"),
+        ],
+        "monitoring": [
+            ("monitoring.view_executions", "Podgląd wykonań"),
+            ("monitoring.view_stats", "Podgląd statystyk"),
+            ("monitoring.cancel_execution", "Anulowanie wykonań"),
+        ],
+    })
+```
+
+---
+
+## DELIVERABLES
+
+1. **`fasthub_core/rbac/models.py`** — 4 modele: Permission, Role, RolePermission, UserRole
+2. **`fasthub_core/rbac/defaults.py`** — 13+ bazowych permissions, 3 role systemowe
+3. **`fasthub_core/rbac/service.py`** — RBACService z check_permission, assign_role, create_custom_role, seed
+4. **`fasthub_core/rbac/middleware.py`** — require_permission() dependency
+5. **`fasthub_core/rbac/schemas.py`** — Pydantic schemas
+6. **`fasthub_core/rbac/routes.py`** — 8+ endpointów: permissions list, roles CRUD, assign/unassign, user-permissions
+7. **`fasthub_core/rbac/__init__.py`** — eksporty
+8. **`tests/test_rbac.py`** — minimum 8 testów
+9. **Zaktualizowany contracts_impl.py** — PermissionContract → RBACService
+10. **Raport:** co działa, co wymaga seed (permissions muszą być w DB przed użyciem)
+11. **Git commit + push** na branchu `feature/rbac`
+
+---
+
+## UWAGI
+
+- Kod w briefie to WZÓR — dostosuj nazwy klas, importy, relacje do faktycznej struktury `fasthub_core/`
+- Jeśli model Member ma pole `role` (string) — zostaw je. RBAC jest DODATKOWY, nie zastępuje od razu
+- Jeśli `organizations.id` w bazie nie istnieje (bo to fasthub_core bez migracji) — stwórz modele ale nie rób migracji
+- Permission names MUSZĄ mieć format "category.action" — to konwencja
+- Super Admin (is_superadmin=True) OMIJA sprawdzanie RBAC — zawsze ma dostęp
+
+---
+
+*Brief #5 przygotowany przez Stratega, 2026-03-01*
+*Następny brief (Faza 1.3 — Audit Trail z before/after + retention) po odebraniu tego zadania*

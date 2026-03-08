@@ -1,0 +1,864 @@
+# BRIEF DLA WYKONAWCY — FAZA 1, ZADANIE 6
+## WebSocket Manager + Security Middleware + Request ID
+
+### Data: 2026-03-01
+### Zlecający: Strateg (Opus w projekcie Claude)
+### Wykonawca: Opus w Claude Code CLI
+### Repo: https://github.com/Piotr-KZ/Fasthub
+### Folder: C:\Projekty internetowe\Fasthub
+### Branch: feature/realtime-security
+
+---
+
+## KONTEKST
+
+Ten brief łączy trzy moduły które razem tworzą "warstwę produkcyjną" FastHub — rzeczy których każdy SaaS potrzebuje ale które nie są widoczne dla użytkownika końcowego.
+
+**1. WebSocket Manager** — real-time komunikacja. Bez tego powiadomienia in-app wymagają odświeżania strony. Z WebSocket — powiadomienie pojawia się natychmiast (jak na Slacku/Facebooku). AutoFlow ma już swój ws_manager — przenosimy koncept do FastHub jako uniwersalny moduł.
+
+**2. Security Headers Middleware** — ochrona przed XSS, clickjacking, MIME sniffing. Każdy response HTTP dostaje nagłówki bezpieczeństwa. Bez tego: przeglądarka pozwala na ataki. Z tym: przeglądarka blokuje je automatycznie.
+
+**3. Request ID Middleware** — każdy request dostaje UUID. Gdy user zgłasza "nie działa mi X" — support mówi "podaj request ID" i od razu znajduje ten konkretny request w logach. Bez tego: szukasz igły w stogu siana.
+
+---
+
+## CO ZROBIĆ — KROK PO KROKU
+
+### Krok 1: Przeczytaj istniejący kod
+
+Przeczytaj:
+- `fasthub_core/notifications/` — NotificationService (WebSocket będzie go rozszerzać)
+- `fasthub_core/config.py` — settings
+- `fasthub_core/contracts.py` — sprawdź czy jest RealtimeContract
+- Jeśli istnieje `fasthub_core/middleware/` — sprawdź co już jest
+
+Opcjonalnie przeczytaj AutoFlow ws_manager jako inspirację:
+- `C:\Projekty internetowe\autoflow\app\services\ws_manager.py` (jeśli dostępny)
+
+### Krok 2: Stwórz nowy branch
+
+```bash
+git checkout main
+git pull
+git checkout -b feature/realtime-security
+```
+
+---
+
+## MODUŁ A: WEBSOCKET MANAGER
+
+### Plik: `fasthub_core/realtime/manager.py`
+
+```python
+"""
+WebSocket Connection Manager — zarządzanie połączeniami real-time.
+
+Funkcje:
+1. Utrzymuje listę aktywnych połączeń per user per organization
+2. Wysyła wiadomości do konkretnego usera
+3. Broadcast do wszystkich userów w organizacji
+4. Heartbeat (ping/pong) — wykrywa martwe połączenia
+5. Automatyczny cleanup disconnected clients
+
+Architektura:
+  Browser ←→ WebSocket ←→ ConnectionManager ←→ NotificationService
+  
+  Gdy NotificationService tworzy powiadomienie in-app,
+  opcjonalnie wysyła je też przez WebSocket (jeśli user jest online).
+"""
+
+from fastapi import WebSocket, WebSocketDisconnect
+from typing import Dict, Set, Optional, Any
+from uuid import UUID
+from datetime import datetime
+import json
+import logging
+import asyncio
+
+logger = logging.getLogger(__name__)
+
+
+class ConnectionManager:
+    """
+    Zarządza połączeniami WebSocket.
+    
+    Struktura:
+    _connections = {
+        "org-uuid-1": {
+            "user-uuid-1": {websocket1, websocket2},  # User może mieć wiele tabów
+            "user-uuid-2": {websocket3},
+        },
+        "org-uuid-2": {
+            "user-uuid-3": {websocket4},
+        },
+    }
+    
+    _user_connections = {
+        "user-uuid-1": {websocket1, websocket2},  # Quick lookup per user (across orgs)
+    }
+    """
+
+    def __init__(self):
+        # org_id -> user_id -> set of websockets
+        self._connections: Dict[str, Dict[str, Set[WebSocket]]] = {}
+        # user_id -> set of websockets (flat, across orgs)
+        self._user_connections: Dict[str, Set[WebSocket]] = {}
+        # websocket -> metadata
+        self._metadata: Dict[WebSocket, dict] = {}
+
+    # === CONNECT / DISCONNECT ===
+
+    async def connect(
+        self,
+        websocket: WebSocket,
+        user_id: str,
+        organization_id: Optional[str] = None,
+    ) -> None:
+        """
+        Akceptuj nowe połączenie WebSocket.
+        Wywoływane gdy user otwiera stronę / apkę.
+        """
+        await websocket.accept()
+        
+        # Zapisz w strukturze org -> user -> websockets
+        if organization_id:
+            if organization_id not in self._connections:
+                self._connections[organization_id] = {}
+            if user_id not in self._connections[organization_id]:
+                self._connections[organization_id][user_id] = set()
+            self._connections[organization_id][user_id].add(websocket)
+        
+        # Zapisz w flat user lookup
+        if user_id not in self._user_connections:
+            self._user_connections[user_id] = set()
+        self._user_connections[user_id].add(websocket)
+        
+        # Metadata
+        self._metadata[websocket] = {
+            "user_id": user_id,
+            "organization_id": organization_id,
+            "connected_at": datetime.utcnow().isoformat(),
+        }
+        
+        logger.info(f"WebSocket connected: user={user_id}, org={organization_id}")
+
+    async def disconnect(self, websocket: WebSocket) -> None:
+        """Zamknij połączenie i wyczyść ze struktur"""
+        meta = self._metadata.pop(websocket, {})
+        user_id = meta.get("user_id")
+        org_id = meta.get("organization_id")
+        
+        # Usuń z org -> user -> websockets
+        if org_id and org_id in self._connections:
+            if user_id and user_id in self._connections[org_id]:
+                self._connections[org_id][user_id].discard(websocket)
+                if not self._connections[org_id][user_id]:
+                    del self._connections[org_id][user_id]
+            if not self._connections[org_id]:
+                del self._connections[org_id]
+        
+        # Usuń z flat user lookup
+        if user_id and user_id in self._user_connections:
+            self._user_connections[user_id].discard(websocket)
+            if not self._user_connections[user_id]:
+                del self._user_connections[user_id]
+        
+        logger.info(f"WebSocket disconnected: user={user_id}")
+
+    # === WYSYŁANIE ===
+
+    async def send_to_user(self, user_id: str, message: dict) -> int:
+        """
+        Wyślij wiadomość do WSZYSTKICH połączeń danego usera.
+        Zwraca liczbę połączeń do których wysłano.
+        
+        Użycie:
+        await manager.send_to_user("user-uuid", {
+            "type": "notification",
+            "data": {"title": "Nowe zaproszenie", "id": "notif-uuid"}
+        })
+        """
+        connections = self._user_connections.get(user_id, set())
+        sent = 0
+        dead = []
+        
+        for ws in connections:
+            try:
+                await ws.send_json(message)
+                sent += 1
+            except Exception:
+                dead.append(ws)
+        
+        # Cleanup dead connections
+        for ws in dead:
+            await self.disconnect(ws)
+        
+        return sent
+
+    async def broadcast_to_organization(
+        self, organization_id: str, message: dict, exclude_user: Optional[str] = None
+    ) -> int:
+        """
+        Broadcast do wszystkich userów w organizacji.
+        exclude_user: pomiń tego usera (np. autora zmiany)
+        
+        Użycie:
+        await manager.broadcast_to_organization("org-uuid", {
+            "type": "process_updated",
+            "data": {"process_id": "xxx", "status": "completed"}
+        }, exclude_user=str(current_user.id))
+        """
+        org_connections = self._connections.get(organization_id, {})
+        sent = 0
+        
+        for uid, websockets in list(org_connections.items()):
+            if exclude_user and uid == exclude_user:
+                continue
+            for ws in list(websockets):
+                try:
+                    await ws.send_json(message)
+                    sent += 1
+                except Exception:
+                    await self.disconnect(ws)
+        
+        return sent
+
+    async def broadcast_all(self, message: dict) -> int:
+        """Broadcast do WSZYSTKICH połączonych userów (np. maintenance notice)"""
+        sent = 0
+        for uid, websockets in list(self._user_connections.items()):
+            for ws in list(websockets):
+                try:
+                    await ws.send_json(message)
+                    sent += 1
+                except Exception:
+                    await self.disconnect(ws)
+        return sent
+
+    # === STATUS ===
+
+    def is_user_online(self, user_id: str) -> bool:
+        """Sprawdź czy user jest online (ma aktywne połączenie)"""
+        return user_id in self._user_connections and len(self._user_connections[user_id]) > 0
+
+    def get_online_users(self, organization_id: Optional[str] = None) -> list:
+        """Lista online userów (opcjonalnie w organizacji)"""
+        if organization_id:
+            org_connections = self._connections.get(organization_id, {})
+            return list(org_connections.keys())
+        return list(self._user_connections.keys())
+
+    def get_connection_count(self) -> dict:
+        """Statystyki połączeń"""
+        total_connections = sum(
+            len(ws_set) for ws_set in self._user_connections.values()
+        )
+        return {
+            "total_connections": total_connections,
+            "online_users": len(self._user_connections),
+            "organizations": len(self._connections),
+        }
+
+
+# === SINGLETON ===
+_manager_instance: Optional[ConnectionManager] = None
+
+
+def get_connection_manager() -> ConnectionManager:
+    """Zwraca globalną instancję ConnectionManager"""
+    global _manager_instance
+    if _manager_instance is None:
+        _manager_instance = ConnectionManager()
+    return _manager_instance
+```
+
+### WebSocket Route
+
+Nowy plik `fasthub_core/realtime/routes.py`:
+
+```python
+"""
+WebSocket endpoint.
+URL: /ws/{organization_id}
+
+Klient łączy się z tokenem JWT w query string:
+ws://localhost:8000/ws/org-uuid?token=eyJhbG...
+
+Protokół wiadomości:
+{
+    "type": "ping" | "subscribe" | "unsubscribe",
+    "data": {}
+}
+
+Odpowiedzi serwera:
+{
+    "type": "notification" | "broadcast" | "pong" | "error",
+    "data": {}
+}
+"""
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Query
+from typing import Optional
+
+from fasthub_core.realtime.manager import get_connection_manager
+
+router = APIRouter(tags=["WebSocket"])
+
+
+@router.websocket("/ws/{organization_id}")
+async def websocket_endpoint(
+    websocket: WebSocket,
+    organization_id: str,
+    token: Optional[str] = Query(None),
+):
+    """
+    Główny endpoint WebSocket.
+    Autentykacja przez JWT token w query string.
+    """
+    manager = get_connection_manager()
+    
+    # Autentykacja
+    user_id = None
+    if token:
+        try:
+            from fasthub_core.auth.service import decode_token
+            payload = decode_token(token)
+            user_id = payload.get("sub")
+        except Exception:
+            await websocket.close(code=4001, reason="Invalid token")
+            return
+    
+    if not user_id:
+        await websocket.close(code=4001, reason="Authentication required")
+        return
+    
+    # Connect
+    await manager.connect(websocket, user_id=user_id, organization_id=organization_id)
+    
+    try:
+        while True:
+            data = await websocket.receive_json()
+            msg_type = data.get("type", "")
+            
+            if msg_type == "ping":
+                await websocket.send_json({"type": "pong"})
+            
+            # Inne typy wiadomości można dodać w przyszłości
+            # np. "typing", "presence", "subscribe_channel"
+            
+    except WebSocketDisconnect:
+        await manager.disconnect(websocket)
+    except Exception as e:
+        await manager.disconnect(websocket)
+
+
+@router.websocket("/ws")
+async def websocket_endpoint_no_org(
+    websocket: WebSocket,
+    token: Optional[str] = Query(None),
+):
+    """WebSocket bez organizacji (np. Super Admin dashboard)"""
+    manager = get_connection_manager()
+    
+    user_id = None
+    if token:
+        try:
+            from fasthub_core.auth.service import decode_token
+            payload = decode_token(token)
+            user_id = payload.get("sub")
+        except Exception:
+            await websocket.close(code=4001, reason="Invalid token")
+            return
+    
+    if not user_id:
+        await websocket.close(code=4001, reason="Authentication required")
+        return
+    
+    await manager.connect(websocket, user_id=user_id)
+    
+    try:
+        while True:
+            data = await websocket.receive_json()
+            if data.get("type") == "ping":
+                await websocket.send_json({"type": "pong"})
+    except (WebSocketDisconnect, Exception):
+        await manager.disconnect(websocket)
+```
+
+### REST endpoint dla statusu
+
+Nowy plik `fasthub_core/realtime/status_routes.py`:
+
+```python
+"""REST endpointy do sprawdzania statusu WebSocket"""
+
+from fastapi import APIRouter, Depends
+
+from fasthub_core.auth.dependencies import get_current_user
+from fasthub_core.realtime.manager import get_connection_manager
+
+router = APIRouter(prefix="/api/realtime", tags=["Realtime"])
+
+
+@router.get("/status")
+async def get_realtime_status(current_user = Depends(get_current_user)):
+    """Statystyki połączeń WebSocket"""
+    manager = get_connection_manager()
+    return manager.get_connection_count()
+
+
+@router.get("/online-users")
+async def get_online_users(
+    organization_id: str = None,
+    current_user = Depends(get_current_user),
+):
+    """Lista online userów (opcjonalnie w organizacji)"""
+    manager = get_connection_manager()
+    users = manager.get_online_users(organization_id)
+    return {"online_users": users, "count": len(users)}
+```
+
+---
+
+## MODUŁ B: SECURITY HEADERS MIDDLEWARE
+
+### Plik: `fasthub_core/middleware/security_headers.py`
+
+```python
+"""
+Security Headers Middleware — dodaje nagłówki bezpieczeństwa do każdego response.
+
+Co chronią:
+- X-Content-Type-Options: nosniff → przeglądarka nie zgaduje typu pliku (MIME sniffing)
+- X-Frame-Options: DENY → strona nie może być osadzona w iframe (clickjacking)
+- X-XSS-Protection: 1; mode=block → przeglądarka blokuje wykryte ataki XSS
+- Strict-Transport-Security → wymusza HTTPS
+- Content-Security-Policy → kontroluje skąd mogą być ładowane zasoby
+- Referrer-Policy → kontroluje jakie dane wysyłane w Referer header
+- Permissions-Policy → kontroluje dostęp do API przeglądarki (kamera, mikrofon)
+
+Użycie:
+    from fasthub_core.middleware.security_headers import SecurityHeadersMiddleware
+    app.add_middleware(SecurityHeadersMiddleware)
+"""
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+from typing import Optional, Dict
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware dodający nagłówki bezpieczeństwa.
+    
+    Parametry:
+        csp: Content-Security-Policy (domyślnie: restrictive)
+        hsts: Strict-Transport-Security (domyślnie: 1 rok)
+        custom_headers: dodatkowe nagłówki (dict)
+    """
+
+    def __init__(
+        self,
+        app,
+        csp: Optional[str] = None,
+        hsts_max_age: int = 31536000,  # 1 rok
+        enable_hsts: bool = False,  # Domyślnie wyłączone (potrzebne SSL)
+        custom_headers: Optional[Dict[str, str]] = None,
+    ):
+        super().__init__(app)
+        self.hsts_max_age = hsts_max_age
+        self.enable_hsts = enable_hsts
+        self.custom_headers = custom_headers or {}
+        
+        # Domyślny CSP — restrykcyjny ale praktyczny
+        self.csp = csp or (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline' 'unsafe-eval'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: https:; "
+            "font-src 'self' https:; "
+            "connect-src 'self' wss: ws:; "
+            "frame-ancestors 'none'"
+        )
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        
+        # Zawsze dodawane
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=(), "
+            "payment=(), usb=(), magnetometer=()"
+        )
+        response.headers["Content-Security-Policy"] = self.csp
+        
+        # HSTS — tylko jeśli włączony (wymaga SSL)
+        if self.enable_hsts:
+            response.headers["Strict-Transport-Security"] = (
+                f"max-age={self.hsts_max_age}; includeSubDomains"
+            )
+        
+        # Custom headers
+        for key, value in self.custom_headers.items():
+            response.headers[key] = value
+        
+        return response
+```
+
+---
+
+## MODUŁ C: REQUEST ID MIDDLEWARE
+
+### Plik: `fasthub_core/middleware/request_id.py`
+
+```python
+"""
+Request ID Middleware — każdy request dostaje UUID.
+
+Jak to działa:
+1. Request przychodzi → middleware generuje UUID4
+2. UUID zapisywany w request.state.request_id
+3. UUID dodawany do response header X-Request-ID
+4. UUID dostępny w logach, audit trail, error reporting
+
+Dlaczego:
+- User mówi "nie działa" → support pyta o X-Request-ID
+- W logach szukasz tego UUID → od razu widzisz cały flow tego requestu
+- Sentry/monitoring grupuje errory po request_id
+
+Użycie:
+    from fasthub_core.middleware.request_id import RequestIDMiddleware
+    app.add_middleware(RequestIDMiddleware)
+    
+    # W endpoincie:
+    request_id = request.state.request_id
+"""
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+import uuid
+
+
+class RequestIDMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware dodający unique request ID.
+    
+    Parametry:
+        header_name: nazwa headera (domyślnie X-Request-ID)
+        trust_client: jeśli True, akceptuje X-Request-ID od klienta
+                      (przydatne gdy za load balancerem)
+    """
+
+    def __init__(self, app, header_name: str = "X-Request-ID", trust_client: bool = False):
+        super().__init__(app)
+        self.header_name = header_name
+        self.trust_client = trust_client
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        # Generuj lub użyj istniejący request ID
+        request_id = None
+        if self.trust_client:
+            request_id = request.headers.get(self.header_name)
+        
+        if not request_id:
+            request_id = str(uuid.uuid4())
+        
+        # Zapisz w request.state (dostępne w endpointach)
+        request.state.request_id = request_id
+        
+        # Wykonaj request
+        response = await call_next(request)
+        
+        # Dodaj do response header
+        response.headers[self.header_name] = request_id
+        
+        return response
+```
+
+---
+
+## Krok 3: `__init__.py` pliki
+
+**`fasthub_core/realtime/__init__.py`:**
+```python
+from fasthub_core.realtime.manager import ConnectionManager, get_connection_manager
+from fasthub_core.realtime.routes import router as ws_router
+from fasthub_core.realtime.status_routes import router as realtime_status_router
+
+__all__ = [
+    "ConnectionManager",
+    "get_connection_manager",
+    "ws_router",
+    "realtime_status_router",
+]
+```
+
+**`fasthub_core/middleware/__init__.py`:**
+```python
+from fasthub_core.middleware.security_headers import SecurityHeadersMiddleware
+from fasthub_core.middleware.request_id import RequestIDMiddleware
+
+__all__ = [
+    "SecurityHeadersMiddleware",
+    "RequestIDMiddleware",
+]
+```
+
+## Krok 4: Zaktualizuj eksporty w `fasthub_core/__init__.py`
+
+Dodaj:
+```python
+from fasthub_core.realtime import ConnectionManager, get_connection_manager, ws_router, realtime_status_router
+from fasthub_core.middleware import SecurityHeadersMiddleware, RequestIDMiddleware
+```
+
+## Krok 5: Zaktualizuj contracts_impl.py
+
+Jeśli jest RealtimeContract — podepnij do ConnectionManager.
+
+## Krok 6: Testy
+
+Stwórz `tests/test_realtime_security.py`:
+
+```python
+"""Testy WebSocket Manager, Security Headers, Request ID"""
+
+# === WEBSOCKET MANAGER ===
+
+def test_connection_manager_exists():
+    from fasthub_core.realtime.manager import ConnectionManager, get_connection_manager
+    manager = get_connection_manager()
+    assert isinstance(manager, ConnectionManager)
+
+def test_connection_manager_methods():
+    from fasthub_core.realtime.manager import ConnectionManager
+    assert hasattr(ConnectionManager, 'connect')
+    assert hasattr(ConnectionManager, 'disconnect')
+    assert hasattr(ConnectionManager, 'send_to_user')
+    assert hasattr(ConnectionManager, 'broadcast_to_organization')
+    assert hasattr(ConnectionManager, 'broadcast_all')
+    assert hasattr(ConnectionManager, 'is_user_online')
+    assert hasattr(ConnectionManager, 'get_online_users')
+    assert hasattr(ConnectionManager, 'get_connection_count')
+
+def test_connection_manager_initial_state():
+    from fasthub_core.realtime.manager import ConnectionManager
+    manager = ConnectionManager()
+    stats = manager.get_connection_count()
+    assert stats["total_connections"] == 0
+    assert stats["online_users"] == 0
+    assert stats["organizations"] == 0
+
+def test_is_user_online_false():
+    from fasthub_core.realtime.manager import ConnectionManager
+    manager = ConnectionManager()
+    assert manager.is_user_online("nonexistent-user") == False
+
+def test_get_online_users_empty():
+    from fasthub_core.realtime.manager import ConnectionManager
+    manager = ConnectionManager()
+    assert manager.get_online_users() == []
+    assert manager.get_online_users("some-org") == []
+
+def test_ws_router():
+    from fasthub_core.realtime.routes import router
+    # WebSocket routes nie mają prefix w ten sam sposób
+    assert router is not None
+
+def test_realtime_status_router():
+    from fasthub_core.realtime.status_routes import router
+    assert router.prefix == "/api/realtime"
+
+# === SECURITY HEADERS MIDDLEWARE ===
+
+def test_security_headers_middleware_exists():
+    from fasthub_core.middleware.security_headers import SecurityHeadersMiddleware
+    assert SecurityHeadersMiddleware is not None
+
+import pytest
+from starlette.testclient import TestClient
+from starlette.applications import Starlette
+from starlette.responses import PlainTextResponse
+from starlette.routing import Route
+
+def _create_test_app_with_security():
+    from fasthub_core.middleware.security_headers import SecurityHeadersMiddleware
+    
+    async def homepage(request):
+        return PlainTextResponse("OK")
+    
+    app = Starlette(routes=[Route("/", homepage)])
+    app.add_middleware(SecurityHeadersMiddleware)
+    return app
+
+def test_security_headers_present():
+    app = _create_test_app_with_security()
+    client = TestClient(app)
+    response = client.get("/")
+    
+    assert response.headers.get("X-Content-Type-Options") == "nosniff"
+    assert response.headers.get("X-Frame-Options") == "DENY"
+    assert response.headers.get("X-XSS-Protection") == "1; mode=block"
+    assert "Referrer-Policy" in response.headers
+    assert "Permissions-Policy" in response.headers
+    assert "Content-Security-Policy" in response.headers
+
+def test_security_headers_no_hsts_by_default():
+    app = _create_test_app_with_security()
+    client = TestClient(app)
+    response = client.get("/")
+    # HSTS domyślnie wyłączony
+    assert "Strict-Transport-Security" not in response.headers
+
+def test_security_headers_csp_allows_websocket():
+    app = _create_test_app_with_security()
+    client = TestClient(app)
+    response = client.get("/")
+    csp = response.headers.get("Content-Security-Policy", "")
+    assert "wss:" in csp or "ws:" in csp  # CSP musi pozwalać na WebSocket
+
+# === REQUEST ID MIDDLEWARE ===
+
+def test_request_id_middleware_exists():
+    from fasthub_core.middleware.request_id import RequestIDMiddleware
+    assert RequestIDMiddleware is not None
+
+def _create_test_app_with_request_id():
+    from fasthub_core.middleware.request_id import RequestIDMiddleware
+    
+    async def homepage(request):
+        rid = getattr(request.state, 'request_id', 'none')
+        return PlainTextResponse(f"Request ID: {rid}")
+    
+    app = Starlette(routes=[Route("/", homepage)])
+    app.add_middleware(RequestIDMiddleware)
+    return app
+
+def test_request_id_in_response_header():
+    app = _create_test_app_with_request_id()
+    client = TestClient(app)
+    response = client.get("/")
+    
+    assert "X-Request-ID" in response.headers
+    request_id = response.headers["X-Request-ID"]
+    # Powinien być UUID
+    assert len(request_id) == 36  # UUID format: 8-4-4-4-12
+    assert request_id.count("-") == 4
+
+def test_request_id_unique_per_request():
+    app = _create_test_app_with_request_id()
+    client = TestClient(app)
+    
+    r1 = client.get("/")
+    r2 = client.get("/")
+    
+    id1 = r1.headers["X-Request-ID"]
+    id2 = r2.headers["X-Request-ID"]
+    assert id1 != id2  # Każdy request ma inny ID
+
+def test_request_id_in_request_state():
+    app = _create_test_app_with_request_id()
+    client = TestClient(app)
+    response = client.get("/")
+    
+    # Endpoint powinien mieć dostęp do request_id
+    assert "Request ID:" in response.text
+    assert "none" not in response.text
+
+# === INIT IMPORTS ===
+
+def test_realtime_init():
+    from fasthub_core.realtime import ConnectionManager, get_connection_manager
+    assert ConnectionManager is not None
+    assert callable(get_connection_manager)
+
+def test_middleware_init():
+    from fasthub_core.middleware import SecurityHeadersMiddleware, RequestIDMiddleware
+    assert SecurityHeadersMiddleware is not None
+    assert RequestIDMiddleware is not None
+```
+
+Uruchom:
+```bash
+pip install starlette httpx --break-system-packages  # Jeśli brakuje
+python -m pytest tests/test_realtime_security.py -v
+```
+
+### Krok 7: Commit i push
+
+```bash
+git add -A
+git commit -m "Faza 1.6: WebSocket Manager, Security Headers, Request ID middleware"
+git push -u origin feature/realtime-security
+```
+
+---
+
+## CZEGO NIE ROBIĆ
+
+- ❌ NIE rób WebSocket scalowania (Redis pub/sub dla multi-server) — to v2.1+
+- ❌ NIE rób heartbeat/ping cron — prostsze rozwiązanie: cleanup przy disconnect
+- ❌ NIE włączaj HSTS domyślnie — wymaga SSL, łamie dev environment
+- ❌ NIE rób middleware logującego ciało requestu — to privacy concern
+- ❌ NIE integruj WebSocket z NotificationService w tym briefie — to osobny krok
+
+---
+
+## JAK AUTOFLOW TO WYKORZYSTA (informacja)
+
+```python
+# autoflow/app/main.py
+from fasthub_core.middleware import SecurityHeadersMiddleware, RequestIDMiddleware
+from fasthub_core.realtime import ws_router, realtime_status_router
+
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestIDMiddleware)
+app.include_router(ws_router)
+app.include_router(realtime_status_router)
+
+# autoflow/app/services/process_engine.py
+from fasthub_core.realtime import get_connection_manager
+
+async def on_process_completed(process, org_id):
+    manager = get_connection_manager()
+    await manager.broadcast_to_organization(str(org_id), {
+        "type": "process_completed",
+        "data": {"process_id": str(process.id), "name": process.name}
+    })
+```
+
+---
+
+## DELIVERABLES
+
+1. **`fasthub_core/realtime/manager.py`** — ConnectionManager z connect/disconnect/send/broadcast
+2. **`fasthub_core/realtime/routes.py`** — WebSocket endpoint z JWT auth
+3. **`fasthub_core/realtime/status_routes.py`** — REST: /status, /online-users
+4. **`fasthub_core/realtime/__init__.py`** — eksporty
+5. **`fasthub_core/middleware/security_headers.py`** — SecurityHeadersMiddleware (6 nagłówków)
+6. **`fasthub_core/middleware/request_id.py`** — RequestIDMiddleware (UUID per request)
+7. **`fasthub_core/middleware/__init__.py`** — eksporty
+8. **Zaktualizowany `fasthub_core/__init__.py`** — główne eksporty
+9. **`tests/test_realtime_security.py`** — minimum 17 testów
+10. **Raport:** co działa, co wymaga Redis w przyszłości (multi-server WS)
+11. **Git commit + push** na branchu `feature/realtime-security`
+
+---
+
+## UWAGI
+
+- WebSocket auth przez query string `?token=xxx` — standard dla WS (nie można ustawić Authorization header w WS)
+- ConnectionManager jest IN-MEMORY — działa na jednym serwerze. Dla wielu serwerów potrzebny Redis pub/sub (v2.1+)
+- Security Headers CSP musi pozwalać na `wss:` i `ws:` — inaczej WebSocket nie połączy się
+- Request ID — jeśli za load balancerem, `trust_client=True` żeby zachować ID z pierwszego serwera
+- HSTS domyślnie WYŁĄCZONY — włączyć dopiero gdy SSL jest skonfigurowany
+
+---
+
+*Brief #9 przygotowany przez Stratega, 2026-03-01*
+*Następny brief (Faza 2 — Transfer modułów z AutoFlow do FastHub) po odebraniu wszystkich briefów Fazy 1*

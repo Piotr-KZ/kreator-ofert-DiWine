@@ -15,6 +15,7 @@ from fasthub_core.contracts import (
     AuditContract,
     NotificationContract,
     EventBusContract,
+    TaskQueueContract,
     DatabaseContract,
 )
 
@@ -51,22 +52,35 @@ from fasthub_core.events.bus import event_bus, Event, EventBus
 # Security (Brief 10)
 from fasthub_core.security.encryption import encrypt_credentials, decrypt_credentials
 
-# Production infrastructure (Brief 13)
-from fasthub_core.logging import configure_logging, get_logger
-from fasthub_core.monitoring import init_monitoring, capture_exception
-from fasthub_core.rate_limiting import create_limiter, RateLimits
-from fasthub_core.health import health_router, HealthChecker, get_health_checker
+# Billing (Brief 13)
 from fasthub_core.billing.subscription_check import SubscriptionChecker, require_active_subscription
 
-# File Storage + Feature Flags (Brief 14)
-from fasthub_core.storage import StorageService, FileUpload, get_storage_service
+# Billing Feature Flags (Brief 14)
 from fasthub_core.billing.feature_flags import check_feature, require_feature, get_plan_features
+
+# Background Tasks (Brief 15)
+from fasthub_core.tasks import (
+    enqueue_task, enqueue_email,
+    get_task_manager, set_task_manager, close_task_manager,
+    TaskQueueBackend, BaseWorkerSettings,
+)
+
+# Tenancy (Brief 17)
+from fasthub_core.tenancy import (
+    TenantMiddleware, get_current_tenant, get_current_tenant_id,
+    require_tenant, require_tenant_admin,
+)
+
+# Social Login (Brief 18)
+from fasthub_core.auth.social_login import SocialLoginService, get_social_login_service
+from fasthub_core.auth.social_routes import router as social_login_router
+from fasthub_core.auth.social_providers import SUPPORTED_PROVIDERS
 
 __all__ = [
     "__version__",
     "AuthContract", "UserContract", "PermissionContract",
     "BillingContract", "AuditContract", "NotificationContract",
-    "EventBusContract", "DatabaseContract",
+    "EventBusContract", "TaskQueueContract", "DatabaseContract",
     "Settings", "get_settings", "get_db", "get_engine",
     "admin_router",
     "rbac_router", "RBACService", "require_permission",
@@ -78,13 +92,17 @@ __all__ = [
     "get_redis", "set_cache", "get_cache",
     "event_bus", "Event", "EventBus",
     "encrypt_credentials", "decrypt_credentials",
-    # Brief 13 modules
-    "configure_logging", "get_logger",
-    "init_monitoring", "capture_exception",
-    "create_limiter", "RateLimits",
-    "health_router", "HealthChecker", "get_health_checker",
+    # Billing modules
     "SubscriptionChecker", "require_active_subscription",
-    # Brief 14 modules
-    "StorageService", "FileUpload", "get_storage_service",
     "check_feature", "require_feature", "get_plan_features",
+    # Brief 15 modules
+    "enqueue_task", "enqueue_email",
+    "get_task_manager", "set_task_manager", "close_task_manager",
+    "TaskQueueBackend", "BaseWorkerSettings",
+    # Brief 17 modules
+    "TenantMiddleware", "get_current_tenant", "get_current_tenant_id",
+    "require_tenant", "require_tenant_admin",
+    # Brief 18 — Social Login
+    "SocialLoginService", "get_social_login_service",
+    "social_login_router", "SUPPORTED_PROVIDERS",
 ]

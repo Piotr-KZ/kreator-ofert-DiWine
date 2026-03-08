@@ -87,19 +87,19 @@ def client(override_get_db) -> TestClient:
 @pytest_asyncio.fixture
 async def async_client(override_get_db) -> AsyncGenerator[AsyncClient, None]:
     """Create async test client with rate limiter disabled"""
-    # Mock limiter.limit() decorator to bypass rate limiting
     from app.core.rate_limit import limiter
-    from unittest.mock import MagicMock
-    
-    original_limit = limiter.limit
-    # Replace limiter.limit with a no-op decorator
-    limiter.limit = lambda *args, **kwargs: lambda func: func
-    
+
+    # Disable rate limiter entirely for tests
+    original_enabled = getattr(limiter, '_enabled', True)
+    limiter.enabled = False
+    limiter._enabled = False
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
-    
-    # Restore original limiter
-    limiter.limit = original_limit
+
+    # Restore original state
+    limiter.enabled = original_enabled
+    limiter._enabled = original_enabled
 
 
 @pytest_asyncio.fixture
@@ -132,7 +132,7 @@ async def owner_user(db_session: AsyncSession) -> User:
 async def test_admin(db_session: AsyncSession, test_organization: Organization) -> User:
     """Create test admin/superuser"""
     from app.models.member import Member
-    
+
     user = User(
         email="admin@example.com",
         hashed_password=get_password_hash("adminpass123"),
@@ -144,7 +144,7 @@ async def test_admin(db_session: AsyncSession, test_organization: Organization) 
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
-    
+
     # Add admin to test organization
     member = Member(
         user_id=user.id,
@@ -153,7 +153,7 @@ async def test_admin(db_session: AsyncSession, test_organization: Organization) 
     )
     db_session.add(member)
     await db_session.commit()
-    
+
     return user
 
 
@@ -187,7 +187,7 @@ async def test_user(db_session: AsyncSession, test_organization: Organization) -
 async def auth_headers(test_user: User) -> dict:
     """Create authentication headers for test_user"""
     from app.core.security import create_access_token
-    
+
     access_token = create_access_token(data={"sub": str(test_user.id)})
     return {"Authorization": f"Bearer {access_token}"}
 
@@ -196,7 +196,7 @@ async def auth_headers(test_user: User) -> dict:
 async def admin_headers(test_admin: User) -> dict:
     """Create authentication headers for test_admin"""
     from app.core.security import create_access_token
-    
+
     access_token = create_access_token(data={"sub": str(test_admin.id)})
     return {"Authorization": f"Bearer {access_token}"}
 
@@ -208,8 +208,6 @@ async def test_api_token(db_session: AsyncSession, test_user: User) -> APIToken:
         user_id=test_user.id,
         name="Test Token",
         token_hash=get_password_hash("test-token-secret"),
-        scopes=["read", "write"],
-        is_active=True,
     )
     db_session.add(token)
     await db_session.commit()
@@ -222,13 +220,15 @@ async def test_subscription(
     db_session: AsyncSession, test_organization: Organization
 ) -> Subscription:
     """Create test subscription"""
+    from datetime import datetime, timedelta
+
     subscription = Subscription(
         organization_id=test_organization.id,
         stripe_subscription_id="sub_test123",
         stripe_price_id="price_test123",
         status="active",
-        current_period_start=1234567890,
-        current_period_end=1234567890 + 2592000,  # +30 days
+        current_period_start=datetime.utcnow(),
+        current_period_end=datetime.utcnow() + timedelta(days=30),
     )
     db_session.add(subscription)
     await db_session.commit()

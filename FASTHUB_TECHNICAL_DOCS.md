@@ -737,7 +737,7 @@ VITE_API_URL=https://api.fasthub.pl/api/v1
 **Uruchamianie:**
 ```bash
 # fasthub_core
-python -m pytest tests/ -v  # 184 testow
+python -m pytest tests/ -v  # 277 testow
 
 # fasthub-backend
 cd fasthub-backend && python -m pytest tests/ -v
@@ -748,7 +748,57 @@ cd ../autoflow && python -m pytest tests/test_fasthub_e2e.py -v  # 43 testy
 
 ---
 
-## 14. Uwagi techniczne
+## 14. Social Login (Brief 18)
+
+Logowanie przez zewnetrznych providerow OAuth: **Google, GitHub, Microsoft**.
+
+### Architektura
+```
+fasthub_core/auth/
+├── social_providers.py   # Konfiguracje providerow (URL-e, scopes, parsery)
+├── social_login.py       # SocialLoginService (flow: code→token→user→JWT)
+└── social_routes.py      # Endpointy /auth/{provider}/login i /callback
+```
+
+### Flow
+1. Frontend kieruje usera na `GET /api/auth/{provider}/login`
+2. Backend generuje URL OAuth i robi redirect (302) do providera
+3. User loguje sie u providera (Google/GitHub/Microsoft)
+4. Provider redirectuje na `GET /api/auth/{provider}/callback?code=xxx&state=yyy`
+5. Backend: wymienia code na token → pobiera dane usera → generuje JWT
+
+### User linking (logika laczenia kont)
+- **Social ID istnieje w DB** → loguj bezposrednio
+- **Email istnieje w DB** → link social ID do istniejacego konta
+- **Brak w DB** → stworz nowe konto (bez hasla) + domyslna organizacja
+
+### Nowe pola User model
+| Pole | Typ | Opis |
+|------|-----|------|
+| google_id | String(255), unique | Google OAuth ID |
+| github_id | String(255), unique | GitHub OAuth ID |
+| microsoft_id | String(255), unique | Microsoft OAuth ID |
+| oauth_provider | String(50) | Ostatni provider uzity do logowania |
+| avatar_url | String(500) | URL avatara z providera |
+
+### Konfiguracja (.env)
+```
+GOOGLE_CLIENT_ID=xxx
+GOOGLE_CLIENT_SECRET=xxx
+GITHUB_CLIENT_ID=xxx
+GITHUB_CLIENT_SECRET=xxx
+MICROSOFT_CLIENT_ID=xxx
+MICROSOFT_CLIENT_SECRET=xxx
+BACKEND_URL=http://localhost:8000
+```
+
+### Tryb development vs production
+- **Development:** callback zwraca JSON z tokenami (latwiejsze testowanie)
+- **Production:** callback robi redirect na frontend z tokenami w query params
+
+---
+
+## 15. Uwagi techniczne
 
 - **bcrypt 5.0 NIE dziala z passlib 1.7.4** — uzywac `bcrypt==4.1.2`
 - **WebSocket auth** przez query string `?token=JWT` (nie mozna ustawic Authorization header w WS)
@@ -759,6 +809,77 @@ cd ../autoflow && python -m pytest tests/test_fasthub_e2e.py -v  # 43 testy
 - **Redis graceful degradation** — gdy Redis niedostepny, fallback na InMemory (blacklist, cache)
 - **Event Bus Redis broadcast** — best-effort, non-blocking (nie blokuje jesli Redis offline)
 - **Encryption fallback** — jesli brak FASTHUB_SECRET_KEY, credentials zapisywane jako plain JSON (nie crash)
+- **Social Login** — 3 providery (Google, GitHub, Microsoft), auto-linking kont po email, auto-tworzenie organizacji
 - **18 tabel w Base.metadata** — 13 oryginalnych + 5 nowych billing (billing_plans, billing_addons, tenant_addons, usage_records, billing_events)
 - **Billing models uzywaja Integer PK** (nie UUID) — BillingPlan, BillingAddon, TenantAddon, UsageRecord, BillingEvent dziedzicza z Base, nie z BaseModel
 - **AutoFlow manifest** — 22 permissions, 4 role, 19 event types, 7 billing resources
+- **Payment Gateways multi-bramka** — wiele bramek jednoczesnie, klient widzi metody ze wszystkich aktywnych
+- **Stripe webhook dedup** — stripe_event_id UNIQUE, ten sam event 2x -> skip
+- **Shared HTTP Clients** — BaseHTTPClient z retry, FakturowniaClient dual mode (provider/billing)
+
+---
+
+## 15. Bramki platnicze (Payment Gateways) — architektura multi-bramka
+
+### Model
+
+Bramki platnicze NIE dzialaja jako "albo-albo". Wiele bramek dziala JEDNOCZESNIE:
+- Wlasciciel aplikacji wlacza bramki (podaje klucze API w config)
+- Klient koncowy widzi metody platnosci ze WSZYSTKICH aktywnych bramek
+- Sam wybiera czym placi (BLIK, karta, przelew, Google Pay, PayPal)
+
+### Architektura
+
+```
+PaymentGateway (ABC)                     <- kontrakt
+    |-- StripeGateway                    <- Brief 16 (gotowe)
+    |-- PayUGateway                      <- Brief 20 (przyszlosc)
+    |-- TpayGateway                      <- Brief 20
+    |-- Przelewy24Gateway                <- Brief 20
+    +-- PayPalGateway                    <- Brief 20
+
+PaymentGatewayRegistry                   <- trzyma WSZYSTKIE aktywne bramki
+    registry.register(StripeGateway())   <- auto z config (jesli ma klucze)
+```
+
+### Hook points (logika aplikacji)
+
+StripeWebhookHandler ma 4 hook points:
+- on_checkout_completed — email powitalny, onboarding
+- on_subscription_canceled — cleanup, downgrade
+- on_payment_failed — email, powiadomienie
+- on_payment_succeeded — wystawienie faktury (Fakturownia/iFirma/KSeF)
+
+### Jak dodac nowa bramke
+
+1. Stworz klase dziedziczaca po PaymentGateway
+2. Zaimplementuj: gateway_id, get_payment_methods(), create_payment(), handle_webhook(), create_subscription(), cancel_subscription(), refund_payment(), is_configured()
+3. Zarejestruj w PaymentGatewayRegistry.from_config()
+4. Dodaj klucze API do config.py
+
+---
+
+## 16. Wspolni klienci HTTP (Shared Clients)
+
+### Problem
+
+Niektore systemy (Fakturownia, Stripe, SendGrid) sa uzywane w DWOCH kontekstach:
+1. Provider — klient automatyzuje SWOJE dane, SWOJ token
+2. Billing/System — MY jako firma uzywamy systemu, NASZ token
+
+### Rozwiazanie
+
+Wspolny klient HTTP w fasthub_core/clients/:
+- BaseHTTPClient — retry, logging, error handling
+- FakturowniaClient — API Fakturownia.pl
+- StripeClient — wrapper na Stripe SDK
+
+Dwa tryby:
+- FakturowniaClient(account="klient", api_token=klient_token)  <- provider
+- FakturowniaClient.from_config()  <- billing (nasz token z .env)
+
+| System | Provider | Wewnetrznie | Wspolny klient? |
+|---|---|---|---|
+| Fakturownia | tak | tak (faktury) | TAK |
+| Stripe | tak | tak (platnosci) | TAK |
+| Google Drive | tak | nie | NIE |

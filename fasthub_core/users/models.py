@@ -45,6 +45,13 @@ class User(BaseModel):
     magic_link_token = Column(String(255), nullable=True, index=True)
     magic_link_expires = Column(DateTime, nullable=True)
 
+    # Social login (Brief 18)
+    google_id = Column(String(255), unique=True, nullable=True, index=True)
+    github_id = Column(String(255), unique=True, nullable=True, index=True)
+    microsoft_id = Column(String(255), unique=True, nullable=True, index=True)
+    oauth_provider = Column(String(50), nullable=True)  # "google", "github", "microsoft"
+    avatar_url = Column(String(500), nullable=True)
+
     # Multi-org: memberships relationship (replaces single organization_id)
     memberships = relationship("Member", back_populates="user", cascade="all, delete-orphan")
 

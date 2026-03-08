@@ -1,0 +1,1473 @@
+# BRIEF DLA WYKONAWCY — FASTHUB FINALIZACJA, ZADANIE 13
+## Production Infrastructure: Monitoring + Rate Limiting + Structured Logging + Subscription Check + Health Check
+
+### Data: 2026-03-02
+### Zlecający: Strateg (Opus w projekcie Claude)
+### Wykonawca: Opus w Claude Code CLI
+### Repo: https://github.com/Piotr-KZ/Fasthub
+### Folder: C:\Projekty internetowe\Fasthub
+### Branch: feature/production-infrastructure
+
+---
+
+## KONTEKST
+
+FastHub ma modułowy core (auth, billing, RBAC, notifications, WebSocket, encryption, events, redis, webhooks, OAuth). Ale brakuje **warstwy produkcyjnej** — rzeczy które nie są widoczne dla usera, ale bez których aplikacja nie przeżyje dnia na produkcji.
+
+**Co stary backend (`fasthub-backend/app/core/`) ma, a `fasthub_core` nie:**
+
+| Moduł | Stary backend | fasthub_core | Status |
+|-------|--------------|--------------|--------|
+| Sentry monitoring | `core/monitoring.py` (148 linii) | Config vars istnieją, brak modułu | ❌ BRAK |
+| Rate limiting (slowapi) | `core/rate_limit.py` (145 linii) | — | ❌ BRAK |
+| Structured logging (structlog) | `core/logging_config.py` (98 linii) | Request logging używa basic `logging` | ❌ BRAK |
+| Subscription enforcement | `core/subscription_check.py` (249 linii) | — | ❌ BRAK |
+| Health check endpoint | W `main.py` starego backendu | — | ❌ BRAK |
+
+**Co fasthub_core JUŻ MA (nie duplikuj):**
+
+- `fasthub_core/middleware/request_logging.py` — RequestLoggingMiddleware (basic logging, nie structlog)
+- `fasthub_core/infrastructure/redis.py` — Redis + cache functions (get_cache, set_cache, etc.)
+- `fasthub_core/config.py` — Settings z SENTRY_DSN, SENTRY_ENVIRONMENT, SENTRY_TRACES_SAMPLE_RATE, REDIS_URL
+
+**Cel:** Przenieś i ulepsz te 5 modułów do fasthub_core. Po tym briefie każda aplikacja na FastHub (AutoFlow, przyszłe) automatycznie dostaje monitoring, rate limiting, logi i health check.
+
+---
+
+## ZANIM ZACZNIESZ
+
+```bash
+cd "C:\Projekty internetowe\Fasthub"
+git checkout main
+git pull
+git checkout -b feature/production-infrastructure
+
+# Sprawdź co już jest
+python -c "from fasthub_core.middleware import RequestLoggingMiddleware; print('OK')"
+python -c "from fasthub_core.config import get_settings; s=get_settings(); print(f'SENTRY_DSN={s.SENTRY_DSN}')"
+```
+
+---
+
+## KROK 1: Structured Logging — `fasthub_core/logging/`
+
+Stwórz moduł structured logging oparty na `structlog`. To **fundament** — reszta modułów (monitoring, rate limiting) będzie z niego korzystać.
+
+### Plik: `fasthub_core/logging/__init__.py`
+
+```python
+from fasthub_core.logging.config import configure_logging, get_logger
+
+__all__ = ["configure_logging", "get_logger"]
+```
+
+### Plik: `fasthub_core/logging/config.py`
+
+```python
+"""
+Structured Logging — konfiguracja structlog.
+
+Dwa tryby:
+- Production (DEBUG=False): JSON output → parsowalne przez Datadog/ELK/CloudWatch
+- Development (DEBUG=True): kolorowe, czytelne logi w konsoli
+
+Użycie:
+    from fasthub_core.logging import configure_logging, get_logger
+    
+    configure_logging()  # Raz przy starcie aplikacji
+    logger = get_logger(__name__)
+    
+    logger.info("user_login", user_id="abc", ip="1.2.3.4")
+    # Production: {"event": "user_login", "user_id": "abc", "ip": "1.2.3.4", ...}
+    # Dev:        [INFO] user_login  user_id=abc ip=1.2.3.4
+"""
+
+import logging
+import sys
+from typing import Any
+
+import structlog
+from structlog.typing import EventDict
+
+
+def _add_app_context(
+    logger: logging.Logger, method_name: str, event_dict: EventDict
+) -> EventDict:
+    """Dodaj kontekst aplikacji do każdego logu."""
+    try:
+        from fasthub_core.config import get_settings
+        settings = get_settings()
+        event_dict["app"] = settings.APP_NAME
+        event_dict["version"] = settings.APP_VERSION
+        event_dict["environment"] = settings.SENTRY_ENVIRONMENT
+    except Exception:
+        event_dict["app"] = "fasthub"
+    return event_dict
+
+
+def configure_logging(debug: bool = None) -> None:
+    """
+    Konfiguruj structured logging.
+    
+    Wywołaj RAZ przy starcie aplikacji (w lifespan/startup).
+    
+    Args:
+        debug: Tryb debug. Jeśli None — pobierz z Settings.DEBUG.
+    """
+    if debug is None:
+        try:
+            from fasthub_core.config import get_settings
+            debug = get_settings().DEBUG
+        except Exception:
+            debug = True
+
+    log_level = logging.DEBUG if debug else logging.INFO
+
+    # Standard library
+    logging.basicConfig(
+        format="%(message)s",
+        stream=sys.stdout,
+        level=log_level,
+    )
+
+    # Wycisz głośne loggery
+    for noisy in ("uvicorn.access", "sqlalchemy.engine", "httpx", "httpcore"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+    # Procesory structlog
+    shared_processors = [
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.add_logger_name,
+        structlog.stdlib.add_log_level,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        _add_app_context,
+    ]
+
+    if debug:
+        processors = shared_processors + [
+            structlog.dev.ConsoleRenderer(colors=True),
+        ]
+    else:
+        processors = shared_processors + [
+            structlog.processors.format_exc_info,
+            structlog.processors.UnicodeDecoder(),
+            structlog.processors.JSONRenderer(),
+        ]
+
+    structlog.configure(
+        processors=processors,
+        wrapper_class=structlog.stdlib.BoundLogger,
+        context_class=dict,
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        cache_logger_on_first_use=True,
+    )
+
+
+def get_logger(name: str) -> Any:
+    """
+    Zwróć structured logger.
+    
+    Args:
+        name: Nazwa loggera (zazwyczaj __name__)
+    
+    Returns:
+        structlog.BoundLogger
+    """
+    return structlog.get_logger(name)
+```
+
+### Zaktualizuj `fasthub_core/middleware/request_logging.py`
+
+Zmień import z `logging` na `fasthub_core.logging`:
+
+```python
+# ZAMIEŃ:
+import logging
+logger = logging.getLogger(__name__)
+
+# NA:
+try:
+    from fasthub_core.logging import get_logger
+    logger = get_logger(__name__)
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
+```
+
+Zachowaj fallback na `import logging` gdyby structlog nie był zainstalowany.
+
+### Dodaj `structlog` do zależności
+
+W `setup.py` dodaj do `install_requires`:
+```python
+"structlog>=23.1.0",
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: structured logging module (structlog, JSON production, colored dev)"
+```
+
+---
+
+## KROK 2: Monitoring — `fasthub_core/monitoring/`
+
+Integracja Sentry. Automatyczne łapanie błędów, performance monitoring, filtrowanie PII.
+
+### Plik: `fasthub_core/monitoring/__init__.py`
+
+```python
+from fasthub_core.monitoring.sentry import (
+    init_monitoring,
+    capture_exception,
+    capture_message,
+    set_user_context,
+    clear_user_context,
+)
+
+__all__ = [
+    "init_monitoring",
+    "capture_exception",
+    "capture_message",
+    "set_user_context",
+    "clear_user_context",
+]
+```
+
+### Plik: `fasthub_core/monitoring/sentry.py`
+
+```python
+"""
+Sentry Error Tracking & Performance Monitoring.
+
+Konfiguracja:
+    SENTRY_DSN=https://xxx@sentry.io/yyy      (wymagane do włączenia)
+    SENTRY_ENVIRONMENT=production               (default: development)
+    SENTRY_TRACES_SAMPLE_RATE=0.1               (default: 10%)
+
+Użycie:
+    from fasthub_core.monitoring import init_monitoring, capture_exception
+    
+    init_monitoring()  # Raz przy starcie
+    
+    try:
+        risky_operation()
+    except Exception as e:
+        capture_exception(e, context={"user_id": "abc", "action": "process_execute"})
+"""
+
+from typing import Optional, Dict, Any
+
+try:
+    from fasthub_core.logging import get_logger
+except ImportError:
+    import logging
+    get_logger = logging.getLogger
+
+logger = get_logger(__name__)
+
+# Flaga — czy Sentry jest aktywny
+_sentry_initialized = False
+
+
+def init_monitoring() -> bool:
+    """
+    Inicjalizuj Sentry monitoring.
+    
+    Wymaga: SENTRY_DSN w settings. Bez niego — loguje warning i wraca False.
+    
+    Returns:
+        True jeśli Sentry zainicjalizowany, False jeśli pominięty.
+    """
+    global _sentry_initialized
+
+    try:
+        from fasthub_core.config import get_settings
+        settings = get_settings()
+    except Exception:
+        logger.warning("monitoring_skip", reason="cannot load settings")
+        return False
+
+    if not settings.SENTRY_DSN:
+        logger.info("monitoring_disabled", reason="SENTRY_DSN not configured")
+        return False
+
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.sqlalchemy import SqlalchemyIntegration
+        from sentry_sdk.integrations.logging import LoggingIntegration
+    except ImportError:
+        logger.warning("monitoring_skip", reason="sentry-sdk not installed (pip install sentry-sdk[fastapi])")
+        return False
+
+    integrations = [
+        FastApiIntegration(
+            transaction_style="endpoint",
+            failed_request_status_codes=[500, 502, 503, 504],
+        ),
+        SqlalchemyIntegration(),
+        LoggingIntegration(
+            level=logging.INFO,
+            event_level=logging.ERROR,
+        ),
+    ]
+
+    sentry_sdk.init(
+        dsn=settings.SENTRY_DSN,
+        environment=settings.SENTRY_ENVIRONMENT,
+        release=getattr(settings, "APP_VERSION", "0.0.0"),
+        integrations=integrations,
+        traces_sample_rate=settings.SENTRY_TRACES_SAMPLE_RATE,
+        sample_rate=1.0,
+        attach_stacktrace=True,
+        send_default_pii=False,
+        max_breadcrumbs=50,
+        before_send=_before_send_filter,
+    )
+
+    _sentry_initialized = True
+    logger.info("monitoring_initialized", environment=settings.SENTRY_ENVIRONMENT)
+    return True
+
+
+def _before_send_filter(event: dict, hint: dict) -> Optional[dict]:
+    """Filtruj dane wrażliwe przed wysłaniem do Sentry."""
+    if "request" in event:
+        req = event["request"]
+        # Headers
+        if "headers" in req:
+            for h in ("Authorization", "Cookie", "X-API-Key"):
+                if h in req["headers"]:
+                    req["headers"][h] = "[Filtered]"
+        # Query string
+        if "query_string" in req:
+            qs = req["query_string"].lower()
+            if "token" in qs or "password" in qs or "secret" in qs:
+                req["query_string"] = "[Filtered]"
+    return event
+
+
+def capture_exception(
+    error: Exception,
+    context: Optional[Dict[str, Any]] = None,
+) -> None:
+    """
+    Wyślij wyjątek do Sentry (jeśli aktywny).
+    
+    Zawsze loguje błąd lokalnie, niezależnie od Sentry.
+    """
+    logger.error("exception_captured", error=str(error), context=context)
+
+    if not _sentry_initialized:
+        return
+
+    import sentry_sdk
+    if context:
+        with sentry_sdk.push_scope() as scope:
+            for key, value in context.items():
+                scope.set_extra(key, value)
+            sentry_sdk.capture_exception(error)
+    else:
+        sentry_sdk.capture_exception(error)
+
+
+def capture_message(
+    message: str,
+    level: str = "info",
+    context: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Wyślij wiadomość do Sentry."""
+    if not _sentry_initialized:
+        return
+
+    import sentry_sdk
+    if context:
+        with sentry_sdk.push_scope() as scope:
+            for key, value in context.items():
+                scope.set_extra(key, value)
+            sentry_sdk.capture_message(message, level=level)
+    else:
+        sentry_sdk.capture_message(message, level=level)
+
+
+def set_user_context(
+    user_id: str,
+    email: Optional[str] = None,
+    organization_id: Optional[str] = None,
+) -> None:
+    """Ustaw kontekst usera — Sentry dołączy go do wszystkich eventów."""
+    if not _sentry_initialized:
+        return
+    import sentry_sdk
+    sentry_sdk.set_user({
+        "id": user_id,
+        "email": email,
+        "organization_id": organization_id,
+    })
+
+
+def clear_user_context() -> None:
+    """Wyczyść kontekst usera (np. po logout)."""
+    if not _sentry_initialized:
+        return
+    import sentry_sdk
+    sentry_sdk.set_user(None)
+
+
+# Re-export logging for convenience
+import logging
+```
+
+### Dodaj `sentry-sdk` do zależności (opcjonalnie)
+
+W `setup.py` dodaj do `install_requires`:
+```python
+"sentry-sdk[fastapi]>=1.40.0",
+```
+
+**UWAGA:** Sentry jest opcjonalny. Moduł działa bez niego — loguje warning i kontynuuje. `capture_exception()` zawsze loguje lokalnie.
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: monitoring module (Sentry integration, PII filtering, optional dependency)"
+```
+
+---
+
+## KROK 3: Rate Limiting — `fasthub_core/rate_limiting/`
+
+Ochrona API przed nadużyciami. Konfigurowalny per endpoint, oparty na `slowapi` (wrapper na `limits`).
+
+### Plik: `fasthub_core/rate_limiting/__init__.py`
+
+```python
+from fasthub_core.rate_limiting.limiter import (
+    create_limiter,
+    RateLimits,
+    get_rate_limit_handler,
+)
+
+__all__ = ["create_limiter", "RateLimits", "get_rate_limit_handler"]
+```
+
+### Plik: `fasthub_core/rate_limiting/limiter.py`
+
+```python
+"""
+Rate Limiting — ochrona API przed nadużyciami i DDoS.
+
+Dwa backendy:
+- Redis (produkcja): rate limit dzielony między instancjami
+- Memory (dev): rate limit per proces
+
+Użycie:
+    from fasthub_core.rate_limiting import create_limiter, RateLimits
+    
+    limiter = create_limiter(app)
+    
+    @router.post("/login")
+    @limiter.limit(RateLimits.AUTH_LOGIN)
+    async def login(request: Request):
+        ...
+
+Konfiguracja:
+    Aplikacja tworzy limiter z create_limiter() i podłącza do FastAPI app.
+    Predefiniowane limity w RateLimits — można nadpisać.
+"""
+
+from typing import Optional
+from fastapi import FastAPI
+
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
+
+
+class RateLimits:
+    """
+    Predefiniowane limity per kategoria endpointów.
+    
+    Aplikacja może nadpisać wartości:
+        RateLimits.AUTH_LOGIN = "10/minute"
+    """
+    # Auth — najbardziej restrykcyjne (brute-force protection)
+    AUTH_LOGIN = "5/minute"
+    AUTH_REGISTER = "3/hour"
+    AUTH_PASSWORD_RESET = "3/hour"
+    AUTH_MAGIC_LINK = "5/hour"
+    AUTH_EMAIL_VERIFY = "5/hour"
+    
+    # API Tokens
+    API_TOKEN_CREATE = "10/hour"
+    API_TOKEN_LIST = "60/minute"
+    
+    # Public (umiarkowane)
+    PUBLIC_READ = "100/minute"
+    PUBLIC_WRITE = "30/minute"
+    
+    # Authenticated (mniej restrykcyjne)
+    PROTECTED_READ = "200/minute"
+    PROTECTED_WRITE = "60/minute"
+    
+    # Admin
+    ADMIN = "100/minute"
+    
+    # Webhooks (permisywne — providerzy wysyłają wiele eventów)
+    WEBHOOK = "1000/hour"
+    
+    # Default
+    DEFAULT = "200/hour"
+
+
+def create_limiter(
+    app: Optional[FastAPI] = None,
+    redis_url: Optional[str] = None,
+    default_limits: Optional[list] = None,
+    key_func=None,
+    strategy: str = "fixed-window",
+) -> Limiter:
+    """
+    Stwórz i skonfiguruj rate limiter.
+    
+    Args:
+        app: FastAPI app (opcjonalnie — limiter dołączy się do app)
+        redis_url: Redis URL. Jeśli None — próbuje z Settings, potem memory.
+        default_limits: Domyślne limity (default: ["200/hour"])
+        key_func: Funkcja wyciągająca klucz (default: IP klienta)
+        strategy: "fixed-window" lub "moving-window"
+    
+    Returns:
+        Limiter instance
+    
+    Użycie:
+        # W main.py aplikacji:
+        from fasthub_core.rate_limiting import create_limiter
+        
+        limiter = create_limiter(app)
+    """
+    # Resolve Redis URL
+    if redis_url is None:
+        try:
+            from fasthub_core.config import get_settings
+            settings = get_settings()
+            redis_url = settings.REDIS_URL
+        except Exception:
+            redis_url = None
+
+    storage_uri = redis_url if redis_url else "memory://"
+    
+    limiter = Limiter(
+        key_func=key_func or get_remote_address,
+        default_limits=default_limits or [RateLimits.DEFAULT],
+        storage_uri=storage_uri,
+        strategy=strategy,
+        headers_enabled=True,
+    )
+    
+    if app:
+        app.state.limiter = limiter
+        app.add_exception_handler(RateLimitExceeded, get_rate_limit_handler())
+    
+    return limiter
+
+
+def get_rate_limit_handler():
+    """Handler dla HTTP 429 Too Many Requests."""
+    return _rate_limit_exceeded_handler
+```
+
+### Dodaj `slowapi` do zależności
+
+W `setup.py` dodaj do `install_requires`:
+```python
+"slowapi>=0.1.9",
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: rate limiting module (slowapi, Redis/memory backend, preset limits)"
+```
+
+---
+
+## KROK 4: Subscription Check — `fasthub_core/billing/subscription_check.py`
+
+Rozszerzenie modułu billing o enforcement subskrypcji. Grace period, trial, exempt paths.
+
+### Plik: `fasthub_core/billing/subscription_check.py`
+
+```python
+"""
+Subscription Enforcement — blokada dostępu bez aktywnej subskrypcji.
+
+Grace period: 7 dni po past_due (płatność się nie udała, ale user jeszcze działa).
+Trial: działa do trial_end.
+Exempt paths: auth, health, billing — dostępne zawsze (żeby user mógł zapłacić!).
+
+Użycie:
+    from fasthub_core.billing.subscription_check import require_active_subscription
+    
+    @router.get("/protected", dependencies=[Depends(require_active_subscription)])
+    async def protected():
+        ...
+
+Albo jako middleware:
+    from fasthub_core.billing.subscription_check import SubscriptionChecker
+    
+    # W middleware albo dependency
+    await SubscriptionChecker.check_subscription(user, db, request.url.path)
+"""
+
+from datetime import datetime, timedelta
+from typing import Optional, List
+from uuid import UUID
+
+from fastapi import HTTPException, status, Depends, Request
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from fasthub_core.billing.models import Subscription, SubscriptionStatus
+from fasthub_core.db.session import get_db
+
+try:
+    from fasthub_core.logging import get_logger
+except ImportError:
+    import logging
+    get_logger = logging.getLogger
+
+logger = get_logger(__name__)
+
+
+class SubscriptionChecker:
+    """
+    Walidacja subskrypcji per organizacja.
+    
+    Konfigurowalny:
+    - GRACE_PERIOD_DAYS: ile dni po past_due user jeszcze działa
+    - EXEMPT_PATHS: ścieżki które nie wymagają subskrypcji
+    - ACTIVE_STATUSES: statusy traktowane jako "aktywne"
+    """
+
+    GRACE_PERIOD_DAYS: int = 7
+    
+    EXEMPT_PATHS: List[str] = [
+        "/api/auth",
+        "/api/v1/auth",
+        "/api/billing",
+        "/api/v1/billing",
+        "/api/v1/subscriptions",
+        "/api/health",
+        "/api/v1/health",
+        "/health",
+        "/ready",
+        "/docs",
+        "/redoc",
+        "/openapi.json",
+    ]
+    
+    ACTIVE_STATUSES = [
+        SubscriptionStatus.active,
+        SubscriptionStatus.trialing,
+        SubscriptionStatus.past_due,
+    ]
+
+    @classmethod
+    def configure(
+        cls,
+        grace_period_days: int = None,
+        exempt_paths: List[str] = None,
+    ) -> None:
+        """
+        Konfiguruj checker (wywołaj raz przy starcie).
+        
+        Aplikacja może dodać własne exempt paths:
+            SubscriptionChecker.configure(
+                exempt_paths=["/api/auth", "/api/health", "/api/my-custom-path"],
+            )
+        """
+        if grace_period_days is not None:
+            cls.GRACE_PERIOD_DAYS = grace_period_days
+        if exempt_paths is not None:
+            cls.EXEMPT_PATHS = exempt_paths
+
+    @classmethod
+    async def check_subscription(
+        cls,
+        organization_id: UUID,
+        db: AsyncSession,
+        path: str,
+    ) -> None:
+        """
+        Sprawdź subskrypcję organizacji.
+        
+        Raises:
+            HTTPException 402: Brak subskrypcji lub wygasła
+            HTTPException 403: Brak organizacji
+        """
+        if cls._is_exempt_path(path):
+            return
+
+        subscription = await cls._get_subscription(organization_id, db)
+
+        if not subscription:
+            raise HTTPException(
+                status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                detail={
+                    "error": "no_subscription",
+                    "message": "Brak aktywnej subskrypcji. Wybierz plan.",
+                    "action": "subscribe",
+                    "billing_url": "/billing",
+                },
+            )
+
+        await cls._validate_status(subscription)
+
+    @classmethod
+    def _is_exempt_path(cls, path: str) -> bool:
+        return any(path.startswith(exempt) for exempt in cls.EXEMPT_PATHS)
+
+    @classmethod
+    async def _get_subscription(
+        cls, organization_id: UUID, db: AsyncSession
+    ) -> Optional[Subscription]:
+        result = await db.execute(
+            select(Subscription).where(
+                Subscription.organization_id == organization_id,
+                Subscription.status.in_(cls.ACTIVE_STATUSES),
+            )
+        )
+        return result.scalar_one_or_none()
+
+    @classmethod
+    async def _validate_status(cls, subscription: Subscription) -> None:
+        now = datetime.utcnow()
+
+        # Active — sprawdź period
+        if subscription.status == SubscriptionStatus.active:
+            if subscription.current_period_end and subscription.current_period_end < now:
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail={
+                        "error": "subscription_expired",
+                        "message": "Okres subskrypcji wygasł. Odnów plan.",
+                        "action": "renew",
+                    },
+                )
+            return
+
+        # Trial — sprawdź trial_end
+        if subscription.status == SubscriptionStatus.trialing:
+            if subscription.trial_end and subscription.trial_end < now:
+                raise HTTPException(
+                    status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                    detail={
+                        "error": "trial_expired",
+                        "message": "Okres próbny się skończył. Wybierz plan.",
+                        "action": "subscribe",
+                    },
+                )
+            return
+
+        # Past due — grace period
+        if subscription.status == SubscriptionStatus.past_due:
+            if subscription.current_period_end:
+                grace_end = subscription.current_period_end + timedelta(
+                    days=cls.GRACE_PERIOD_DAYS
+                )
+                if now > grace_end:
+                    raise HTTPException(
+                        status_code=status.HTTP_402_PAYMENT_REQUIRED,
+                        detail={
+                            "error": "payment_overdue",
+                            "message": "Płatność przeterminowana. Zaktualizuj metodę płatności.",
+                            "action": "update_payment",
+                        },
+                    )
+            logger.warning(
+                "subscription_past_due_access",
+                organization_id=str(subscription.organization_id),
+                status="past_due",
+            )
+            return
+
+        # Inne statusy — blokuj
+        raise HTTPException(
+            status_code=status.HTTP_402_PAYMENT_REQUIRED,
+            detail={
+                "error": "subscription_inactive",
+                "message": f"Subskrypcja jest {subscription.status.value}.",
+                "action": "subscribe",
+            },
+        )
+
+    @classmethod
+    async def is_subscription_active(
+        cls, organization_id: UUID, db: AsyncSession
+    ) -> bool:
+        """
+        Helper bez rzucania wyjątku — True/False.
+        
+        Użycie: warunkowe renderowanie w UI, nie blokowanie.
+        """
+        subscription = await cls._get_subscription(organization_id, db)
+        if not subscription:
+            return False
+
+        now = datetime.utcnow()
+        if subscription.status == SubscriptionStatus.active:
+            return not (subscription.current_period_end and subscription.current_period_end < now)
+        if subscription.status == SubscriptionStatus.trialing:
+            return not (subscription.trial_end and subscription.trial_end < now)
+        if subscription.status == SubscriptionStatus.past_due:
+            if subscription.current_period_end:
+                grace_end = subscription.current_period_end + timedelta(days=cls.GRACE_PERIOD_DAYS)
+                return now <= grace_end
+        return False
+
+
+# ============================================================================
+# FastAPI Dependency
+# ============================================================================
+
+def require_active_subscription():
+    """
+    FastAPI Depends — wymaga aktywnej subskrypcji.
+    
+    Użycie:
+        @router.get("/protected")
+        async def endpoint(
+            ...,
+            _sub = Depends(require_active_subscription()),
+        ):
+    """
+    async def _check(
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+    ):
+        # Pobierz organization_id z request
+        org_id = request.headers.get("X-Organization-Id")
+        if not org_id:
+            # Spróbuj z current_user
+            user = getattr(request.state, "user", None)
+            org_id = getattr(user, "organization_id", None) if user else None
+
+        if not org_id:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="X-Organization-Id header required",
+            )
+
+        await SubscriptionChecker.check_subscription(
+            UUID(str(org_id)), db, request.url.path,
+        )
+
+    return _check
+```
+
+### Zaktualizuj `fasthub_core/billing/__init__.py`
+
+Dodaj eksport:
+```python
+from fasthub_core.billing.subscription_check import (
+    SubscriptionChecker,
+    require_active_subscription,
+)
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: subscription enforcement (grace period, trial, exempt paths)"
+```
+
+---
+
+## KROK 5: Health Check — `fasthub_core/health/`
+
+Endpoint `/health` sprawdzający stan komponentów. Standardowy format dla Docker healthcheck, load balancer, monitoring.
+
+### Plik: `fasthub_core/health/__init__.py`
+
+```python
+from fasthub_core.health.checker import HealthChecker, health_router
+
+__all__ = ["HealthChecker", "health_router"]
+```
+
+### Plik: `fasthub_core/health/checker.py`
+
+```python
+"""
+Health Check — endpoint /health dla monitoring i Docker.
+
+Sprawdza:
+- Database (SELECT 1)
+- Redis (PING)
+- Encryption (klucz dostępny?)
+- Sentry (zainicjalizowany?)
+
+Format odpowiedzi:
+    {
+        "status": "healthy" | "degraded" | "unhealthy",
+        "timestamp": "2026-03-02T12:00:00Z",
+        "version": "2.0.0",
+        "checks": {
+            "database": "ok",
+            "redis": "ok",
+            "encryption": "active",
+        }
+    }
+
+HTTP 200 = healthy/degraded, HTTP 503 = unhealthy.
+
+Użycie:
+    from fasthub_core.health import health_router
+    app.include_router(health_router)
+"""
+
+from datetime import datetime
+from typing import Dict, Any, Optional, Callable, Awaitable
+from fastapi import APIRouter
+from starlette.responses import JSONResponse
+
+try:
+    from fasthub_core.logging import get_logger
+except ImportError:
+    import logging
+    get_logger = logging.getLogger
+
+logger = get_logger(__name__)
+
+router = APIRouter(tags=["health"])
+
+
+class HealthChecker:
+    """
+    Rejestruj custom health checks per aplikacja.
+    
+    Użycie:
+        checker = HealthChecker()
+        checker.add_check("scheduler", check_scheduler_health)
+        checker.add_check("ai_service", check_ai_health)
+    """
+    
+    def __init__(self):
+        self._checks: Dict[str, Callable[[], Awaitable[Dict[str, Any]]]] = {}
+        self._version: str = "0.0.0"
+        self._app_name: str = "fasthub"
+    
+    def configure(self, app_name: str = None, version: str = None):
+        """Ustaw nazwę i wersję aplikacji."""
+        if app_name:
+            self._app_name = app_name
+        if version:
+            self._version = version
+    
+    def add_check(
+        self,
+        name: str,
+        check_fn: Callable[[], Awaitable[Dict[str, Any]]],
+    ) -> None:
+        """
+        Dodaj custom health check.
+        
+        check_fn musi zwracać dict z co najmniej {"status": "ok"|"error"}.
+        
+        Przykład:
+            async def check_scheduler():
+                return {"status": "ok", "jobs_running": 3}
+            
+            checker.add_check("scheduler", check_scheduler)
+        """
+        self._checks[name] = check_fn
+    
+    async def run_all(self) -> Dict[str, Any]:
+        """Uruchom wszystkie health checki."""
+        checks = {}
+        overall = "healthy"
+        
+        # 1. Database
+        try:
+            from fasthub_core.db.session import async_session_maker
+            from sqlalchemy import text
+            async with async_session_maker() as session:
+                await session.execute(text("SELECT 1"))
+            checks["database"] = "ok"
+        except Exception as e:
+            checks["database"] = f"error: {str(e)[:100]}"
+            overall = "unhealthy"
+        
+        # 2. Redis
+        try:
+            from fasthub_core.infrastructure.redis import redis_health_check
+            redis_h = await redis_health_check()
+            checks["redis"] = redis_h.get("status", "unknown")
+            if redis_h.get("status") == "error":
+                checks["redis_error"] = redis_h.get("error", "")[:100]
+                if overall == "healthy":
+                    overall = "degraded"
+        except Exception:
+            checks["redis"] = "unavailable"
+        
+        # 3. Encryption
+        try:
+            from fasthub_core.security.encryption import is_encryption_available
+            checks["encryption"] = "active" if is_encryption_available() else "inactive"
+            if not is_encryption_available() and overall == "healthy":
+                overall = "degraded"
+        except Exception:
+            checks["encryption"] = "unknown"
+        
+        # 4. Monitoring (Sentry)
+        try:
+            from fasthub_core.monitoring.sentry import _sentry_initialized
+            checks["monitoring"] = "active" if _sentry_initialized else "inactive"
+        except Exception:
+            checks["monitoring"] = "unknown"
+        
+        # 5. Custom checks
+        for name, check_fn in self._checks.items():
+            try:
+                result = await check_fn()
+                checks[name] = result.get("status", "ok")
+                if result.get("status") == "error" and overall == "healthy":
+                    overall = "degraded"
+            except Exception as e:
+                checks[name] = f"error: {str(e)[:80]}"
+                if overall == "healthy":
+                    overall = "degraded"
+        
+        return {
+            "status": overall,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "app": self._app_name,
+            "version": self._version,
+            "checks": checks,
+        }
+
+
+# Singleton
+_checker = HealthChecker()
+
+
+def get_health_checker() -> HealthChecker:
+    """Zwróć globalny HealthChecker (singleton)."""
+    return _checker
+
+
+# ============================================================================
+# Router
+# ============================================================================
+
+@router.get("/health")
+async def health_endpoint():
+    """
+    Health check endpoint.
+    
+    HTTP 200: healthy lub degraded (działa, ale nie wszystko OK).
+    HTTP 503: unhealthy (krytyczny komponent nie działa).
+    """
+    result = await _checker.run_all()
+    status_code = 200 if result["status"] != "unhealthy" else 503
+    return JSONResponse(status_code=status_code, content=result)
+
+
+@router.get("/ready")
+async def readiness_endpoint():
+    """
+    Readiness probe — czy aplikacja jest gotowa przyjmować ruch.
+    
+    Prostsze niż /health — sprawdza tylko bazę danych.
+    Używane przez Kubernetes/Docker.
+    """
+    try:
+        from fasthub_core.db.session import async_session_maker
+        from sqlalchemy import text
+        async with async_session_maker() as session:
+            await session.execute(text("SELECT 1"))
+        return {"ready": True}
+    except Exception:
+        return JSONResponse(status_code=503, content={"ready": False})
+
+
+# Alias
+health_router = router
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: health check module (/health, /ready, custom checks, Docker/K8s ready)"
+```
+
+---
+
+## KROK 6: Zaktualizuj główne eksporty
+
+### Plik: `fasthub_core/__init__.py`
+
+Dodaj nowe moduły do eksportów (na końcu pliku):
+
+```python
+# Production infrastructure
+from fasthub_core.logging import configure_logging, get_logger
+from fasthub_core.monitoring import init_monitoring, capture_exception
+from fasthub_core.rate_limiting import create_limiter, RateLimits
+from fasthub_core.health import health_router, HealthChecker, get_health_checker
+from fasthub_core.billing.subscription_check import SubscriptionChecker, require_active_subscription
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: export production infrastructure modules from fasthub_core"
+```
+
+---
+
+## KROK 7: Testy
+
+### Plik: `tests/test_production_infrastructure.py`
+
+```python
+"""
+Testy Production Infrastructure.
+Structured logging, monitoring, rate limiting, subscription check, health.
+"""
+
+import pytest
+import os
+
+# ============================================================================
+# STRUCTURED LOGGING
+# ============================================================================
+
+class TestStructuredLogging:
+
+    def test_configure_logging_dev(self):
+        from fasthub_core.logging import configure_logging
+        configure_logging(debug=True)  # Nie powinno rzucić wyjątku
+
+    def test_configure_logging_production(self):
+        from fasthub_core.logging import configure_logging
+        configure_logging(debug=False)
+
+    def test_get_logger(self):
+        from fasthub_core.logging import get_logger
+        logger = get_logger("test.module")
+        assert logger is not None
+
+    def test_logger_has_standard_methods(self):
+        from fasthub_core.logging import get_logger
+        logger = get_logger("test")
+        assert callable(getattr(logger, "info", None))
+        assert callable(getattr(logger, "error", None))
+        assert callable(getattr(logger, "warning", None))
+        assert callable(getattr(logger, "debug", None))
+
+    def test_structlog_imported(self):
+        import structlog
+        assert structlog is not None
+
+
+# ============================================================================
+# MONITORING (SENTRY)
+# ============================================================================
+
+class TestMonitoring:
+
+    def test_init_monitoring_without_dsn(self):
+        """Bez SENTRY_DSN — graceful skip."""
+        os.environ.pop("SENTRY_DSN", None)
+        from fasthub_core.monitoring import init_monitoring
+        result = init_monitoring()
+        assert result == False  # Pominięty
+
+    def test_capture_exception_without_sentry(self):
+        """capture_exception nie rzuca błędu nawet bez Sentry."""
+        from fasthub_core.monitoring import capture_exception
+        try:
+            raise ValueError("test error")
+        except ValueError as e:
+            capture_exception(e, context={"test": True})
+        # Nie powinno rzucić wyjątku
+
+    def test_capture_message_without_sentry(self):
+        from fasthub_core.monitoring import capture_message
+        capture_message("test message", level="warning")
+
+    def test_set_user_context_without_sentry(self):
+        from fasthub_core.monitoring import set_user_context, clear_user_context
+        set_user_context("user-123", email="test@test.com")
+        clear_user_context()
+
+    def test_monitoring_module_imports(self):
+        from fasthub_core.monitoring import (
+            init_monitoring, capture_exception, capture_message,
+            set_user_context, clear_user_context,
+        )
+        assert callable(init_monitoring)
+        assert callable(capture_exception)
+
+    def test_before_send_filter(self):
+        from fasthub_core.monitoring.sentry import _before_send_filter
+        event = {
+            "request": {
+                "headers": {"Authorization": "Bearer secret123", "Content-Type": "application/json"},
+                "query_string": "token=abc123&page=1",
+            }
+        }
+        filtered = _before_send_filter(event, {})
+        assert filtered["request"]["headers"]["Authorization"] == "[Filtered]"
+        assert filtered["request"]["query_string"] == "[Filtered]"
+        assert filtered["request"]["headers"]["Content-Type"] == "application/json"
+
+
+# ============================================================================
+# RATE LIMITING
+# ============================================================================
+
+class TestRateLimiting:
+
+    def test_rate_limits_constants(self):
+        from fasthub_core.rate_limiting import RateLimits
+        assert RateLimits.AUTH_LOGIN == "5/minute"
+        assert RateLimits.AUTH_REGISTER == "3/hour"
+        assert RateLimits.WEBHOOK == "1000/hour"
+        assert RateLimits.DEFAULT == "200/hour"
+
+    def test_rate_limits_customizable(self):
+        from fasthub_core.rate_limiting import RateLimits
+        original = RateLimits.AUTH_LOGIN
+        RateLimits.AUTH_LOGIN = "10/minute"
+        assert RateLimits.AUTH_LOGIN == "10/minute"
+        RateLimits.AUTH_LOGIN = original  # Przywróć
+
+    def test_create_limiter_memory_backend(self):
+        from fasthub_core.rate_limiting import create_limiter
+        limiter = create_limiter(redis_url=None)
+        assert limiter is not None
+
+    def test_create_limiter_with_custom_limits(self):
+        from fasthub_core.rate_limiting import create_limiter
+        limiter = create_limiter(default_limits=["50/minute"])
+        assert limiter is not None
+
+    def test_get_rate_limit_handler(self):
+        from fasthub_core.rate_limiting import get_rate_limit_handler
+        handler = get_rate_limit_handler()
+        assert callable(handler)
+
+    def test_slowapi_imported(self):
+        from slowapi import Limiter
+        assert Limiter is not None
+
+
+# ============================================================================
+# SUBSCRIPTION CHECK
+# ============================================================================
+
+class TestSubscriptionCheck:
+
+    def test_subscription_checker_class(self):
+        from fasthub_core.billing.subscription_check import SubscriptionChecker
+        assert hasattr(SubscriptionChecker, "check_subscription")
+        assert hasattr(SubscriptionChecker, "is_subscription_active")
+        assert hasattr(SubscriptionChecker, "configure")
+
+    def test_default_grace_period(self):
+        from fasthub_core.billing.subscription_check import SubscriptionChecker
+        assert SubscriptionChecker.GRACE_PERIOD_DAYS == 7
+
+    def test_configure_grace_period(self):
+        from fasthub_core.billing.subscription_check import SubscriptionChecker
+        original = SubscriptionChecker.GRACE_PERIOD_DAYS
+        SubscriptionChecker.configure(grace_period_days=14)
+        assert SubscriptionChecker.GRACE_PERIOD_DAYS == 14
+        SubscriptionChecker.configure(grace_period_days=original)
+
+    def test_exempt_paths_include_auth_and_billing(self):
+        from fasthub_core.billing.subscription_check import SubscriptionChecker
+        paths = SubscriptionChecker.EXEMPT_PATHS
+        assert any("/auth" in p for p in paths)
+        assert any("/billing" in p or "/subscriptions" in p for p in paths)
+        assert any("/health" in p for p in paths)
+
+    def test_is_exempt_path(self):
+        from fasthub_core.billing.subscription_check import SubscriptionChecker
+        assert SubscriptionChecker._is_exempt_path("/api/v1/auth/login") == True
+        assert SubscriptionChecker._is_exempt_path("/health") == True
+        assert SubscriptionChecker._is_exempt_path("/api/processes") == False
+
+    def test_require_active_subscription_factory(self):
+        from fasthub_core.billing.subscription_check import require_active_subscription
+        dep = require_active_subscription()
+        assert callable(dep)
+
+
+# ============================================================================
+# HEALTH CHECK
+# ============================================================================
+
+class TestHealthCheck:
+
+    def test_health_checker_class(self):
+        from fasthub_core.health import HealthChecker
+        checker = HealthChecker()
+        assert hasattr(checker, "add_check")
+        assert hasattr(checker, "run_all")
+        assert hasattr(checker, "configure")
+
+    def test_health_checker_configure(self):
+        from fasthub_core.health import HealthChecker
+        checker = HealthChecker()
+        checker.configure(app_name="test-app", version="1.2.3")
+        assert checker._app_name == "test-app"
+        assert checker._version == "1.2.3"
+
+    def test_add_custom_check(self):
+        from fasthub_core.health import HealthChecker
+        checker = HealthChecker()
+
+        async def mock_check():
+            return {"status": "ok", "detail": "all good"}
+
+        checker.add_check("custom_service", mock_check)
+        assert "custom_service" in checker._checks
+
+    def test_health_router_exists(self):
+        from fasthub_core.health import health_router
+        routes = [r.path for r in health_router.routes]
+        assert "/health" in routes
+        assert "/ready" in routes
+
+    def test_get_health_checker_singleton(self):
+        from fasthub_core.health.checker import get_health_checker
+        c1 = get_health_checker()
+        c2 = get_health_checker()
+        assert c1 is c2
+```
+
+### Uruchom:
+```bash
+pip install structlog slowapi sentry-sdk[fastapi] --break-system-packages
+python -m pytest tests/test_production_infrastructure.py -v --tb=short
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "test: production infrastructure tests (logging, monitoring, rate limit, subscription, health)"
+```
+
+---
+
+## KROK 8: Push i PR
+
+```bash
+# WSZYSTKIE testy
+python -m pytest tests/ -v --tb=short -q 2>&1 | tail -10
+
+git push -u origin feature/production-infrastructure
+
+# PR
+gh pr create \
+  --title "Brief 13: Production Infrastructure (logging, monitoring, rate limiting, subscription check, health)" \
+  --body "5 nowych modułów w fasthub_core:
+- fasthub_core/logging/ — structlog (JSON prod, colored dev)
+- fasthub_core/monitoring/ — Sentry (opcjonalny, graceful bez DSN)
+- fasthub_core/rate_limiting/ — slowapi (Redis/memory, preset limits)
+- fasthub_core/billing/subscription_check.py — enforcement, grace period, trial
+- fasthub_core/health/ — /health, /ready, custom checks, Docker/K8s
+
+~30 testów. Nowe zależności: structlog, slowapi, sentry-sdk[fastapi]." \
+  --base main
+```
+
+---
+
+## CZEGO NIE ROBIĆ
+
+- ❌ NIE przenoś CacheService z `fasthub-backend/app/core/cache.py` — fasthub_core/infrastructure/redis.py już ma `set_cache`, `get_cache`, itd. CacheService to duplikat.
+- ❌ NIE modyfikuj istniejących modułów billing (models.py, service.py) — subscription_check to NOWY plik obok nich.
+- ❌ NIE wymuszaj Sentry — moduł musi działać bez `sentry-sdk`. `init_monitoring()` zwraca `False` i loguje info.
+- ❌ NIE wymuszaj Redis dla rate limiting — bez Redis używa memory backend.
+- ❌ NIE zmieniaj istniejących testów — dodajesz NOWY plik testów.
+
+---
+
+## JAK AUTOFLOW TO WYKORZYSTA (informacja)
+
+```python
+# autoflow/app/main.py — startup
+from fasthub_core.logging import configure_logging
+from fasthub_core.monitoring import init_monitoring
+from fasthub_core.rate_limiting import create_limiter, RateLimits
+from fasthub_core.health import health_router, get_health_checker
+
+# Startup
+configure_logging()
+init_monitoring()
+limiter = create_limiter(app)
+
+# Health
+checker = get_health_checker()
+checker.configure(app_name="AutoFlow", version="7.0.0")
+
+async def check_scheduler():
+    return {"status": "ok", "active_jobs": 5}
+
+checker.add_check("scheduler", check_scheduler)
+app.include_router(health_router)
+
+# Rate limit na endpoint
+@router.post("/api/auth/login")
+@limiter.limit(RateLimits.AUTH_LOGIN)
+async def login(request: Request):
+    ...
+```
+
+---
+
+## DELIVERABLES
+
+1. **`fasthub_core/logging/config.py`** — configure_logging() + get_logger()
+2. **`fasthub_core/monitoring/sentry.py`** — init_monitoring() + capture_exception() + PII filter
+3. **`fasthub_core/rate_limiting/limiter.py`** — create_limiter() + RateLimits + Redis/memory
+4. **`fasthub_core/billing/subscription_check.py`** — SubscriptionChecker + grace period + require_active_subscription
+5. **`fasthub_core/health/checker.py`** — HealthChecker + /health + /ready + custom checks
+6. **Zaktualizowane `__init__.py`** — 5 nowych modułów eksportowanych
+7. **Zaktualizowane `setup.py`** — structlog, slowapi, sentry-sdk
+8. **`tests/test_production_infrastructure.py`** — ~30 testów
+9. **Git commit + push + PR**
+
+---
+
+## PO TYM BRIEFIE
+
+| Moduł fasthub_core | Status |
+|---|---|
+| Auth, RBAC, Audit, Notifications, WebSocket | ✅ Brief 4-9 |
+| Redis, Encryption, Events, OAuth, Webhooks, Billing | ✅ Brief 10 |
+| **Structured Logging** | ✅ **Brief 13** |
+| **Monitoring (Sentry)** | ✅ **Brief 13** |
+| **Rate Limiting** | ✅ **Brief 13** |
+| **Subscription Check** | ✅ **Brief 13** |
+| **Health Check** | ✅ **Brief 13** |
+| File Storage | 🔜 Brief 14 |
+| Background Tasks | 🔜 Brief 15 |
+| Stripe Webhook Handler | 🔜 Brief 16 |
+| Multi-tenancy Middleware + CLI | 🔜 Brief 17 |
+| Data Export (GDPR) | 🔜 Brief 18 |
+| Email Templates + Invitations | 🔜 Brief 19 |
+
+---
+
+*Brief #13 przygotowany przez Stratega, 2026-03-02*
+*Seria: FastHub Finalizacja (1/7)*
+*Następny brief: #14 — File Storage Service (S3 + local + model)*

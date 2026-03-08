@@ -3,6 +3,8 @@ Database session management
 Async SQLAlchemy session factory for PostgreSQL
 """
 
+from contextlib import asynccontextmanager
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import declarative_base
 
@@ -59,6 +61,28 @@ def get_async_session_local():
 
 # Base class for models
 Base = declarative_base()
+
+
+async def init_db():
+    """Initialize the database engine (call before first use in CLI context)."""
+    get_engine()
+
+
+@asynccontextmanager
+async def get_db_session():
+    """
+    Context manager dla sesji DB (poza FastAPI Depends).
+
+    Użycie:
+        async with get_db_session() as db:
+            result = await db.execute(query)
+    """
+    session_factory = get_async_session_local()
+    session = session_factory()
+    try:
+        yield session
+    finally:
+        await session.close()
 
 
 async def get_db() -> AsyncSession:

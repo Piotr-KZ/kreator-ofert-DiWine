@@ -99,22 +99,43 @@ class ConsoleTransport(EmailTransport):
 def create_email_transport() -> EmailTransport:
     """
     Factory — tworzy transport na podstawie settings.
-    SMTP jesli skonfigurowany, inaczej Console.
+    EMAIL_BACKEND: "sendgrid" | "smtp" | "console" (auto-detect if not set).
     """
     try:
         from fasthub_core.config import get_settings
         settings = get_settings()
 
-        smtp_host = getattr(settings, "SMTP_HOST", None)
-        if smtp_host:
+        backend = getattr(settings, "EMAIL_BACKEND", None)
+
+        # Explicit backend selection
+        if backend == "sendgrid":
+            api_key = getattr(settings, "SENDGRID_API_KEY", None)
+            if api_key:
+                from fasthub_core.notifications.sendgrid_transport import SendGridTransport
+                return SendGridTransport(
+                    api_key=api_key,
+                    from_email=getattr(settings, "SENDGRID_FROM_EMAIL", "noreply@fasthub.app"),
+                )
+
+        if backend == "smtp" or (backend is None and getattr(settings, "SMTP_HOST", None)):
             return SMTPTransport(
-                host=smtp_host,
+                host=getattr(settings, "SMTP_HOST", ""),
                 port=getattr(settings, "SMTP_PORT", 587),
                 username=getattr(settings, "SMTP_USERNAME", ""),
                 password=getattr(settings, "SMTP_PASSWORD", ""),
                 use_tls=getattr(settings, "SMTP_USE_TLS", True),
                 from_email=getattr(settings, "SMTP_FROM_EMAIL", "noreply@fasthub.app"),
             )
+
+        # Auto-detect: if SendGrid key present but no explicit backend
+        if backend is None:
+            api_key = getattr(settings, "SENDGRID_API_KEY", None)
+            if api_key:
+                from fasthub_core.notifications.sendgrid_transport import SendGridTransport
+                return SendGridTransport(
+                    api_key=api_key,
+                    from_email=getattr(settings, "SENDGRID_FROM_EMAIL", "noreply@fasthub.app"),
+                )
     except Exception:
         pass
 
