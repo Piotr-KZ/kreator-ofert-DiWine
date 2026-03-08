@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(wc:*)",
+      "Bash(SECRET_KEY=test-key python:*)",
+      "Bash(winget install:*)",
+      "Bash(wmic logicaldisk:*)",
+      "Bash(export:*)",
+      "Bash(ls:*)",
+      "Bash(PYTHONIOENCODING=utf-8 python:*)",
+      "Bash(rm:*)",
+      "Bash(mkdir:*)",
+      "Bash(SECRET_KEY=test-secret-key-only-for-tests-minimum-32-chars python:*)",
+      "Bash(curl:*)",
+      "Bash(pip index:*)",
+      "WebSearch",
+      "Bash(SECRET_KEY=test python:*)",
+      "Bash(xargs grep:*)"
+    ]
+  }
+}

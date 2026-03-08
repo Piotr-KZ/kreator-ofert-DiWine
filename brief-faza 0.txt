@@ -1,0 +1,243 @@
+# BRIEF DLA WYKONAWCY — FAZA 0, ZADANIE 1
+## Przygotowanie FastHub jako pakiet pip (instalowalne narzędzie)
+
+### Data: 2026-02-28
+### Zlecający: Strateg (Opus w projekcie Claude)
+### Wykonawca: Opus w Claude Code CLI
+### Repo: https://github.com/Piotr-KZ/Fasthub
+
+---
+
+## CEL
+
+Przekształcić FastHub z "folderu z kodem" w "pakiet Pythona" który inne aplikacje (np. AutoFlow) mogą zainstalować jedną komendą. To fundament pod cały plan integracji.
+
+**Analogia:** Teraz FastHub to luźne narzędzia w szufladzie. Po tym zadaniu — to uporządkowana skrzynka z narzędziami, którą można przenieść do innego warsztatu i od razu używać.
+
+---
+
+## CO ZROBIĆ — KROK PO KROKU
+
+### Krok 1: Przeanalizuj obecną strukturę FastHub
+
+Zanim cokolwiek zmienisz — przeczytaj i zrozum co jest w repo. Kluczowe pliki:
+- Struktura katalogów (jakie foldery, jakie moduły)
+- `requirements.txt` (lista zależności)
+- `app/` folder (główny kod backendu)
+- Jak działa `main.py` (punkt startowy aplikacji)
+
+Zrób krótki raport: ile plików, ile linii kodu, jakie moduły istnieją.
+
+### Krok 2: Stwórz strukturę pakietu `fasthub_core`
+
+Obecna struktura FastHub wygląda mniej więcej tak:
+```
+Fasthub/
+├── app/
+│   ├── core/          ← config, security, auth
+│   ├── db/            ← database session
+│   ├── models/        ← SQLAlchemy models (User, Organization, Member...)
+│   ├── api/           ← FastAPI routers
+│   ├── services/      ← business logic
+│   └── middleware/     ← CORS, rate limiting
+├── frontend/          ← React app
+├── requirements.txt
+├── main.py
+└── ...
+```
+
+Stwórz NOWY folder `fasthub_core/` w korzeniu repo (obok `app/`). To będzie pakiet:
+
+```
+Fasthub/
+├── fasthub_core/              ← NOWY — pakiet do instalacji
+│   ├── __init__.py            ← eksportuje główne funkcje
+│   ├── auth/
+│   │   ├── __init__.py
+│   │   ├── service.py         ← hash_password, verify_password, create_token, decode_token
+│   │   └── dependencies.py    ← get_current_user FastAPI dependency
+│   ├── users/
+│   │   ├── __init__.py
+│   │   ├── models.py          ← User, Organization, Member (SQLAlchemy)
+│   │   └── schemas.py         ← Pydantic schemas
+│   ├── billing/
+│   │   ├── __init__.py
+│   │   ├── models.py          ← Subscription model
+│   │   └── service.py         ← check_limit, Stripe integration
+│   ├── audit/
+│   │   ├── __init__.py
+│   │   ├── models.py          ← AuditLog model
+│   │   └── service.py         ← log_action()
+│   ├── middleware/
+│   │   ├── __init__.py
+│   │   └── cors.py            ← CORS middleware
+│   ├── db/
+│   │   ├── __init__.py
+│   │   ├── session.py         ← async engine, get_db dependency
+│   │   └── base.py            ← declarative base
+│   └── config.py              ← Settings(BaseSettings)
+├── app/                       ← istniejąca aplikacja FastHub (nie ruszaj)
+├── setup.py                   ← NOWY — definicja pakietu
+├── pyproject.toml             ← NOWY — nowoczesna definicja pakietu
+└── ...
+```
+
+### Krok 3: Przenieś kod z `app/` do `fasthub_core/`
+
+**WAŻNE: NIE usuwaj niczego z `app/`. KOPIUJ, nie przenoś.**
+
+Na tym etapie `app/` dalej działa jak wcześniej. `fasthub_core/` to KOPIA kluczowych modułów, zorganizowana jako pakiet.
+
+Co skopiować:
+- `app/core/security.py` → `fasthub_core/auth/service.py` (funkcje JWT, hasło)
+- `app/core/config.py` → `fasthub_core/config.py` (Settings)
+- `app/db/session.py` → `fasthub_core/db/session.py` (database)
+- `app/models/user.py` (lub gdzie są modele User/Org) → `fasthub_core/users/models.py`
+- `app/models/` (Subscription, AuditLog) → odpowiednie subfoldery
+- `app/middleware/` → `fasthub_core/middleware/`
+
+Podczas kopiowania:
+- Zmień importy wewnętrzne (np. `from app.core.config import settings` → `from fasthub_core.config import settings`)
+- Upewnij się że każdy folder ma `__init__.py`
+- Każdy `__init__.py` eksportuje główne klasy/funkcje z tego modułu
+
+### Krok 4: Stwórz `setup.py` i `pyproject.toml`
+
+**setup.py:**
+```python
+from setuptools import setup, find_packages
+
+setup(
+    name="fasthub-core",
+    version="2.0.0-alpha",
+    description="Universal SaaS boilerplate - auth, users, billing, middleware",
+    author="Piotr",
+    packages=find_packages(include=["fasthub_core", "fasthub_core.*"]),
+    python_requires=">=3.11",
+    install_requires=[
+        "fastapi>=0.109.0",
+        "uvicorn>=0.27.0",
+        "sqlalchemy>=2.0.25",
+        "alembic>=1.13.0",
+        "python-jose>=3.3.0",
+        "passlib[bcrypt]>=1.7.4",
+        "pydantic>=2.5.3",
+        "pydantic-settings>=2.1.0",
+        "httpx>=0.26.0",
+        "redis>=5.0.1",
+        "stripe>=7.0.0",
+        "python-dotenv>=1.0.0",
+    ],
+)
+```
+
+**pyproject.toml:**
+```toml
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "fasthub-core"
+version = "2.0.0-alpha"
+description = "Universal SaaS boilerplate"
+requires-python = ">=3.11"
+```
+
+### Krok 5: Stwórz `fasthub_core/__init__.py` z głównym eksportem
+
+```python
+"""
+FastHub Core — uniwersalny fundament SaaS.
+Instalacja: pip install fasthub-core
+Użycie: from fasthub_core.auth import create_access_token
+"""
+
+__version__ = "2.0.0-alpha"
+
+# Główne eksporty — to co inne aplikacje najczęściej potrzebują
+from fasthub_core.config import Settings
+from fasthub_core.db.session import get_db, get_engine
+
+__all__ = ["Settings", "get_db", "get_engine", "__version__"]
+```
+
+### Krok 6: Przetestuj że pakiet się instaluje
+
+W folderze FastHub uruchom:
+```bash
+pip install -e .
+```
+
+To instaluje pakiet w trybie "editable" — zmiany w kodzie od razu widoczne bez reinstalacji.
+
+Potem przetestuj:
+```bash
+python -c "from fasthub_core import __version__; print(f'FastHub Core {__version__}')"
+python -c "from fasthub_core.auth.service import hash_password; print('Auth OK')"
+python -c "from fasthub_core.users.models import User; print('Models OK')"
+python -c "from fasthub_core.db.session import get_db; print('DB OK')"
+```
+
+Każda linia powinna wypisać OK bez błędów.
+
+### Krok 7: Sprawdź że istniejąca aplikacja FastHub dalej działa
+
+```bash
+cd Fasthub
+uvicorn app.main:app --reload --port 8000
+```
+
+Aplikacja MUSI działać dokładnie tak jak przed zmianami. Nic nie usuwaliśmy z `app/`, tylko dodaliśmy `fasthub_core/` obok.
+
+---
+
+## CZEGO NIE ROBIĆ
+
+- ❌ NIE usuwaj niczego z folderu `app/`
+- ❌ NIE zmieniaj istniejącego kodu w `app/`
+- ❌ NIE przenoś frontendu do `fasthub_core` (frontend zostaje osobno)
+- ❌ NIE dodawaj jeszcze RBAC, Super Admin ani żadnych nowych funkcji — to Faza 1
+- ❌ NIE zmieniaj `main.py` ani `requirements.txt`
+
+---
+
+## DELIVERABLES (co oddajesz)
+
+1. **Folder `fasthub_core/`** z modułami: auth, users, billing, audit, middleware, db, config
+2. **Plik `setup.py`** — definicja pakietu
+3. **Plik `pyproject.toml`** — nowoczesna definicja
+4. **Raport:** krótki opis co skopiowałeś, ile plików, czy testy instalacji przeszły
+5. **Potwierdzenie** że istniejąca aplikacja (`app/`) dalej działa bez zmian
+6. **Git commit** z opisem: "Faza 0.1: FastHub Core package structure"
+7. **Git push** na branch `feature/core-package` (NIE na main)
+
+---
+
+## BRANCH GIT
+
+Nie pushuj na `main`. Stwórz nowy branch:
+```bash
+git checkout -b feature/core-package
+```
+
+Po zakończeniu — push na ten branch:
+```bash
+git push -u origin feature/core-package
+```
+
+Merge do `main` zrobimy po weryfikacji przez stratega.
+
+---
+
+## UWAGI KOŃCOWE
+
+- Jeśli nie wiesz gdzie jest jakiś model (np. User) — przeszukaj pliki: `grep -r "class User" app/`
+- Jeśli coś nie pasuje do tej struktury — zanotuj w raporcie, nie improwizuj
+- Jeśli napotkasz problem — opisz go, nie próbuj naprawiać na własną rękę
+- `install_requires` w setup.py dostosuj do faktycznych wersji z `requirements.txt` FastHub
+
+---
+
+*Brief przygotowany przez Stratega, 2026-02-28*
+*Następny brief (Faza 0.2 — kontrakt API) zostanie wydany po odebraniu tego zadania*

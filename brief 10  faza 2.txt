@@ -1,0 +1,1530 @@
+# BRIEF DLA WYKONAWCY — FAZA 2, ZADANIE 10
+## Transfer modułów uniwersalnych z AutoFlow do fasthub_core
+
+### Data: 2026-03-02
+### Zlecający: Strateg (Opus w projekcie Claude)
+### Wykonawca: Opus w Claude Code CLI
+### Repo: https://github.com/Piotr-KZ/Fasthub
+### Folder: C:\Projekty internetowe\Fasthub
+### Branch: feature/universal-modules-transfer
+
+---
+
+## KONTEKST
+
+AutoFlow v7 ma 7 modułów które są **uniwersalne** — każdy SaaS ich potrzebuje, nie tylko platforma automatyzacji procesów. Te moduły powinny żyć w `fasthub_core/` żeby inne aplikacje (AutoFlow, FastCRM, cokolwiek zbudowane na FastHub) mogły z nich korzystać.
+
+**Dlaczego teraz?** Brief 3 (rename Workspace→Organization) właśnie się skończył — AutoFlow i FastHub mówią tym samym językiem. Poprawki FastHub (unified BaseModel, RBAC activation, cleanup blacklist) robią się równolegle. Ten brief dodaje fundamentalne serwisy infrastrukturalne do fasthub_core.
+
+**Co przenosimy (7 modułów, ~3400 linii kodu źródłowego):**
+
+| # | Moduł | Źródło (AutoFlow) | Linie | Co robi |
+|---|-------|-------------------|-------|---------|
+| A | Event Bus | `app/events/__init__.py` | 86 | Pub/Sub z wildcard handlers — każdy SaaS potrzebuje eventów (user.login, subscription.created) |
+| B | Encryption | `app/core/encryption.py` | 263 | Szyfrowanie credentials (API keys, OAuth tokens) — AES-128 Fernet |
+| C | Redis Service | `app/core/redis.py` | 372 | Connection pool + cache + pub/sub + health check — fundament dla Event Bus, cache, queues |
+| D | OAuth Base | `app/integrations/base/oauth.py` + `app/services/oauth_token_storage.py` | 842+269 | Uniwersalny flow OAuth2 (authorize→callback→token→refresh) z PKCE |
+| E | Webhook Base | `app/integrations/base/webhooks.py` | 925 | Rejestracja webhooków, weryfikacja podpisów, dedup eventów |
+| F | Billing System | `app/models/models.py` (6 klas) + `app/services/billing.py` + `app/middleware/billing.py` + API | ~2560 | Plany, add-ony, usage tracking, Stripe — kompletny system subskrypcji |
+| G | Security Headers | `app/middleware/security.py` | ~40 | X-Frame-Options, CSP, HSTS, X-Content-Type — ochrona HTTP |
+
+**Czego NIE przenosimy (domain-specific, zostaje w AutoFlow):**
+- OAuth Provider Configs (20 providerów z ich scopes — specyficzne dla AutoFlow connectorów)
+- Webhook Triggers (uruchamianie procesów via webhook — specyficzne dla workflow engine)
+- Connector Registry i Workflow Executor (core AutoFlow)
+
+---
+
+## KOLEJNOŚĆ IMPLEMENTACJI
+
+**KRYTYCZNE: Kolejność ma znaczenie ze względu na zależności.**
+
+```
+Krok 1: Moduł C (Redis Service) — FUNDAMENT dla A, F
+         ↓
+Krok 2: Moduł A (Event Bus) — zależy od Redis (pub/sub)
+         ↓
+Krok 3: Moduł B (Encryption) — NIEZALEŻNY, ale potrzebny dla D i F
+         ↓
+Krok 4: Moduł G (Security Headers) — NIEZALEŻNY, szybki
+         ↓
+Krok 5: Moduł D (OAuth Base) — zależy od Encryption (szyfrowanie tokenów)
+         ↓
+Krok 6: Moduł E (Webhook Base) — NIEZALEŻNY, ale logicznie po OAuth
+         ↓
+Krok 7: Moduł F (Billing System) — zależy od Redis (cache), Encryption (Stripe keys)
+```
+
+---
+
+## ZANIM ZACZNIESZ — PRZECZYTAJ ISTNIEJĄCY KOD
+
+```bash
+# 1. Co FastHub już ma w konfiguracji Redis
+cat fasthub_core/config.py | grep -i redis
+
+# 2. Jak FastHub używa Redis teraz (blacklist)
+cat fasthub_core/auth/blacklist.py
+cat fasthub_core/auth/token_blacklist.py
+
+# 3. Jakie modele billingowe FastHub już ma
+cat fasthub_core/billing/models.py 2>/dev/null || echo "Brak billing w core"
+
+# 4. Co jest w middleware
+ls fasthub_core/middleware/
+
+# 5. Security Headers z Briefu 9
+cat fasthub_core/middleware/security_headers.py
+
+# 6. Struktura BaseModel
+cat fasthub_core/db/base.py
+```
+
+**WAŻNE:** FastHub z Briefu 9 już ma `SecurityHeadersMiddleware`. Moduł G w tym briefie to ROZSZERZENIE o dodatkowe headery z AutoFlow (jeśli ich brakuje) albo POMINIĘCIE jeśli Brief 9 wszystko pokrywa. SPRAWDŹ najpierw.
+
+---
+
+## BRANCH I STRUKTURA
+
+```bash
+git checkout main
+git pull
+git checkout -b feature/universal-modules-transfer
+```
+
+### Docelowa struktura w fasthub_core/
+
+```
+fasthub_core/
+├── infrastructure/
+│   ├── __init__.py
+│   └── redis.py              ← Moduł C
+├── events/
+│   ├── __init__.py
+│   └── bus.py                ← Moduł A
+├── security/
+│   ├── __init__.py
+│   └── encryption.py         ← Moduł B
+├── integrations/
+│   ├── __init__.py
+│   ├── oauth.py              ← Moduł D (OAuth flow)
+│   ├── oauth_storage.py      ← Moduł D (token persistence)
+│   └── webhooks.py           ← Moduł E
+├── billing/
+│   ├── __init__.py
+│   ├── models.py             ← Moduł F (6 modeli)
+│   ├── service.py            ← Moduł F (BillingService)
+│   ├── middleware.py          ← Moduł F (enforce_limit, require_limit)
+│   └── api.py                ← Moduł F (endpointy REST)
+├── middleware/
+│   ├── __init__.py
+│   ├── security_headers.py   ← JUŻ ISTNIEJE z Briefu 9 — sprawdź czy trzeba rozszerzyć
+│   └── request_id.py         ← JUŻ ISTNIEJE z Briefu 9
+```
+
+---
+
+## MODUŁ C: REDIS SERVICE (KROK 1 — FUNDAMENT)
+
+### Źródło
+`autoflow/app/core/redis.py` — 372 linii
+
+### Cel
+`fasthub_core/infrastructure/redis.py`
+
+### Co przenieść
+
+**Connection Pool Singleton** — jedna pula połączeń Redis dla całej aplikacji:
+```python
+async def get_redis() -> aioredis.Redis
+async def close_redis()
+async def redis_health_check() -> Dict[str, Any]
+```
+
+**Pub/Sub** — publikowanie i nasłuchiwanie eventów:
+```python
+async def publish_event(event_type: str, payload: Dict[str, Any]) -> int
+async def subscribe_events(*event_types: str)
+async def subscribe_all_events()
+```
+
+**Cache** — generyczne cache'owanie z TTL:
+```python
+async def set_cache(key: str, value: Any, ttl: int = 3600) -> bool
+async def get_cache(key: str) -> Optional[Any]
+async def delete_cache(key: str) -> bool
+async def cache_exists(key: str) -> bool
+async def clear_cache_pattern(pattern: str) -> int
+```
+
+**AI Cache** — dedykowany cache dla odpowiedzi AI (content hash):
+```python
+async def get_ai_cache(text: str, schema: Any, model: str = "") -> Optional[Dict]
+async def set_ai_cache(text: str, schema: Any, result: Dict, model: str = "", ttl: int = 86400) -> bool
+```
+
+### Co ZMIENIĆ
+
+1. **Usuń ARQ Task Queue** — FastHub używa Celery (z Brief 0). Funkcje `enqueue_task()` i `get_queue_stats()` NIE przenosimy.
+
+2. **Zmień konfigurację** — AutoFlow ma `AUTOFLOW_REDIS_URL` → zmień na istniejące FastHub settings:
+```python
+# Zamiast hardcoded env vars, użyj fasthub_core/config.py:
+from fasthub_core.config import settings
+# settings.REDIS_URL, settings.REDIS_HOST, settings.REDIS_PORT, settings.REDIS_DB
+```
+
+3. **Prefix kluczy** — AutoFlow używa `autoflow:cache:`, `autoflow:events:`. Zmień na konfigurowalny prefix:
+```python
+# Nowy parametr w config:
+REDIS_KEY_PREFIX: str = "fasthub"  # Aplikacja nadpisze na "autoflow", "fastcrm" itd.
+```
+
+4. **Kompatybilność z istniejącym blacklist** — FastHub już używa Redis w `auth/blacklist.py`. Nowy moduł musi współdzielić connection pool (nie tworzyć drugiego). Sprawdź jak blacklist tworzy połączenie i UJEDNOLIĆ:
+```python
+# Blacklist powinien używać: from fasthub_core.infrastructure.redis import get_redis
+# Zamiast własnego connection code
+```
+
+### Co NIE przenosić
+
+- `enqueue_task()` — Celery
+- `get_queue_stats()` — Celery
+- Hardcoded `AUTOFLOW_` env vars
+
+### Testy
+
+```python
+# tests/test_infrastructure_redis.py
+
+import pytest
+import asyncio
+
+def test_redis_module_imports():
+    from fasthub_core.infrastructure.redis import (
+        get_redis, close_redis, redis_health_check,
+        publish_event, subscribe_events, subscribe_all_events,
+        set_cache, get_cache, delete_cache, cache_exists, clear_cache_pattern,
+        get_ai_cache, set_ai_cache
+    )
+    assert callable(get_redis)
+    assert callable(set_cache)
+
+def test_redis_config_uses_settings():
+    """Redis powinien brać URL z fasthub_core config, nie z os.environ bezpośrednio"""
+    import inspect
+    from fasthub_core.infrastructure import redis as redis_mod
+    source = inspect.getsource(redis_mod)
+    assert "AUTOFLOW" not in source, "Redis nie powinien odwoływać się do AUTOFLOW"
+
+@pytest.mark.asyncio
+async def test_cache_set_get_without_redis():
+    """Bez Redis-a, cache powinien gracefully degradować (not crash)"""
+    from fasthub_core.infrastructure.redis import set_cache, get_cache
+    # Jeśli Redis niedostępny — test czy nie wyrzuca exception
+    # (implementacja powinna łapać ConnectionError)
+    try:
+        result = await get_cache("nonexistent_key")
+        # None albo exception — oba OK
+    except Exception:
+        pass  # Redis niedostępny — to OK w testach
+
+def test_no_arq_references():
+    """Upewnij się że ARQ/enqueue nie zostały przeniesione"""
+    import inspect
+    from fasthub_core.infrastructure import redis as redis_mod
+    source = inspect.getsource(redis_mod)
+    assert "enqueue_task" not in source
+    assert "arq" not in source.lower()
+
+@pytest.mark.asyncio
+async def test_health_check_structure():
+    from fasthub_core.infrastructure.redis import redis_health_check
+    result = await redis_health_check()
+    assert isinstance(result, dict)
+    assert "status" in result
+```
+
+---
+
+## MODUŁ A: EVENT BUS (KROK 2)
+
+### Źródło
+`autoflow/app/events/__init__.py` — 86 linii (plus default handlers)
+
+### Cel
+`fasthub_core/events/bus.py`
+
+### Co przenieść
+
+**Klasa Event:**
+```python
+class Event:
+    event_type: str    # np. "user.login", "subscription.created"
+    payload: Dict      # dane eventu
+    timestamp: str     # ISO 8601
+    source: str        # "system", "api", "webhook"
+```
+
+**Klasa EventBus (singleton):**
+```python
+class EventBus:
+    def on(self, event_pattern: str)           # Dekorator: @event_bus.on("user.*")
+    def register(self, pattern: str, handler)  # Programmatic registration
+    async def emit(self, event_type: str, payload: dict, source: str = "system") -> int
+    async def emit_many(self, events: List[tuple]) -> int
+    def get_stats(self) -> Dict[str, Any]
+    def clear_handlers()
+```
+
+**Wildcard matching** — `fnmatch` pattern:
+- `user.*` — łapie `user.login`, `user.logout`, `user.created`
+- `*.error` — łapie `process.error`, `integration.error`
+- `*` — łapie WSZYSTKO
+
+**Redis Pub/Sub** — emit() oprócz local handlers publikuje event na Redis (dla multi-server):
+```python
+# W emit():
+await publish_event(event_type, event.to_dict())  # z redis.py
+```
+
+### Co ZMIENIĆ
+
+1. **Usuń default handlers specyficzne dla AutoFlow:**
+```python
+# TE USUWAMY (są w autoflow/app/events/__init__.py):
+async def _log_execution_failure(event)     # ← AutoFlow-specific
+async def _log_health_warning(event)        # ← AutoFlow-specific
+async def _log_system_events(event)         # ← AutoFlow-specific
+```
+
+2. **Zamień na generyczne default handlers:**
+```python
+# Nowe — logowanie eventów (uniwersalne):
+async def _default_log_handler(event):
+    """Loguje wszystkie eventy na INFO level"""
+    logger.info(f"Event: {event.get('event_type')} from {event.get('source')}")
+
+# Rejestracja:
+event_bus = EventBus()
+event_bus.register("system.*", _default_log_handler)
+```
+
+3. **Zmień import Redis:**
+```python
+# Zamiast: from app.core.redis import publish_event
+# Nowe: from fasthub_core.infrastructure.redis import publish_event
+```
+
+4. **Zmień typowanie eventów na generyczne:**
+```python
+# AutoFlow ma: process.*, execution.*, integration.*, document.*, user.*, system.*
+# FastHub powinien definiować BAZOWE:
+# user.*, organization.*, billing.*, audit.*, system.*
+# Aplikacje (AutoFlow) dodają swoje (process.*, execution.*, connector.*)
+```
+
+### Testy
+
+```python
+# tests/test_events_bus.py
+
+import pytest
+from fasthub_core.events.bus import Event, EventBus
+
+def test_event_creation():
+    e = Event("user.login", {"user_id": "123"})
+    assert e.event_type == "user.login"
+    assert e.payload["user_id"] == "123"
+    assert e.timestamp is not None
+    assert e.source == "system"
+
+def test_event_to_dict():
+    e = Event("test.event", {"key": "value"}, source="api")
+    d = e.to_dict()
+    assert d["event_type"] == "test.event"
+    assert d["source"] == "api"
+
+def test_event_bus_singleton():
+    from fasthub_core.events.bus import event_bus
+    assert isinstance(event_bus, EventBus)
+
+def test_event_bus_register_handler():
+    bus = EventBus()
+    handler_called = []
+
+    def handler(event):
+        handler_called.append(event)
+
+    bus.register("test.*", handler)
+    stats = bus.get_stats()
+    assert stats["handlers_count"] > 0
+
+def test_event_bus_wildcard_matching():
+    bus = EventBus()
+    matched = []
+
+    bus.register("user.*", lambda e: matched.append(e))
+
+    # Emit — wildcard powinien matchować user.login
+    # (bez Redis — local only)
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(
+        bus.emit("user.login", {"user_id": "1"})
+    )
+    assert len(matched) == 1
+
+def test_event_bus_no_autoflow_references():
+    import inspect
+    from fasthub_core.events import bus
+    source = inspect.getsource(bus)
+    assert "autoflow" not in source.lower()
+    assert "process.started" not in source  # domain-specific
+    assert "execution." not in source       # domain-specific
+
+def test_event_bus_clear_handlers():
+    bus = EventBus()
+    bus.register("test.*", lambda e: None)
+    bus.clear_handlers()
+    assert bus.get_stats()["handlers_count"] == 0
+
+@pytest.mark.asyncio
+async def test_event_bus_emit_returns_count():
+    bus = EventBus()
+    bus.register("count.*", lambda e: None)
+    bus.register("count.*", lambda e: None)
+    count = await bus.emit("count.test", {})
+    assert count >= 2
+
+def test_event_bus_on_decorator():
+    bus = EventBus()
+
+    @bus.on("decorated.*")
+    async def my_handler(event):
+        pass
+
+    assert bus.get_stats()["handlers_count"] >= 1
+```
+
+---
+
+## MODUŁ B: ENCRYPTION (KROK 3)
+
+### Źródło
+`autoflow/app/core/encryption.py` — 263 linii
+
+### Cel
+`fasthub_core/security/encryption.py`
+
+### Co przenieść — CAŁY PLIK z adaptacjami
+
+**Kluczowe funkcje:**
+- `encrypt_credentials(credentials: Dict) -> str` — szyfruje dict na string z prefixem "ENC:"
+- `decrypt_credentials(encrypted_data: str) -> Dict` — deszyfruje z powrotem
+- `rotate_encryption_key(old_key, new_key, encrypted_data) -> str` — rotacja klucza
+- `generate_key() -> str` — generuje nowy Fernet key
+- `mask_credentials(credentials: Dict) -> Dict` — maskuje wartości do logów (API k→ `"API ***"`)
+- `is_encryption_available() -> bool` — sprawdza czy klucz jest ustawiony
+
+**Lazy initialization** — nie wymaga cryptography przy starcie (dev mode działa bez szyfrowania).
+
+**Fallback** — jeśli `SECRET_KEY` nie ustawiony → `encrypt_credentials()` zapisuje plain JSON (z ostrzeżeniem w logach).
+
+**CLI** — `python encryption.py generate-key` i `python encryption.py test`
+
+### Co ZMIENIĆ
+
+1. **Zmień env var:**
+```python
+# Zamiast: AUTOFLOW_SECRET_KEY
+# Nowe: FASTHUB_SECRET_KEY (lub z config.py)
+from fasthub_core.config import settings
+SECRET_KEY = getattr(settings, 'SECRET_KEY', None) or os.environ.get('FASTHUB_SECRET_KEY')
+```
+
+2. **Zmień prefix w logach:**
+```python
+# Zamiast: logger = logging.getLogger("autoflow.encryption")
+# Nowe: logger = logging.getLogger("fasthub.encryption")
+```
+
+3. **Zachowaj backward compatibility prefix "ENC:"** — AutoFlow już ma dane zaszyfrowane z tym prefixem. Nie zmieniamy formatu.
+
+### Testy
+
+```python
+# tests/test_security_encryption.py
+
+import pytest
+import os
+
+def test_encryption_imports():
+    from fasthub_core.security.encryption import (
+        encrypt_credentials, decrypt_credentials,
+        rotate_encryption_key, generate_key,
+        mask_credentials, is_encryption_available
+    )
+    assert callable(encrypt_credentials)
+
+def test_generate_key():
+    from fasthub_core.security.encryption import generate_key
+    key = generate_key()
+    assert isinstance(key, str)
+    assert len(key) > 20  # Fernet key jest ~44 chars base64
+
+def test_encrypt_decrypt_roundtrip():
+    from fasthub_core.security.encryption import (
+        encrypt_credentials, decrypt_credentials, generate_key
+    )
+    os.environ["FASTHUB_SECRET_KEY"] = generate_key()
+    try:
+        original = {"api_key": "sk-test-123", "webhook_secret": "whsec_abc"}
+        encrypted = encrypt_credentials(original)
+        assert encrypted.startswith("ENC:")
+        assert "sk-test-123" not in encrypted
+
+        decrypted = decrypt_credentials(encrypted)
+        assert decrypted == original
+    finally:
+        del os.environ["FASTHUB_SECRET_KEY"]
+
+def test_encrypt_without_key_returns_json():
+    from fasthub_core.security.encryption import encrypt_credentials, decrypt_credentials
+    # Bez klucza — fallback na plain JSON
+    original = {"token": "test"}
+    result = encrypt_credentials(original)
+    # Powinien być plain JSON (nie zaszyfrowany) — ale nie crash
+    decrypted = decrypt_credentials(result)
+    assert decrypted == original
+
+def test_mask_credentials():
+    from fasthub_core.security.encryption import mask_credentials
+    creds = {"api_key": "sk-very-secret-key-123", "name": "My Integration"}
+    masked = mask_credentials(creds)
+    assert "sk-very-secret-key-123" not in str(masked)
+    # Nazwa nie powinna być zamaskowana
+    assert masked.get("name") == "My Integration"
+
+def test_rotate_key():
+    from fasthub_core.security.encryption import (
+        encrypt_credentials, rotate_encryption_key, decrypt_credentials, generate_key
+    )
+    old_key = generate_key()
+    new_key = generate_key()
+
+    os.environ["FASTHUB_SECRET_KEY"] = old_key
+    encrypted = encrypt_credentials({"secret": "data"})
+
+    # Rotate
+    re_encrypted = rotate_encryption_key(old_key, new_key, encrypted)
+
+    # Decrypt z nowym kluczem
+    os.environ["FASTHUB_SECRET_KEY"] = new_key
+    decrypted = decrypt_credentials(re_encrypted)
+    assert decrypted["secret"] == "data"
+
+    del os.environ["FASTHUB_SECRET_KEY"]
+
+def test_no_autoflow_references():
+    import inspect
+    from fasthub_core.security import encryption
+    source = inspect.getsource(encryption)
+    assert "AUTOFLOW" not in source
+    assert "autoflow" not in source.lower() or "autoflow" in source.lower().split("fasthub")[0] == False
+```
+
+---
+
+## MODUŁ G: SECURITY HEADERS (KROK 4)
+
+### Źródło
+`autoflow/app/middleware/security.py` — ~40 linii
+
+### Cel
+`fasthub_core/middleware/security_headers.py` — **JUŻ ISTNIEJE** z Briefu 9
+
+### INSTRUKCJA
+
+**Brief 9 już dostarczył SecurityHeadersMiddleware.** Twoim zadaniem jest PORÓWNANIE — czy Brief 9 pokrywa te same nagłówki co AutoFlow:
+
+AutoFlow ustawia:
+- `X-Frame-Options: DENY`
+- `Content-Security-Policy` (z dozwolonym `wss:` i `ws:` dla WebSocket)
+- `Strict-Transport-Security` (warunkowy — tylko jeśli HSTS_ENABLED)
+- `X-Content-Type-Options: nosniff`
+
+**Jeśli Brief 9 pokrywa wszystko** — nic nie rób, ten moduł jest GOTOWY.
+
+**Jeśli czegoś brakuje** — dodaj brakujące nagłówki do istniejącego `SecurityHeadersMiddleware`. NIE twórz nowego pliku.
+
+### Test
+
+```python
+def test_security_headers_comparison():
+    """Sprawdź czy wszystkie nagłówki z AutoFlow są w FastHub"""
+    from fasthub_core.middleware.security_headers import SecurityHeadersMiddleware
+    from starlette.testclient import TestClient
+    from starlette.applications import Starlette
+    from starlette.responses import PlainTextResponse
+    from starlette.routing import Route
+
+    async def homepage(request):
+        return PlainTextResponse("OK")
+
+    app = Starlette(routes=[Route("/", homepage)])
+    app.add_middleware(SecurityHeadersMiddleware)
+    client = TestClient(app)
+    response = client.get("/")
+
+    # Wymagane nagłówki (z AutoFlow):
+    assert response.headers.get("X-Content-Type-Options") == "nosniff"
+    assert response.headers.get("X-Frame-Options") == "DENY"
+    csp = response.headers.get("Content-Security-Policy", "")
+    assert "wss:" in csp or "ws:" in csp  # WebSocket musi być dozwolony
+```
+
+---
+
+## MODUŁ D: OAUTH BASE (KROK 5)
+
+### Źródło
+- `autoflow/app/integrations/base/oauth.py` — 842 linii
+- `autoflow/app/services/oauth_token_storage.py` — 269 linii
+
+### Cel
+- `fasthub_core/integrations/oauth.py` — OAuth flow (klasy, PKCE, token management)
+- `fasthub_core/integrations/oauth_storage.py` — token persistence
+
+### Co przenieść
+
+**Klasy danych:**
+```python
+class OAuthConfig:
+    provider: str
+    client_id: str
+    client_secret: str
+    authorization_url: str
+    token_url: str
+    scopes: List[str]
+    redirect_uri: str
+    pkce_enabled: bool = False
+
+class OAuthTokens:
+    access_token: str
+    refresh_token: Optional[str]
+    expires_at: Optional[datetime]
+    token_type: str = "Bearer"
+    scope: Optional[str]
+
+    def is_expired(self) -> bool
+    def expires_in_seconds(self) -> Optional[int]
+    def should_refresh(self, buffer_seconds: int = 300) -> bool
+    def to_dict(self) -> dict
+    @classmethod
+    def from_dict(cls, data: dict) -> "OAuthTokens"
+
+class OAuthState:
+    state: str
+    provider: str
+    redirect_uri: str
+    created_at: datetime
+    code_verifier: Optional[str]  # PKCE
+```
+
+**TokenStorage ABC:**
+```python
+class TokenStorage(ABC):
+    @abstractmethod
+    async def save_tokens(self, provider: str, entity_id: str, tokens: OAuthTokens) -> None: ...
+    @abstractmethod
+    async def get_tokens(self, provider: str, entity_id: str) -> Optional[OAuthTokens]: ...
+    @abstractmethod
+    async def delete_tokens(self, provider: str, entity_id: str) -> None: ...
+
+class MemoryTokenStorage(TokenStorage):
+    """In-memory — do testów i dev"""
+```
+
+**OAuthManager:**
+```python
+class OAuthManager:
+    def __init__(self, config: OAuthConfig, storage: TokenStorage)
+
+    async def get_authorization_url(self, state: Optional[str] = None) -> Tuple[str, str]:
+        """Zwraca (url, state) — redirect usera do providera"""
+
+    async def exchange_code(self, code: str, state: str) -> OAuthTokens:
+        """Wymienia authorization code na tokeny"""
+
+    async def refresh_tokens(self, tokens: OAuthTokens) -> OAuthTokens:
+        """Odświeża expired token"""
+```
+
+**ProcessTokenStorage** z `oauth_token_storage.py`:
+```python
+class ProcessTokenStorage(TokenStorage):
+    """Zapisuje tokeny do bazy danych (Integration model)"""
+```
+
+### Co ZMIENIĆ
+
+1. **ProcessTokenStorage → DatabaseTokenStorage:**
+```python
+# Zamiast odniesienia do Integration model (AutoFlow domain):
+class DatabaseTokenStorage(TokenStorage):
+    """Zapisuje tokeny do bazy przez konfigurowalny model"""
+    def __init__(self, db_session, model_class, id_field: str = "id", credentials_field: str = "credentials"):
+        # Generyczne — nie zależy od konkretnego modelu
+```
+
+2. **Szyfrowanie tokenów:**
+```python
+# Zamiast: from app.core.encryption import encrypt_credentials, decrypt_credentials
+# Nowe: from fasthub_core.security.encryption import encrypt_credentials, decrypt_credentials
+```
+
+3. **Usuń odwołania do AutoFlow models:**
+```python
+# Zamiast: from app.models.models import Integration
+# Nowe: model_class podawany jako parametr
+```
+
+4. **HTTP client — użyj httpx:**
+```python
+# AutoFlow używa httpx — zachowaj. Sprawdź czy FastHub ma httpx w dependencies.
+# Jeśli nie: dodaj httpx do setup.py/pyproject.toml
+```
+
+### Co NIE przenosić
+
+- `OAUTH_PROVIDERS` dict z 20 providerami (Google scopes, Microsoft scopes itp.) — to domain-specific, zostaje w AutoFlow
+- `oauth_integration.py` — provider configs, zostaje w AutoFlow
+
+### Testy
+
+```python
+# tests/test_integrations_oauth.py
+
+import pytest
+
+def test_oauth_imports():
+    from fasthub_core.integrations.oauth import (
+        OAuthConfig, OAuthTokens, OAuthState, OAuthManager,
+        TokenStorage, MemoryTokenStorage
+    )
+    assert OAuthConfig is not None
+
+def test_oauth_tokens_expiry():
+    from fasthub_core.integrations.oauth import OAuthTokens
+    from datetime import datetime, timedelta
+
+    expired = OAuthTokens(
+        access_token="test",
+        refresh_token="refresh",
+        expires_at=datetime.utcnow() - timedelta(hours=1),
+    )
+    assert expired.is_expired() == True
+    assert expired.should_refresh() == True
+
+    valid = OAuthTokens(
+        access_token="test",
+        refresh_token="refresh",
+        expires_at=datetime.utcnow() + timedelta(hours=1),
+    )
+    assert valid.is_expired() == False
+
+def test_oauth_tokens_serialization():
+    from fasthub_core.integrations.oauth import OAuthTokens
+    from datetime import datetime, timedelta
+
+    tokens = OAuthTokens(
+        access_token="acc_test",
+        refresh_token="ref_test",
+        expires_at=datetime.utcnow() + timedelta(hours=1),
+        scope="read write"
+    )
+    d = tokens.to_dict()
+    assert d["access_token"] == "acc_test"
+
+    restored = OAuthTokens.from_dict(d)
+    assert restored.access_token == "acc_test"
+    assert restored.scope == "read write"
+
+def test_memory_token_storage():
+    from fasthub_core.integrations.oauth import MemoryTokenStorage, OAuthTokens
+    import asyncio
+
+    storage = MemoryTokenStorage()
+    tokens = OAuthTokens(access_token="test", refresh_token="ref")
+
+    asyncio.get_event_loop().run_until_complete(
+        storage.save_tokens("google", "entity-1", tokens)
+    )
+
+    result = asyncio.get_event_loop().run_until_complete(
+        storage.get_tokens("google", "entity-1")
+    )
+    assert result.access_token == "test"
+
+def test_oauth_config_creation():
+    from fasthub_core.integrations.oauth import OAuthConfig
+    config = OAuthConfig(
+        provider="google",
+        client_id="id",
+        client_secret="secret",
+        authorization_url="https://accounts.google.com/o/oauth2/v2/auth",
+        token_url="https://oauth2.googleapis.com/token",
+        scopes=["email", "profile"],
+        redirect_uri="http://localhost:8000/callback",
+    )
+    assert config.provider == "google"
+    assert config.pkce_enabled == False
+
+def test_oauth_state_has_pkce_field():
+    from fasthub_core.integrations.oauth import OAuthState
+    state = OAuthState(
+        state="random-string",
+        provider="google",
+        redirect_uri="http://localhost/callback",
+        code_verifier="pkce-verifier-string"
+    )
+    assert state.code_verifier is not None
+
+def test_database_token_storage_exists():
+    from fasthub_core.integrations.oauth_storage import DatabaseTokenStorage
+    assert DatabaseTokenStorage is not None
+
+def test_no_autoflow_model_imports():
+    import inspect
+    from fasthub_core.integrations import oauth
+    source = inspect.getsource(oauth)
+    assert "from app.models" not in source
+    assert "Integration" not in source  # model AutoFlow
+```
+
+---
+
+## MODUŁ E: WEBHOOK BASE (KROK 6)
+
+### Źródło
+`autoflow/app/integrations/base/webhooks.py` — 925 linii
+
+### Cel
+`fasthub_core/integrations/webhooks.py`
+
+### Co przenieść
+
+**Enums i konfiguracja:**
+```python
+class WebhookStatus(str, Enum):
+    ACTIVE = "active"
+    PAUSED = "paused"
+    FAILED = "failed"
+
+class SignatureMethod(str, Enum):
+    HMAC_SHA256 = "hmac_sha256"
+    HMAC_SHA1 = "hmac_sha1"
+    HMAC_MD5 = "hmac_md5"
+
+class WebhookConfig:
+    url: str
+    events: List[str]          # które eventy triggerują webhook
+    secret: Optional[str]       # do podpisywania payloadu
+    signature_method: SignatureMethod
+    headers: Dict[str, str]     # custom headers
+    retry_policy: Dict          # max_retries, backoff
+```
+
+**WebhookEvent:**
+```python
+class WebhookEvent:
+    id: str                     # UUID
+    webhook_id: str
+    event_type: str
+    payload: Dict
+    status: str                 # pending, delivered, failed
+    attempts: int
+    last_attempt_at: Optional[datetime]
+    response_code: Optional[int]
+```
+
+**WebhookRegistration:**
+```python
+class WebhookRegistration:
+    id: str
+    config: WebhookConfig
+    status: WebhookStatus
+    created_at: datetime
+    last_triggered_at: Optional[datetime]
+    total_deliveries: int
+    total_failures: int
+```
+
+**WebhookStorage ABC:**
+```python
+class WebhookStorage(ABC):
+    @abstractmethod
+    async def save_registration(self, registration: WebhookRegistration) -> None: ...
+    @abstractmethod
+    async def get_registration(self, webhook_id: str) -> Optional[WebhookRegistration]: ...
+    @abstractmethod
+    async def list_registrations(self, entity_id: str) -> List[WebhookRegistration]: ...
+    @abstractmethod
+    async def delete_registration(self, webhook_id: str) -> None: ...
+    @abstractmethod
+    async def save_event(self, event: WebhookEvent) -> None: ...
+    @abstractmethod
+    async def get_event(self, event_id: str) -> Optional[WebhookEvent]: ...
+    @abstractmethod
+    async def check_duplicate(self, event_id: str) -> bool: ...
+    @abstractmethod
+    async def get_pending_events(self, limit: int = 100) -> List[WebhookEvent]: ...
+
+class MemoryWebhookStorage(WebhookStorage):
+    """In-memory — do testów i dev"""
+```
+
+**SignatureVerifier:**
+```python
+class SignatureVerifier:
+    @staticmethod
+    def compute_signature(payload: bytes, secret: str, method: SignatureMethod) -> str
+    @staticmethod
+    def verify_signature(payload: bytes, secret: str, signature: str, method: SignatureMethod) -> bool
+```
+
+### Co ZMIENIĆ
+
+1. **Usuń odwołania do AutoFlow process_id** — webhook triggers w AutoFlow startują procesy. W fasthub_core webhook to GENERYCZNY mechanizm.
+
+2. **Zmień logger:**
+```python
+# Zamiast: logging.getLogger("autoflow.webhooks")
+# Nowe: logging.getLogger("fasthub.webhooks")
+```
+
+### Co NIE przenosić
+
+- `webhook_triggers.py` (endpoint `POST /api/webhooks/trigger/{process_id}`) — to domain-specific AutoFlow, zostaje tam
+- Rate limiter z webhook_triggers (in-memory, TODO: Redis) — to implementacja AutoFlow
+
+### Testy
+
+```python
+# tests/test_integrations_webhooks.py
+
+import pytest
+
+def test_webhook_imports():
+    from fasthub_core.integrations.webhooks import (
+        WebhookStatus, SignatureMethod, WebhookConfig,
+        WebhookEvent, WebhookRegistration,
+        WebhookStorage, MemoryWebhookStorage,
+        SignatureVerifier
+    )
+    assert WebhookStatus.ACTIVE == "active"
+
+def test_signature_verifier_hmac_sha256():
+    from fasthub_core.integrations.webhooks import SignatureVerifier, SignatureMethod
+
+    payload = b'{"event": "test"}'
+    secret = "my_webhook_secret"
+
+    sig = SignatureVerifier.compute_signature(payload, secret, SignatureMethod.HMAC_SHA256)
+    assert isinstance(sig, str)
+    assert len(sig) > 0
+
+    # Verify
+    assert SignatureVerifier.verify_signature(payload, secret, sig, SignatureMethod.HMAC_SHA256) == True
+
+    # Wrong secret
+    assert SignatureVerifier.verify_signature(payload, "wrong_secret", sig, SignatureMethod.HMAC_SHA256) == False
+
+def test_signature_verifier_hmac_sha1():
+    from fasthub_core.integrations.webhooks import SignatureVerifier, SignatureMethod
+    payload = b"test"
+    secret = "secret"
+    sig = SignatureVerifier.compute_signature(payload, secret, SignatureMethod.HMAC_SHA1)
+    assert SignatureVerifier.verify_signature(payload, secret, sig, SignatureMethod.HMAC_SHA1) == True
+
+def test_memory_webhook_storage():
+    from fasthub_core.integrations.webhooks import (
+        MemoryWebhookStorage, WebhookRegistration, WebhookConfig,
+        WebhookStatus, SignatureMethod
+    )
+    import asyncio
+
+    storage = MemoryWebhookStorage()
+    config = WebhookConfig(
+        url="https://example.com/webhook",
+        events=["user.created"],
+        secret="secret123",
+        signature_method=SignatureMethod.HMAC_SHA256,
+    )
+    reg = WebhookRegistration(id="wh-1", config=config, status=WebhookStatus.ACTIVE)
+
+    asyncio.get_event_loop().run_until_complete(
+        storage.save_registration(reg)
+    )
+    result = asyncio.get_event_loop().run_until_complete(
+        storage.get_registration("wh-1")
+    )
+    assert result is not None
+    assert result.config.url == "https://example.com/webhook"
+
+def test_webhook_event_deduplication():
+    from fasthub_core.integrations.webhooks import MemoryWebhookStorage, WebhookEvent
+    import asyncio
+
+    storage = MemoryWebhookStorage()
+    event = WebhookEvent(
+        id="evt-1", webhook_id="wh-1",
+        event_type="user.created", payload={"user_id": "123"},
+        status="pending", attempts=0
+    )
+
+    asyncio.get_event_loop().run_until_complete(storage.save_event(event))
+
+    is_dup = asyncio.get_event_loop().run_until_complete(storage.check_duplicate("evt-1"))
+    assert is_dup == True
+
+    is_new = asyncio.get_event_loop().run_until_complete(storage.check_duplicate("evt-999"))
+    assert is_new == False
+
+def test_no_autoflow_references():
+    import inspect
+    from fasthub_core.integrations import webhooks
+    source = inspect.getsource(webhooks)
+    assert "process_id" not in source  # domain-specific
+    assert "autoflow" not in source.lower()
+```
+
+---
+
+## MODUŁ F: BILLING SYSTEM (KROK 7 — NAJWIĘKSZY)
+
+### Źródło
+- `autoflow/app/models/models.py` — 6 klas (BillingPlan, BillingAddon, TenantAddon, Subscription, UsageRecord, BillingEvent) — linie 722-960
+- `autoflow/app/services/billing.py` — 727 linii (BillingService, 27 funkcji)
+- `autoflow/app/middleware/billing.py` — 140 linii (enforce_limit, require_limit)
+- `autoflow/app/api/billing.py` — 281 linii
+- `autoflow/app/api/admin_billing.py` — 529 linii
+- `autoflow/app/api/catalog.py` — 884 linii
+
+### UWAGA — FastHub billing
+
+FastHub z Briefu 0 ma już `Subscription` i `Invoice` modele w `fasthub_core/billing/models.py`. AutoFlow ma INNY, bardziej rozbudowany system (6 modeli vs 2).
+
+**STRATEGIA:** AutoFlow billing ZASTĘPUJE FastHub billing — jest kompletniejszy (plany, add-ony, usage tracking, modular billing). Ale zachowaj backward compatibility z istniejącym Invoice modelem FastHub jeśli jest gdzieś używany.
+
+### Cel
+- `fasthub_core/billing/models.py` — 6 modeli
+- `fasthub_core/billing/service.py` — BillingService
+- `fasthub_core/billing/middleware.py` — enforce_limit, require_limit
+- `fasthub_core/billing/api.py` — endpointy REST (user + admin + catalog)
+
+### Co przenieść — MODELE
+
+**6 modeli z AutoFlow:**
+
+1. **BillingPlan** — definicja planu subskrypcji:
+   - slug, name, description
+   - billing_mode: "fixed" | "modular"
+   - price_monthly, price_yearly, currency (domyślnie PLN)
+   - stripe_price_monthly_id, stripe_price_yearly_id, stripe_product_id
+   - max_processes, max_executions_month, max_integrations, max_ai_operations_month, max_team_members, max_file_storage_mb
+   - features (JSON), sort_order, badge, color, is_active, is_default, is_visible
+
+2. **BillingAddon** — dokupywany pakiet zasobów:
+   - slug, name, resource_type, quantity
+   - price_monthly, price_yearly, Stripe IDs
+   - available_for_plans (JSON), max_quantity_per_tenant
+
+3. **TenantAddon** — zakupiony addon per tenant:
+   - tenant_id, addon_id, quantity, is_active, stripe_subscription_item_id, expires_at
+
+4. **Subscription** — aktywna subskrypcja:
+   - tenant_id, plan_id, status, billing_interval
+   - stripe_customer_id, stripe_subscription_id
+   - current_period_start/end, trial_end, canceled_at
+
+5. **UsageRecord** — zużycie per tenant per miesiąc:
+   - tenant_id, period ("2026-02")
+   - executions_count, ai_operations_count, active_processes_count, active_integrations_count, storage_used_mb, webhook_calls_count
+
+6. **BillingEvent** — audit trail:
+   - tenant_id, event_type, stripe_event_id, data (JSON)
+
+### Co ZMIENIĆ w modelach
+
+1. **Użyj BaseModel** (nie gołego Base):
+```python
+# Zamiast: class BillingPlan(Base):
+# Nowe: from fasthub_core.db.base import BaseModel
+# class BillingPlan(BaseModel):
+#     __tablename__ = "billing_plans"  # JAWNA nazwa — BaseModel generuje automatycznie, ale chcemy kontrolę
+```
+
+**UWAGA:** AutoFlow billing models mają `id: Mapped[int]` (Integer PK), a FastHub BaseModel daje UUID. Decyzja:
+- **Opcja A:** Zachowaj Integer PK z AutoFlow (prostsze, billing zazwyczaj nie potrzebuje UUID)
+- **Opcja B:** Zmień na UUID (spójność z resztą FastHub)
+
+**REKOMENDACJA: Opcja A** — zostaw Integer PK. Billing to wewnętrzny system, UUID niepotrzebny. Ale wtedy models NIE mogą dziedziczyć z BaseModel (który wymusza UUID). Rozwiązanie:
+
+```python
+from fasthub_core.db.session import Base  # gołe Base jak RBAC/Audit
+# LUB: stwórz BaseBillingModel z Integer PK
+```
+
+2. **Zamień domain-specific limity na generyczne:**
+```python
+# AutoFlow ma: max_processes, max_executions_month, max_integrations, max_ai_operations_month
+# FastHub powinien mieć GENERYCZNE nazwy ale ZACHOWAJ te z AutoFlow jako default set.
+# Dlaczego? Bo limity zależą od aplikacji (AutoFlow ma procesy, FastCRM ma kontakty).
+# Rozwiązanie: features JSON + named limits jako osobna konfiguracja.
+
+# PRAGMATYCZNA DECYZJA: Zostaw kolumny z AutoFlow jak są.
+# Gdy FastCRM będzie potrzebować max_contacts — doda swoją kolumnę albo użyje features JSON.
+# Nie overengineeruj.
+```
+
+3. **tenant_id** — AutoFlow używa `tenant_id: str` (organization slug). FastHub używa `organization_id: UUID`. Decyzja:
+```python
+# Zachowaj tenant_id jako String — to może być slug, UUID, czy cokolwiek.
+# Aplikacja mapuje: AutoFlow → tenant_id = organization.slug
+# FastHub → tenant_id = str(organization.id)
+```
+
+### Co przenieść — SERVICE
+
+**BillingService** — 27 kluczowych funkcji:
+
+Plany:
+- `get_plan(slug)`, `list_plans()`, `create_plan()`, `update_plan()`, `delete_plan()`
+
+Limity:
+- `get_effective_limit(tenant_id, resource)` — plan base + sum(addons)
+- `check_limit(tenant_id, resource)` — True/False
+- `get_usage_summary(tenant_id)`
+
+Usage:
+- `increment_usage(tenant_id, resource, amount=1)`
+- `get_current_usage(tenant_id, resource)`
+- `reset_monthly_usage()` — cron
+
+Subscriptions:
+- `get_subscription(tenant_id)`, `create_subscription()`, `update_subscription()`, `cancel_subscription()`
+
+Addons:
+- `get_available_addons(plan_slug)`, `purchase_addon()`, `remove_addon()`
+
+Stripe:
+- `create_checkout_session()`, `create_portal_session()`, `handle_stripe_webhook()`
+
+Admin:
+- `seed_billing_plans()` — inicjalizacja planów przy starcie
+
+### Co ZMIENIĆ w service
+
+1. **Import encryption:**
+```python
+# Zamiast: from app.core.encryption import encrypt_credentials
+# Nowe: from fasthub_core.security.encryption import encrypt_credentials
+```
+
+2. **Import Redis cache:**
+```python
+# Zamiast: from app.core.redis import get_cache, set_cache
+# Nowe: from fasthub_core.infrastructure.redis import get_cache, set_cache
+```
+
+3. **Usuń DEFAULT_TENANT** — AutoFlow ma hardcoded "default" tenant. FastHub powinien wymagać tenant_id.
+
+4. **Stripe key** — z konfiguracji, nie z os.environ:
+```python
+from fasthub_core.config import settings
+stripe.api_key = settings.STRIPE_SECRET_KEY  # Dodaj do config jeśli brak
+```
+
+### Co przenieść — MIDDLEWARE
+
+```python
+# fasthub_core/billing/middleware.py
+
+async def enforce_limit(tenant_id: str, resource: str, db) -> None:
+    """Rzuca HTTP 402 jeśli limit przekroczony — użyj jako dependency"""
+
+def require_limit(resource: str):
+    """FastAPI Depends — sprawdza limit przed wykonaniem endpointu"""
+    # Zwraca dependency function
+```
+
+### Co przenieść — API
+
+**Endpointy user-facing** (`billing.py`):
+- `GET /api/billing/subscription` — aktualna subskrypcja
+- `GET /api/billing/usage` — zużycie w bieżącym miesiącu
+- `POST /api/billing/checkout` — Stripe checkout session
+- `POST /api/billing/portal` — Stripe customer portal
+- `POST /api/billing/webhook` — Stripe webhook handler
+
+**Endpointy admin** (`admin_billing.py`):
+- CRUD planów
+- CRUD addonów
+- Lista subskrypcji
+- Zarządzanie tenant addons
+- Statystyki billingowe
+
+**Endpointy catalog** (`catalog.py`):
+- `GET /api/catalog/plans` — publiczna lista planów (pricing page)
+- `GET /api/catalog/addons` — publiczna lista addonów
+
+### Co ZMIENIĆ w API
+
+1. **Prefix endpointów** — konfigurowalny:
+```python
+router = APIRouter(prefix="/api/billing", tags=["billing"])
+# Aplikacja może zmienić prefix: app.include_router(router, prefix="/api/v2/billing")
+```
+
+2. **Auth dependency** — generyczny:
+```python
+# Zamiast AutoFlow-specific auth:
+# Nowe: from fasthub_core.auth.dependencies import get_current_user
+```
+
+### MIGRACJE
+
+**Nowe tabele** (Alembic migration):
+```python
+def upgrade():
+    # billing_plans
+    op.create_table('billing_plans',
+        sa.Column('id', sa.Integer(), primary_key=True),
+        sa.Column('slug', sa.String(50), unique=True, index=True),
+        sa.Column('name', sa.String(100)),
+        sa.Column('description', sa.Text(), nullable=True),
+        sa.Column('billing_mode', sa.String(20), default='fixed'),
+        sa.Column('price_monthly', sa.Float(), default=0.0),
+        sa.Column('price_yearly', sa.Float(), default=0.0),
+        sa.Column('currency', sa.String(3), default='PLN'),
+        sa.Column('stripe_price_monthly_id', sa.String(100), nullable=True),
+        sa.Column('stripe_price_yearly_id', sa.String(100), nullable=True),
+        sa.Column('stripe_product_id', sa.String(100), nullable=True),
+        sa.Column('max_processes', sa.Integer(), default=3),
+        sa.Column('max_executions_month', sa.Integer(), default=100),
+        sa.Column('max_integrations', sa.Integer(), default=3),
+        sa.Column('max_ai_operations_month', sa.Integer(), default=50),
+        sa.Column('max_team_members', sa.Integer(), default=1),
+        sa.Column('max_file_storage_mb', sa.Integer(), default=100),
+        sa.Column('features', sa.JSON(), default=dict),
+        sa.Column('sort_order', sa.Integer(), default=0),
+        sa.Column('badge', sa.String(50), nullable=True),
+        sa.Column('color', sa.String(7), nullable=True),
+        sa.Column('is_active', sa.Boolean(), default=True),
+        sa.Column('is_default', sa.Boolean(), default=False),
+        sa.Column('is_visible', sa.Boolean(), default=True),
+        sa.Column('created_at', sa.DateTime(), default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(), default=sa.func.now(), onupdate=sa.func.now()),
+    )
+
+    # billing_addons
+    op.create_table('billing_addons',
+        sa.Column('id', sa.Integer(), primary_key=True),
+        sa.Column('slug', sa.String(50), unique=True, index=True),
+        sa.Column('name', sa.String(100)),
+        sa.Column('description', sa.Text(), nullable=True),
+        sa.Column('resource_type', sa.String(50)),
+        sa.Column('quantity', sa.Integer(), default=0),
+        sa.Column('price_monthly', sa.Float(), default=0.0),
+        sa.Column('price_yearly', sa.Float(), default=0.0),
+        sa.Column('currency', sa.String(3), default='PLN'),
+        sa.Column('stripe_price_monthly_id', sa.String(100), nullable=True),
+        sa.Column('stripe_price_yearly_id', sa.String(100), nullable=True),
+        sa.Column('stripe_product_id', sa.String(100), nullable=True),
+        sa.Column('available_for_plans', sa.JSON(), nullable=True),
+        sa.Column('max_quantity_per_tenant', sa.Integer(), default=0),
+        sa.Column('sort_order', sa.Integer(), default=0),
+        sa.Column('is_active', sa.Boolean(), default=True),
+        sa.Column('created_at', sa.DateTime(), default=sa.func.now()),
+    )
+
+    # tenant_addons
+    op.create_table('tenant_addons',
+        sa.Column('id', sa.Integer(), primary_key=True),
+        sa.Column('tenant_id', sa.String(100), index=True),
+        sa.Column('addon_id', sa.Integer(), sa.ForeignKey('billing_addons.id')),
+        sa.Column('quantity', sa.Integer(), default=1),
+        sa.Column('is_active', sa.Boolean(), default=True),
+        sa.Column('stripe_subscription_item_id', sa.String(100), nullable=True),
+        sa.Column('created_at', sa.DateTime(), default=sa.func.now()),
+        sa.Column('expires_at', sa.DateTime(), nullable=True),
+    )
+
+    # usage_records
+    op.create_table('usage_records',
+        sa.Column('id', sa.Integer(), primary_key=True),
+        sa.Column('tenant_id', sa.String(100), index=True),
+        sa.Column('period', sa.String(7), index=True),
+        sa.Column('executions_count', sa.Integer(), default=0),
+        sa.Column('ai_operations_count', sa.Integer(), default=0),
+        sa.Column('active_processes_count', sa.Integer(), default=0),
+        sa.Column('active_integrations_count', sa.Integer(), default=0),
+        sa.Column('storage_used_mb', sa.Float(), default=0.0),
+        sa.Column('webhook_calls_count', sa.Integer(), default=0),
+        sa.Column('created_at', sa.DateTime(), default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(), default=sa.func.now(), onupdate=sa.func.now()),
+    )
+
+    # billing_events
+    op.create_table('billing_events',
+        sa.Column('id', sa.Integer(), primary_key=True),
+        sa.Column('tenant_id', sa.String(100), index=True),
+        sa.Column('event_type', sa.String(100), index=True),
+        sa.Column('stripe_event_id', sa.String(100), nullable=True, unique=True),
+        sa.Column('data', sa.JSON(), default=dict),
+        sa.Column('created_at', sa.DateTime(), default=sa.func.now()),
+    )
+
+    # UWAGA: Nie twórz billing_plans na nowo jeśli fasthub-backend
+    # już ma subscriptions i invoices. Sprawdź najpierw!
+    # Jeśli istnieją — dodaj nowe tabele OBOK (nie usuwaj starych).
+```
+
+### Co zrobić z istniejącym FastHub Subscription/Invoice
+
+FastHub z Briefu 0 ma prostsze modele `Subscription` i `Invoice` w billing. AutoFlow ma bardziej rozbudowane.
+
+**Decyzja:**
+1. **Zachowaj istniejące** `Subscription` i `Invoice` jeśli backend ich używa
+2. **Dodaj nowe** tabele z AutoFlow (billing_plans, billing_addons, tenant_addons, usage_records, billing_events)
+3. **Wzbogać istniejący Subscription** o pola z AutoFlow (plan_id FK, billing_interval, stripe IDs) — via migracja ALTER
+4. **NIE usuwaj Invoice** — może być używany
+
+### Testy
+
+```python
+# tests/test_billing_system.py
+
+import pytest
+
+def test_billing_models_import():
+    from fasthub_core.billing.models import (
+        BillingPlan, BillingAddon, TenantAddon,
+        Subscription, UsageRecord, BillingEvent
+    )
+    assert BillingPlan.__tablename__ == "billing_plans"
+    assert BillingAddon.__tablename__ == "billing_addons"
+    assert UsageRecord.__tablename__ == "usage_records"
+
+def test_billing_plan_has_required_fields():
+    from fasthub_core.billing.models import BillingPlan
+    import inspect
+    source = inspect.getsource(BillingPlan)
+    required = ["slug", "name", "billing_mode", "price_monthly", "price_yearly",
+                 "stripe_price_monthly_id", "max_processes", "max_team_members",
+                 "features", "is_active", "is_default"]
+    for field in required:
+        assert field in source, f"BillingPlan brakuje pola: {field}"
+
+def test_billing_addon_has_resource_type():
+    from fasthub_core.billing.models import BillingAddon
+    import inspect
+    source = inspect.getsource(BillingAddon)
+    assert "resource_type" in source
+    assert "quantity" in source
+    assert "available_for_plans" in source
+
+def test_billing_service_imports():
+    from fasthub_core.billing.service import BillingService
+    assert BillingService is not None
+
+def test_billing_service_has_key_methods():
+    from fasthub_core.billing.service import BillingService
+    required_methods = [
+        "get_plan", "list_plans", "check_limit",
+        "get_effective_limit", "increment_usage",
+        "get_subscription", "seed_billing_plans"
+    ]
+    for method in required_methods:
+        assert hasattr(BillingService, method), f"BillingService brakuje: {method}"
+
+def test_billing_middleware_imports():
+    from fasthub_core.billing.middleware import enforce_limit, require_limit
+    assert callable(enforce_limit)
+    assert callable(require_limit)
+
+def test_billing_api_router():
+    from fasthub_core.billing.api import router
+    assert router is not None
+    # Sprawdź czy router ma endpointy
+    routes = [r.path for r in router.routes]
+    assert any("subscription" in r for r in routes)
+
+def test_billing_modes():
+    """Sprawdź czy billing wspiera oba tryby: fixed i modular"""
+    from fasthub_core.billing.models import BillingPlan
+    import inspect
+    source = inspect.getsource(BillingPlan)
+    assert "billing_mode" in source
+    assert "fixed" in source
+    assert "modular" in source
+
+def test_no_autoflow_references_in_billing():
+    import inspect
+    from fasthub_core.billing import service, middleware
+    for mod in [service, middleware]:
+        source = inspect.getsource(mod)
+        assert "DEFAULT_TENANT" not in source
+        assert "from app." not in source
+```
+
+---
+
+## INIT FILES I EKSPORTY
+
+### `fasthub_core/infrastructure/__init__.py`
+```python
+from fasthub_core.infrastructure.redis import (
+    get_redis, close_redis, redis_health_check,
+    publish_event, subscribe_events,
+    set_cache, get_cache, delete_cache,
+)
+```
+
+### `fasthub_core/events/__init__.py`
+```python
+from fasthub_core.events.bus import Event, EventBus, event_bus
+```
+
+### `fasthub_core/security/__init__.py`
+```python
+from fasthub_core.security.encryption import (
+    encrypt_credentials, decrypt_credentials,
+    generate_key, mask_credentials, is_encryption_available
+)
+```
+
+### `fasthub_core/integrations/__init__.py`
+```python
+from fasthub_core.integrations.oauth import (
+    OAuthConfig, OAuthTokens, OAuthState,
+    OAuthManager, TokenStorage, MemoryTokenStorage
+)
+from fasthub_core.integrations.webhooks import (
+    WebhookConfig, WebhookEvent, WebhookRegistration,
+    WebhookStorage, MemoryWebhookStorage, SignatureVerifier
+)
+```
+
+### Zaktualizuj `fasthub_core/__init__.py`
+
+Dodaj nowe moduły do głównych eksportów (zachowaj istniejące):
+```python
+# Nowe eksporty:
+from fasthub_core.events import event_bus, Event, EventBus
+from fasthub_core.security import encrypt_credentials, decrypt_credentials
+from fasthub_core.infrastructure import get_redis, set_cache, get_cache
+```
+
+---
+
+## DEPENDENCIES
+
+Sprawdź `setup.py` / `pyproject.toml` FastHub i dodaj brakujące:
+
+```python
+install_requires = [
+    # Już powinny być:
+    "fastapi",
+    "sqlalchemy",
+    "pydantic",
+    # Nowe (jeśli brakuje):
+    "aioredis>=2.0",     # lub redis[hiredis] — do Modułu C
+    "cryptography",       # do Modułu B (Fernet)
+    "httpx",              # do Modułu D (OAuth HTTP calls)
+    "stripe",             # do Modułu F (Stripe API)
+]
+```
+
+---
+
+## CZEGO NIE ROBIĆ
+
+- ❌ NIE przenoś `OAUTH_PROVIDERS` z 20 providerami — zostają w AutoFlow
+- ❌ NIE przenoś `webhook_triggers.py` — domain-specific
+- ❌ NIE przenoś `connector_registry.py` i `workflow_executor.py` — core AutoFlow
+- ❌ NIE usuwaj istniejących modeli billing FastHub (Subscription, Invoice) — rozszerz je
+- ❌ NIE przenoś ARQ task queue z redis.py — FastHub ma Celery
+- ❌ NIE zmieniaj formatu szyfrowania (prefix "ENC:") — backward compatibility
+- ❌ NIE twórz osobnego connection pool Redis — użyj jednego shared
+- ❌ NIE twórz duplikatu SecurityHeadersMiddleware — rozszerz istniejący z Briefu 9
+
+---
+
+## JAK AUTOFLOW TO WYKORZYSTA (informacja)
+
+Po tym briefie, AutoFlow w Fazie 3 (czyszczenie) zamieni lokalne importy na fasthub_core:
+
+```python
+# PRZED (AutoFlow v7):
+from app.core.redis import get_redis, set_cache
+from app.core.encryption import encrypt_credentials
+from app.events import event_bus
+from app.integrations.base.oauth import OAuthManager
+from app.integrations.base.webhooks import SignatureVerifier
+from app.services.billing import BillingService
+
+# PO (AutoFlow v8 na FastHub):
+from fasthub_core.infrastructure.redis import get_redis, set_cache
+from fasthub_core.security.encryption import encrypt_credentials
+from fasthub_core.events import event_bus
+from fasthub_core.integrations.oauth import OAuthManager
+from fasthub_core.integrations.webhooks import SignatureVerifier
+from fasthub_core.billing.service import BillingService
+```
+
+To będzie **osobny brief (Brief 11)** — nie rób tego teraz.
+
+---
+
+## DELIVERABLES
+
+1. **7 nowych modułów** w fasthub_core/ (lub 6 jeśli Security Headers z Briefu 9 jest kompletny)
+2. **Migracja Alembic** — nowe tabele billing (billing_plans, billing_addons, tenant_addons, usage_records, billing_events)
+3. **Zaktualizowane dependencies** — aioredis, cryptography, httpx, stripe
+4. **Testy** — minimum 50 testów (po kilka per moduł)
+5. **Zaktualizowany `fasthub_core/__init__.py`** — nowe eksporty
+6. **Raport:** co przeniesiono, co zmieniono, co pominięto, ile linii kodu
+7. **Git commit + push** na branchu `feature/universal-modules-transfer`
+
+---
+
+## TESTY — URUCHOMIENIE
+
+```bash
+# Instaluj nowe dependencies
+pip install aioredis cryptography httpx stripe --break-system-packages
+
+# Uruchom WSZYSTKIE testy (stare + nowe)
+python -m pytest tests/ -v --tb=short 2>&1 | tail -50
+
+# Tylko nowe moduły:
+python -m pytest tests/test_infrastructure_redis.py tests/test_events_bus.py tests/test_security_encryption.py tests/test_integrations_oauth.py tests/test_integrations_webhooks.py tests/test_billing_system.py -v
+```
+
+---
+
+## UWAGI KOŃCOWE
+
+- **To jest NAJWIĘKSZY brief w projekcie** — 7 modułów, ~3400 linii kodu źródłowego. Rób moduł po module w kolejności opisanej wyżej.
+- **Commit po każdym module** — nie czekaj na koniec. Jeśli Redis działa — commit. Event Bus działa — commit. Itd.
+- **Jeśli Subscription model FastHub koliduje z AutoFlow Subscription** — zachowaj oba (np. `SubscriptionLegacy` i `Subscription`) i zanotuj w raporcie. NIE usuwaj niczego co działa.
+- **Config** — wszystkie nowe ustawienia dodaj do `fasthub_core/config.py` (FASTHUB_SECRET_KEY, STRIPE_SECRET_KEY, REDIS_KEY_PREFIX itp.)
+- **Logger names** — `fasthub.redis`, `fasthub.events`, `fasthub.encryption`, `fasthub.oauth`, `fasthub.webhooks`, `fasthub.billing`
+
+---
+
+*Brief #10 przygotowany przez Stratega, 2026-03-02*
+*Faza 2.0 — Transfer modułów uniwersalnych z AutoFlow v7 do FastHub fasthub_core/*
+*Następny brief (11) — AutoFlow czyszczenie: zamiana lokalnych importów na fasthub_core*

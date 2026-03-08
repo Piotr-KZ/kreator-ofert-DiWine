@@ -90,14 +90,14 @@ async def async_client(override_get_db) -> AsyncGenerator[AsyncClient, None]:
     # Mock limiter.limit() decorator to bypass rate limiting
     from app.core.rate_limit import limiter
     from unittest.mock import MagicMock
-    
+
     original_limit = limiter.limit
     # Replace limiter.limit with a no-op decorator
     limiter.limit = lambda *args, **kwargs: lambda func: func
-    
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
-    
+
     # Restore original limiter
     limiter.limit = original_limit
 
@@ -132,7 +132,7 @@ async def owner_user(db_session: AsyncSession) -> User:
 async def test_admin(db_session: AsyncSession, test_organization: Organization) -> User:
     """Create test admin/superuser"""
     from app.models.member import Member
-    
+
     user = User(
         email="admin@example.com",
         hashed_password=get_password_hash("adminpass123"),
@@ -144,7 +144,7 @@ async def test_admin(db_session: AsyncSession, test_organization: Organization) 
     db_session.add(user)
     await db_session.commit()
     await db_session.refresh(user)
-    
+
     # Add admin to test organization
     member = Member(
         user_id=user.id,
@@ -153,7 +153,7 @@ async def test_admin(db_session: AsyncSession, test_organization: Organization) 
     )
     db_session.add(member)
     await db_session.commit()
-    
+
     return user
 
 
@@ -187,7 +187,7 @@ async def test_user(db_session: AsyncSession, test_organization: Organization) -
 async def auth_headers(test_user: User) -> dict:
     """Create authentication headers for test_user"""
     from app.core.security import create_access_token
-    
+
     access_token = create_access_token(data={"sub": str(test_user.id)})
     return {"Authorization": f"Bearer {access_token}"}
 
@@ -196,7 +196,7 @@ async def auth_headers(test_user: User) -> dict:
 async def admin_headers(test_admin: User) -> dict:
     """Create authentication headers for test_admin"""
     from app.core.security import create_access_token
-    
+
     access_token = create_access_token(data={"sub": str(test_admin.id)})
     return {"Authorization": f"Bearer {access_token}"}
 
@@ -244,9 +244,12 @@ async def test_invoice(db_session: AsyncSession, test_organization: Organization
         stripe_invoice_id="in_test123",
         invoice_number="INV-TEST-001",
         amount=1000.00,
+        amount_due=1000,
+        amount_paid=1000,
         currency="usd",
         status="paid",
         pdf_url="https://example.com/invoice.pdf",
+        invoice_pdf="https://example.com/invoice.pdf",
     )
     db_session.add(invoice)
     await db_session.commit()

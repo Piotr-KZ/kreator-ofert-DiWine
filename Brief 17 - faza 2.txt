@@ -1,0 +1,1433 @@
+# BRIEF DLA WYKONAWCY — FASTHUB FINALIZACJA, ZADANIE 17
+## Multi-tenancy Middleware + CLI Commands
+
+### Data: 2026-03-02
+### Zlecający: Strateg (Opus w projekcie Claude)
+### Wykonawca: Opus w Claude Code CLI
+### Repo: https://github.com/Piotr-KZ/Fasthub
+### Folder: C:\Projekty internetowe\Fasthub
+### Branch: feature/tenant-middleware-cli
+
+---
+
+## KONTEKST
+
+### Problem A: Ręczna izolacja tenantów
+
+Każdy endpoint ręcznie filtruje dane po organizacji:
+
+```python
+# Teraz — KAŻDY endpoint robi to sam:
+@router.get("/processes")
+async def list(
+    org: Organization = Depends(get_current_organization),  # ręczny Depends
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(Process).where(Process.organization_id == org.id)  # ręczny filtr
+```
+
+Problemy:
+- Zapomni się raz `Depends(get_current_organization)` i mamy wyciek danych między firmami
+- Każdy serwis sam filtruje `WHERE tenant_id = X` — duplikacja
+- Brak jednego miejsca do sprawdzenia izolacji
+
+### Problem B: Zero CLI
+
+FastHub nie ma żadnych komend CLI. Developer musi:
+- Ręcznie pisać skrypty Python do seedowania planów/ról
+- Ręcznie tworzyć admina w konsoli Python
+- Nie ma szybkiego sprawdzenia czy DB/Redis/Stripe działa
+- Brak standardowego sposobu uruchamiania migracji
+
+### Rozwiązanie
+
+**TenantMiddleware** — automatycznie wyciąga tenant z JWT i ustawia w `ContextVar`.
+Każdy serwis ma dostęp do `get_current_tenant()` bez ręcznego `Depends`.
+
+**CLI (Typer)** — `fasthub seed`, `fasthub create-admin`, `fasthub check`, `fasthub shell`.
+
+---
+
+## ZANIM ZACZNIESZ
+
+```bash
+cd "C:\Projekty internetowe\Fasthub"
+git checkout main
+git pull
+git checkout -b feature/tenant-middleware-cli
+
+pip install typer[all] --break-system-packages
+python -c "import typer; print(f'Typer {typer.__version__}')"
+```
+
+---
+
+## KROK 1: Tenant Context — `fasthub_core/tenancy/context.py`
+
+ContextVar przechowujący tenant w bieżącym request. Bezpieczny w async (każdy request ma swój kontekst).
+
+### Plik: `fasthub_core/tenancy/__init__.py`
+
+```python
+from fasthub_core.tenancy.context import (
+    get_current_tenant,
+    get_current_tenant_id,
+    set_current_tenant,
+    clear_tenant_context,
+    TenantContext,
+)
+from fasthub_core.tenancy.middleware import TenantMiddleware
+from fasthub_core.tenancy.dependencies import (
+    require_tenant,
+    require_tenant_admin,
+    get_tenant_db,
+)
+
+__all__ = [
+    "get_current_tenant",
+    "get_current_tenant_id",
+    "set_current_tenant",
+    "clear_tenant_context",
+    "TenantContext",
+    "TenantMiddleware",
+    "require_tenant",
+    "require_tenant_admin",
+    "get_tenant_db",
+]
+```
+
+### Plik: `fasthub_core/tenancy/context.py`
+
+```python
+"""
+Tenant Context — ContextVar dla izolacji multi-tenancy.
+
+ContextVar jest async-safe: każdy request ma własny kontekst.
+Middleware ustawia tenant na początku requestu, czyści na końcu.
+
+Użycie w serwisach:
+    from fasthub_core.tenancy import get_current_tenant_id
+    
+    tenant_id = get_current_tenant_id()  # UUID organizacji lub None
+    
+Użycie w query:
+    from fasthub_core.tenancy import get_current_tenant_id
+    
+    query = select(Process).where(Process.organization_id == get_current_tenant_id())
+"""
+
+import logging
+from contextvars import ContextVar
+from dataclasses import dataclass
+from typing import Optional
+from uuid import UUID
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class TenantContext:
+    """
+    Dane tenanta w bieżącym request.
+    
+    Atrybuty:
+        tenant_id: UUID organizacji
+        tenant_slug: slug organizacji (np. "moja-firma")
+        tenant_name: nazwa organizacji
+        user_id: UUID użytkownika
+        user_role: rola w organizacji ("admin", "viewer")
+    """
+    tenant_id: UUID
+    tenant_slug: str = ""
+    tenant_name: str = ""
+    user_id: Optional[UUID] = None
+    user_role: str = ""
+
+
+# ContextVar — async-safe, per-request
+_tenant_context: ContextVar[Optional[TenantContext]] = ContextVar(
+    "tenant_context", default=None
+)
+
+
+def get_current_tenant() -> Optional[TenantContext]:
+    """
+    Pobierz pełny kontekst tenanta.
+    
+    Returns:
+        TenantContext lub None (jeśli request bez auth, np. /health, /login)
+    """
+    return _tenant_context.get()
+
+
+def get_current_tenant_id() -> Optional[UUID]:
+    """
+    Pobierz UUID tenanta (shortcut).
+    
+    Returns:
+        UUID organizacji lub None
+    
+    Użycie:
+        query = select(X).where(X.organization_id == get_current_tenant_id())
+    """
+    ctx = _tenant_context.get()
+    return ctx.tenant_id if ctx else None
+
+
+def set_current_tenant(context: TenantContext) -> None:
+    """Ustaw kontekst tenanta (wywoływane przez TenantMiddleware)."""
+    _tenant_context.set(context)
+    logger.debug(f"Tenant context set: {context.tenant_id} ({context.tenant_slug})")
+
+
+def clear_tenant_context() -> None:
+    """Wyczyść kontekst tenanta (wywoływane po request)."""
+    _tenant_context.set(None)
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: TenantContext with ContextVar (async-safe per-request tenant isolation)"
+```
+
+---
+
+## KROK 2: Tenant Middleware — `fasthub_core/tenancy/middleware.py`
+
+Automatycznie wyciąga tenant z JWT → ustawia ContextVar → czyści po request.
+
+```python
+"""
+Tenant Middleware — automatyczna izolacja multi-tenancy.
+
+Dla KAŻDEGO request z JWT:
+1. Dekoduj JWT → wyciągnij user_id
+2. Znajdź organizację użytkownika (owner lub member)
+3. Ustaw TenantContext w ContextVar
+4. Request się wykonuje z dostępnym get_current_tenant()
+5. Wyczyść kontekst po zakończeniu
+
+Endpointy publiczne (bez JWT) przechodzą bez tenanta:
+- /health, /docs, /openapi.json
+- /auth/login, /auth/register
+- /billing/webhooks (Stripe callback)
+
+Konfiguracja:
+    app.add_middleware(TenantMiddleware, excluded_paths=["/health", "/auth"])
+"""
+
+import logging
+from typing import List, Optional
+from uuid import UUID
+
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+
+from fasthub_core.tenancy.context import (
+    TenantContext,
+    set_current_tenant,
+    clear_tenant_context,
+)
+
+logger = logging.getLogger(__name__)
+
+# Domyślne ścieżki bez tenant context
+DEFAULT_EXCLUDED_PATHS = [
+    "/health",
+    "/ready",
+    "/metrics",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/auth/login",
+    "/auth/register",
+    "/auth/magic-link",
+    "/auth/verify",
+    "/billing/webhooks",
+]
+
+
+class TenantMiddleware(BaseHTTPMiddleware):
+    """
+    Middleware automatycznie ustawiający tenant context.
+    
+    Użycie:
+        app.add_middleware(
+            TenantMiddleware,
+            excluded_paths=["/custom/public"],
+        )
+    """
+
+    def __init__(self, app, excluded_paths: Optional[List[str]] = None):
+        super().__init__(app)
+        self.excluded_paths = excluded_paths or DEFAULT_EXCLUDED_PATHS
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        # Sprawdź czy ścieżka jest wykluczona
+        path = request.url.path
+        if self._is_excluded(path):
+            return await call_next(request)
+
+        # Próbuj wyciągnąć tenant z JWT
+        try:
+            context = await self._resolve_tenant(request)
+            if context:
+                set_current_tenant(context)
+        except Exception as e:
+            logger.debug(f"Tenant resolution skipped: {e}")
+            # Nie blokuj requestu — auth middleware i tak sprawdzi JWT
+
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            clear_tenant_context()
+
+    def _is_excluded(self, path: str) -> bool:
+        """Czy ścieżka jest wykluczona z tenant resolution."""
+        for excluded in self.excluded_paths:
+            if path.startswith(excluded):
+                return True
+        return False
+
+    async def _resolve_tenant(self, request: Request) -> Optional[TenantContext]:
+        """
+        Wyciągnij tenant z JWT → znajdź organizację.
+        
+        Kolejność:
+        1. Dekoduj JWT (Authorization: Bearer xxx)
+        2. Wyciągnij user_id z payload
+        3. Znajdź organizację (owner → member)
+        4. Zwróć TenantContext
+        """
+        # 1. Wyciągnij token
+        auth_header = request.headers.get("Authorization", "")
+        if not auth_header.startswith("Bearer "):
+            return None
+
+        token = auth_header.replace("Bearer ", "")
+
+        # 2. Dekoduj JWT
+        from fasthub_core.auth.service import decode_access_token
+        payload = decode_access_token(token)
+        if not payload:
+            return None
+
+        user_id_str = payload.get("sub")
+        if not user_id_str:
+            return None
+
+        user_id = UUID(user_id_str)
+
+        # 3. Znajdź organizację
+        from fasthub_core.db.session import get_db_session
+        from fasthub_core.users.models import Organization, Member
+        from sqlalchemy import select
+
+        async with get_db_session() as db:
+            # Priority 1: Owner
+            result = await db.execute(
+                select(Organization)
+                .where(Organization.owner_id == user_id)
+                .order_by(Organization.created_at)
+                .limit(1)
+            )
+            org = result.scalar_one_or_none()
+            user_role = "admin"
+
+            # Priority 2: Member
+            if not org:
+                result = await db.execute(
+                    select(Member)
+                    .where(Member.user_id == user_id)
+                    .order_by(Member.joined_at)
+                    .limit(1)
+                )
+                membership = result.scalar_one_or_none()
+                if membership:
+                    result = await db.execute(
+                        select(Organization)
+                        .where(Organization.id == membership.organization_id)
+                    )
+                    org = result.scalar_one_or_none()
+                    user_role = membership.role.value if hasattr(membership.role, 'value') else str(membership.role)
+
+            if not org:
+                return None
+
+            return TenantContext(
+                tenant_id=org.id,
+                tenant_slug=org.slug,
+                tenant_name=org.name,
+                user_id=user_id,
+                user_role=user_role,
+            )
+```
+
+**UWAGA:** Middleware potrzebuje `get_db_session()` (context manager). Jeśli nie istnieje w `fasthub_core/db/session.py`, DODAJ:
+
+```python
+from contextlib import asynccontextmanager
+
+@asynccontextmanager
+async def get_db_session():
+    """
+    Context manager dla sesji DB (poza FastAPI Depends).
+    
+    Użycie:
+        async with get_db_session() as db:
+            result = await db.execute(query)
+    """
+    session = async_session_maker()
+    try:
+        yield session
+    finally:
+        await session.close()
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: TenantMiddleware (auto tenant from JWT, ContextVar, excluded paths)"
+```
+
+---
+
+## KROK 3: Tenant Dependencies — `fasthub_core/tenancy/dependencies.py`
+
+FastAPI Depends dla endpointów które WYMAGAJĄ tenanta.
+
+```python
+"""
+Tenant Dependencies — FastAPI Depends.
+
+Użycie:
+    @router.get("/data")
+    async def get_data(tenant: TenantContext = Depends(require_tenant)):
+        # tenant.tenant_id gwarantowane
+        
+    @router.post("/settings")
+    async def update(tenant: TenantContext = Depends(require_tenant_admin)):
+        # tenant.user_role == "admin" gwarantowane
+"""
+
+from fastapi import Depends, HTTPException, status
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from fasthub_core.db.session import get_db
+from fasthub_core.tenancy.context import TenantContext, get_current_tenant
+
+
+async def require_tenant() -> TenantContext:
+    """
+    Wymagaj tenant context.
+    
+    Raises:
+        HTTPException 401 jeśli brak tenanta (nie zalogowany lub brak organizacji)
+    """
+    tenant = get_current_tenant()
+    if not tenant:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Tenant context required. User must belong to an organization.",
+        )
+    return tenant
+
+
+async def require_tenant_admin() -> TenantContext:
+    """
+    Wymagaj tenant context z rolą admin.
+    
+    Raises:
+        HTTPException 403 jeśli user nie jest adminem organizacji
+    """
+    tenant = await require_tenant()
+    if tenant.user_role not in ("admin", "owner"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Organization admin privileges required.",
+        )
+    return tenant
+
+
+async def get_tenant_db(
+    tenant: TenantContext = Depends(require_tenant),
+    db: AsyncSession = Depends(get_db),
+) -> AsyncSession:
+    """
+    DB session z gwarantowanym tenant context.
+    
+    Convenience dependency — daje sesję DB wiedząc że tenant istnieje.
+    Serwis może pobrać tenant_id z get_current_tenant_id().
+    """
+    return db
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: tenant dependencies (require_tenant, require_tenant_admin, get_tenant_db)"
+```
+
+---
+
+## KROK 4: Tenant-scoped query helper — `fasthub_core/tenancy/scoped.py`
+
+Opcjonalny helper do automatycznego filtrowania queries.
+
+```python
+"""
+Tenant-scoped query helpers.
+
+Zamiast ręcznego:
+    query = select(Process).where(Process.organization_id == tenant_id)
+
+Użyj:
+    query = tenant_query(select(Process), Process.organization_id)
+    # automatycznie dodaje WHERE organization_id = current_tenant_id
+
+Lub dekorator:
+    @tenant_scoped("organization_id")
+    async def list_processes(db):
+        return await db.execute(select(Process))
+"""
+
+import logging
+from typing import Any, Optional
+from uuid import UUID
+
+from sqlalchemy import Select
+
+from fasthub_core.tenancy.context import get_current_tenant_id
+
+logger = logging.getLogger(__name__)
+
+
+def tenant_query(query: Select, tenant_column: Any) -> Select:
+    """
+    Dodaj filtr tenant do query.
+    
+    Args:
+        query: SQLAlchemy Select
+        tenant_column: kolumna do filtrowania (np. Process.organization_id)
+    
+    Returns:
+        Query z dodanym WHERE tenant_column = current_tenant_id
+    
+    Raises:
+        ValueError: jeśli brak tenant context
+    
+    Przykład:
+        from fasthub_core.tenancy import tenant_query
+        
+        query = tenant_query(
+            select(Process).order_by(Process.created_at.desc()),
+            Process.organization_id,
+        )
+        result = await db.execute(query)
+    """
+    tenant_id = get_current_tenant_id()
+    if tenant_id is None:
+        raise ValueError("No tenant context — cannot scope query. Use require_tenant dependency.")
+    
+    return query.where(tenant_column == tenant_id)
+
+
+def optional_tenant_query(query: Select, tenant_column: Any) -> Select:
+    """
+    Dodaj filtr tenant jeśli jest kontekst. Bez kontekstu — zwróć query bez zmian.
+    
+    Przydatne dla endpointów które działają z i bez auth (np. publiczne listy).
+    """
+    tenant_id = get_current_tenant_id()
+    if tenant_id is not None:
+        return query.where(tenant_column == tenant_id)
+    return query
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: tenant_query helper (auto WHERE tenant_id for SQLAlchemy queries)"
+```
+
+---
+
+## KROK 5: CLI — `fasthub_core/cli/__init__.py`
+
+Bazowy CLI z Typer. Aplikacja rozszerza (dodaje swoje komendy).
+
+### Plik: `fasthub_core/cli/__init__.py`
+
+```python
+"""
+FastHub CLI — komendy administracyjne.
+
+Użycie:
+    fasthub seed            — załaduj plany, role, uprawnienia
+    fasthub create-admin    — stwórz pierwszego administratora
+    fasthub check           — sprawdź połączenia (DB, Redis, Stripe)
+    fasthub show-config     — pokaż aktualną konfigurację
+    fasthub shell           — interaktywna konsola
+
+Rozszerzanie (w aplikacji):
+    from fasthub_core.cli import app as cli_app
+    
+    @cli_app.command()
+    def my_command():
+        typer.echo("Custom command")
+    
+    # W setup.py lub pyproject.toml:
+    # [project.scripts]
+    # myapp = "my_app.cli:cli_app"
+"""
+
+from fasthub_core.cli.app import app
+
+__all__ = ["app"]
+```
+
+### Plik: `fasthub_core/cli/app.py`
+
+```python
+"""
+CLI App — główna aplikacja Typer.
+"""
+
+import typer
+
+app = typer.Typer(
+    name="fasthub",
+    help="FastHub — komendy administracyjne SaaS",
+    no_args_is_help=True,
+)
+```
+
+### Plik: `fasthub_core/cli/commands.py`
+
+```python
+"""
+Wbudowane komendy CLI.
+"""
+
+import asyncio
+import sys
+import typer
+from typing import Optional
+
+from fasthub_core.cli.app import app
+
+
+def _run_async(coro):
+    """Helper — uruchom async funkcję w sync CLI."""
+    loop = asyncio.new_event_loop()
+    try:
+        return loop.run_until_complete(coro)
+    finally:
+        loop.close()
+
+
+# =========================================================================
+# SEED
+# =========================================================================
+
+@app.command()
+def seed(
+    plans: bool = typer.Option(True, help="Załaduj plany billing"),
+    permissions: bool = typer.Option(True, help="Załaduj uprawnienia RBAC"),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Szczegółowy output"),
+):
+    """
+    Załaduj dane początkowe (plany, role, uprawnienia).
+    
+    Przykład:
+        fasthub seed                  — wszystko
+        fasthub seed --no-plans       — tylko uprawnienia
+        fasthub seed --no-permissions — tylko plany
+    """
+    async def _seed():
+        from fasthub_core.db.session import async_session_maker, init_db
+        await init_db()
+
+        async with async_session_maker() as db:
+            total = 0
+
+            if plans:
+                from fasthub_core.billing.service import BillingService
+                service = BillingService(db)
+                count = await service.seed_billing_plans()
+                await db.commit()
+                typer.echo(f"  ✅ Plany billing: {count} załadowanych")
+                total += count
+
+            if permissions:
+                from fasthub_core.rbac.service import RBACService
+                service = RBACService(db)
+                await service.seed_permissions()
+                await db.commit()
+                typer.echo(f"  ✅ Uprawnienia RBAC: załadowane")
+                total += 1
+
+            typer.echo(f"\n🎉 Seed zakończony ({total} operacji)")
+
+    typer.echo("🌱 Seedowanie danych...\n")
+    _run_async(_seed())
+
+
+# =========================================================================
+# CREATE-ADMIN
+# =========================================================================
+
+@app.command()
+def create_admin(
+    email: str = typer.Option(..., prompt=True, help="Email administratora"),
+    password: str = typer.Option(..., prompt=True, hide_input=True, help="Hasło"),
+    full_name: str = typer.Option("Admin", prompt=True, help="Imię i nazwisko"),
+    org_name: str = typer.Option("Default Organization", prompt=True, help="Nazwa organizacji"),
+):
+    """
+    Stwórz pierwszego administratora + organizację.
+    
+    Przykład:
+        fasthub create-admin --email admin@firma.pl --full-name "Jan Kowalski" --org-name "Firma Sp. z o.o."
+    """
+    async def _create():
+        from fasthub_core.db.session import async_session_maker, init_db
+        from fasthub_core.users.models import User, Organization
+        from fasthub_core.auth.service import get_password_hash
+        from sqlalchemy import select
+
+        await init_db()
+
+        async with async_session_maker() as db:
+            # Sprawdź czy email zajęty
+            existing = await db.execute(select(User).where(User.email == email))
+            if existing.scalar_one_or_none():
+                typer.echo(f"❌ Użytkownik {email} już istnieje")
+                raise typer.Exit(code=1)
+
+            # Stwórz użytkownika
+            user = User(
+                email=email,
+                hashed_password=get_password_hash(password),
+                full_name=full_name,
+                is_active=True,
+                is_verified=True,
+                is_email_verified=True,
+                is_superuser=True,
+                is_superadmin=True,
+            )
+            db.add(user)
+            await db.flush()
+
+            # Stwórz organizację
+            slug = org_name.lower().replace(" ", "-").replace(".", "")[:50]
+            org = Organization(
+                name=org_name,
+                slug=slug,
+                owner_id=user.id,
+                is_complete=True,
+            )
+            db.add(org)
+            await db.commit()
+
+            typer.echo(f"\n✅ Administrator stworzony:")
+            typer.echo(f"   Email: {email}")
+            typer.echo(f"   Organizacja: {org_name} (slug: {slug})")
+            typer.echo(f"   User ID: {user.id}")
+            typer.echo(f"   Org ID: {org.id}")
+
+    typer.echo("👤 Tworzenie administratora...\n")
+    _run_async(_create())
+
+
+# =========================================================================
+# CHECK
+# =========================================================================
+
+@app.command()
+def check():
+    """
+    Sprawdź połączenia i konfigurację.
+    
+    Weryfikuje: Database, Redis, Stripe, Email, Storage.
+    """
+    from fasthub_core.config import get_settings
+    settings = get_settings()
+
+    typer.echo("🔍 Sprawdzanie połączeń...\n")
+    all_ok = True
+
+    # Database
+    try:
+        async def _check_db():
+            from fasthub_core.db.session import get_engine
+            from sqlalchemy import text
+            engine = get_engine()
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+            return True
+
+        _run_async(_check_db())
+        typer.echo(f"  ✅ Database: OK ({settings.DATABASE_URL[:30]}...)")
+    except Exception as e:
+        typer.echo(f"  ❌ Database: {e}")
+        all_ok = False
+
+    # Redis
+    try:
+        async def _check_redis():
+            from fasthub_core.infrastructure.redis import get_redis
+            redis = await get_redis()
+            await redis.ping()
+            return True
+
+        if settings.REDIS_URL:
+            _run_async(_check_redis())
+            typer.echo(f"  ✅ Redis: OK ({settings.REDIS_URL})")
+        else:
+            typer.echo(f"  ⚠️  Redis: nie skonfigurowany (REDIS_URL)")
+    except Exception as e:
+        typer.echo(f"  ❌ Redis: {e}")
+        all_ok = False
+
+    # Stripe
+    if settings.STRIPE_SECRET_KEY:
+        typer.echo(f"  ✅ Stripe: klucz skonfigurowany (sk_...{settings.STRIPE_SECRET_KEY[-4:]})")
+    else:
+        typer.echo(f"  ⚠️  Stripe: brak STRIPE_SECRET_KEY")
+
+    # Email
+    if getattr(settings, "SMTP_HOST", None):
+        typer.echo(f"  ✅ Email: SMTP ({settings.SMTP_HOST})")
+    else:
+        typer.echo(f"  ⚠️  Email: Console (brak SMTP_HOST)")
+
+    # Storage
+    if getattr(settings, "AWS_S3_BUCKET", None):
+        typer.echo(f"  ✅ Storage: S3 ({settings.AWS_S3_BUCKET})")
+    else:
+        typer.echo(f"  ⚠️  Storage: Local (brak AWS_S3_BUCKET)")
+
+    # Task queue
+    task_backend = getattr(settings, "TASK_BACKEND", "sync")
+    typer.echo(f"  {'✅' if task_backend != 'sync' else '⚠️ '} Task Queue: {task_backend}")
+
+    # Summary
+    typer.echo("")
+    if all_ok:
+        typer.echo("🎉 Wszystko OK!")
+    else:
+        typer.echo("⚠️  Niektóre połączenia mają problemy")
+        raise typer.Exit(code=1)
+
+
+# =========================================================================
+# SHOW-CONFIG
+# =========================================================================
+
+@app.command()
+def show_config(
+    secrets: bool = typer.Option(False, "--secrets", help="Pokaż sekrety (uwaga!)"),
+):
+    """
+    Pokaż aktualną konfigurację FastHub.
+    """
+    from fasthub_core.config import get_settings
+    settings = get_settings()
+
+    typer.echo("⚙️  Konfiguracja FastHub:\n")
+
+    def _mask(value):
+        if not value or secrets:
+            return value
+        s = str(value)
+        if len(s) > 8:
+            return s[:4] + "***" + s[-4:]
+        return "***"
+
+    config_items = [
+        ("Environment", getattr(settings, "ENVIRONMENT", "development")),
+        ("Database", settings.DATABASE_URL),
+        ("Redis", getattr(settings, "REDIS_URL", "not set")),
+        ("Secret Key", _mask(settings.SECRET_KEY)),
+        ("Stripe Key", _mask(getattr(settings, "STRIPE_SECRET_KEY", "not set"))),
+        ("SMTP Host", getattr(settings, "SMTP_HOST", "not set")),
+        ("Storage", getattr(settings, "STORAGE_BACKEND", "local")),
+        ("Task Backend", getattr(settings, "TASK_BACKEND", "arq")),
+        ("S3 Bucket", getattr(settings, "AWS_S3_BUCKET", "not set")),
+        ("Fakturownia", getattr(settings, "FAKTUROWNIA_ACCOUNT", "not set")),
+    ]
+
+    for name, value in config_items:
+        typer.echo(f"  {name:20s} {value}")
+
+
+# =========================================================================
+# SHELL
+# =========================================================================
+
+@app.command()
+def shell():
+    """
+    Interaktywna konsola z załadowanymi modelami FastHub.
+    
+    Dostępne obiekty:
+        db — AsyncSession
+        User, Organization, Member — modele
+        BillingService, RBACService — serwisy
+    """
+    typer.echo("🐚 FastHub Shell\n")
+    typer.echo("   Dostępne: User, Organization, Member, BillingPlan, Subscription")
+    typer.echo("   Tip: użyj 'await db.execute(select(User).limit(5))'\n")
+
+    try:
+        import IPython
+        # Przygotuj namespace
+        from fasthub_core.users.models import User, Organization, Member
+        from fasthub_core.billing.models import BillingPlan, Subscription
+        from sqlalchemy import select
+
+        namespace = {
+            "User": User,
+            "Organization": Organization,
+            "Member": Member,
+            "BillingPlan": BillingPlan,
+            "Subscription": Subscription,
+            "select": select,
+        }
+
+        IPython.start_ipython(argv=[], user_ns=namespace)
+    except ImportError:
+        typer.echo("💡 Zainstaluj IPython dla lepszego shell: pip install ipython")
+        import code
+        code.interact(local=locals())
+```
+
+### Plik: `fasthub_core/cli/entry.py`
+
+```python
+"""
+Entry point — importuje komendy i uruchamia app.
+
+W setup.py:
+    entry_points={
+        "console_scripts": [
+            "fasthub = fasthub_core.cli.entry:main",
+        ],
+    }
+"""
+
+from fasthub_core.cli.app import app
+# Import commands to register them
+import fasthub_core.cli.commands  # noqa: F401
+
+
+def main():
+    app()
+
+
+if __name__ == "__main__":
+    main()
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: CLI commands (seed, create-admin, check, show-config, shell)"
+```
+
+---
+
+## KROK 6: Registracja middleware w __init__.py
+
+### W `fasthub_core/middleware/__init__.py` dodaj:
+
+```python
+from fasthub_core.tenancy.middleware import TenantMiddleware
+```
+
+Do `__all__` dodaj `"TenantMiddleware"`.
+
+### W `fasthub_core/__init__.py` dodaj:
+
+```python
+# Tenancy
+from fasthub_core.tenancy import (
+    TenantMiddleware, get_current_tenant, get_current_tenant_id,
+    require_tenant, require_tenant_admin,
+)
+```
+
+### W `setup.py` dodaj:
+
+```python
+"typer[all]>=0.9.0",
+```
+
+I entry point:
+```python
+entry_points={
+    "console_scripts": [
+        "fasthub = fasthub_core.cli.entry:main",
+    ],
+},
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "feat: register TenantMiddleware, exports, CLI entry point"
+```
+
+---
+
+## KROK 7: Testy
+
+### Plik: `tests/test_tenancy.py`
+
+```python
+"""
+Testy Multi-tenancy — context, middleware, dependencies, scoped queries, CLI.
+"""
+
+import pytest
+from uuid import uuid4, UUID
+from unittest.mock import MagicMock, AsyncMock, patch
+
+
+# ============================================================================
+# TENANT CONTEXT
+# ============================================================================
+
+class TestTenantContext:
+
+    def test_context_dataclass(self):
+        from fasthub_core.tenancy.context import TenantContext
+        ctx = TenantContext(
+            tenant_id=uuid4(),
+            tenant_slug="test-firma",
+            tenant_name="Test Firma",
+            user_id=uuid4(),
+            user_role="admin",
+        )
+        assert ctx.tenant_slug == "test-firma"
+        assert ctx.user_role == "admin"
+
+    def test_default_is_none(self):
+        from fasthub_core.tenancy.context import get_current_tenant, get_current_tenant_id
+        # W czystym kontekście powinno być None
+        # (może nie być None jeśli inny test ustawił — clear first)
+        from fasthub_core.tenancy.context import clear_tenant_context
+        clear_tenant_context()
+        assert get_current_tenant() is None
+        assert get_current_tenant_id() is None
+
+    def test_set_and_get(self):
+        from fasthub_core.tenancy.context import (
+            TenantContext, set_current_tenant, get_current_tenant,
+            get_current_tenant_id, clear_tenant_context,
+        )
+        tid = uuid4()
+        ctx = TenantContext(tenant_id=tid, tenant_slug="firma", user_role="admin")
+        set_current_tenant(ctx)
+        
+        assert get_current_tenant() is ctx
+        assert get_current_tenant_id() == tid
+        
+        clear_tenant_context()
+        assert get_current_tenant() is None
+
+    def test_clear(self):
+        from fasthub_core.tenancy.context import (
+            TenantContext, set_current_tenant, clear_tenant_context, get_current_tenant,
+        )
+        set_current_tenant(TenantContext(tenant_id=uuid4()))
+        clear_tenant_context()
+        assert get_current_tenant() is None
+
+
+# ============================================================================
+# TENANT MIDDLEWARE
+# ============================================================================
+
+class TestTenantMiddleware:
+
+    def test_class_exists(self):
+        from fasthub_core.tenancy.middleware import TenantMiddleware
+        assert TenantMiddleware is not None
+
+    def test_default_excluded_paths(self):
+        from fasthub_core.tenancy.middleware import DEFAULT_EXCLUDED_PATHS
+        assert "/health" in DEFAULT_EXCLUDED_PATHS
+        assert "/docs" in DEFAULT_EXCLUDED_PATHS
+        assert "/auth/login" in DEFAULT_EXCLUDED_PATHS
+        assert "/billing/webhooks" in DEFAULT_EXCLUDED_PATHS
+
+    def test_is_excluded(self):
+        from fasthub_core.tenancy.middleware import TenantMiddleware
+        mw = TenantMiddleware(app=MagicMock())
+        assert mw._is_excluded("/health") == True
+        assert mw._is_excluded("/docs") == True
+        assert mw._is_excluded("/api/processes") == False
+        assert mw._is_excluded("/auth/login") == True
+
+    def test_custom_excluded_paths(self):
+        from fasthub_core.tenancy.middleware import TenantMiddleware
+        mw = TenantMiddleware(app=MagicMock(), excluded_paths=["/public", "/health"])
+        assert mw._is_excluded("/public/page") == True
+        assert mw._is_excluded("/api/data") == False
+
+
+# ============================================================================
+# TENANT DEPENDENCIES
+# ============================================================================
+
+class TestTenantDependencies:
+
+    @pytest.mark.asyncio
+    async def test_require_tenant_without_context(self):
+        from fasthub_core.tenancy.context import clear_tenant_context
+        from fasthub_core.tenancy.dependencies import require_tenant
+        from fastapi import HTTPException
+
+        clear_tenant_context()
+        with pytest.raises(HTTPException) as exc_info:
+            await require_tenant()
+        assert exc_info.value.status_code == 401
+
+    @pytest.mark.asyncio
+    async def test_require_tenant_with_context(self):
+        from fasthub_core.tenancy.context import TenantContext, set_current_tenant, clear_tenant_context
+        from fasthub_core.tenancy.dependencies import require_tenant
+
+        tid = uuid4()
+        set_current_tenant(TenantContext(tenant_id=tid, user_role="admin"))
+        result = await require_tenant()
+        assert result.tenant_id == tid
+        clear_tenant_context()
+
+    @pytest.mark.asyncio
+    async def test_require_tenant_admin_with_viewer(self):
+        from fasthub_core.tenancy.context import TenantContext, set_current_tenant, clear_tenant_context
+        from fasthub_core.tenancy.dependencies import require_tenant_admin
+        from fastapi import HTTPException
+
+        set_current_tenant(TenantContext(tenant_id=uuid4(), user_role="viewer"))
+        with pytest.raises(HTTPException) as exc_info:
+            await require_tenant_admin()
+        assert exc_info.value.status_code == 403
+        clear_tenant_context()
+
+    @pytest.mark.asyncio
+    async def test_require_tenant_admin_with_admin(self):
+        from fasthub_core.tenancy.context import TenantContext, set_current_tenant, clear_tenant_context
+        from fasthub_core.tenancy.dependencies import require_tenant_admin
+
+        set_current_tenant(TenantContext(tenant_id=uuid4(), user_role="admin"))
+        result = await require_tenant_admin()
+        assert result.user_role == "admin"
+        clear_tenant_context()
+
+
+# ============================================================================
+# SCOPED QUERIES
+# ============================================================================
+
+class TestScopedQueries:
+
+    def test_tenant_query_without_context_raises(self):
+        from fasthub_core.tenancy.scoped import tenant_query
+        from fasthub_core.tenancy.context import clear_tenant_context
+        from sqlalchemy import select, Column, String
+        from fasthub_core.db.base import Base
+
+        clear_tenant_context()
+        # Bez kontekstu powinno rzucić ValueError
+        with pytest.raises(ValueError):
+            # Symulujemy — w prawdziwym kodzie byłby model
+            tenant_query(select(), None)
+
+    def test_optional_tenant_query_without_context(self):
+        from fasthub_core.tenancy.scoped import optional_tenant_query
+        from fasthub_core.tenancy.context import clear_tenant_context
+        from sqlalchemy import select
+
+        clear_tenant_context()
+        query = select()
+        result = optional_tenant_query(query, None)
+        # Bez kontekstu — zwraca query bez zmian
+        assert result is query
+
+    def test_tenant_query_callable(self):
+        from fasthub_core.tenancy.scoped import tenant_query, optional_tenant_query
+        assert callable(tenant_query)
+        assert callable(optional_tenant_query)
+
+
+# ============================================================================
+# CLI
+# ============================================================================
+
+class TestCLI:
+
+    def test_app_exists(self):
+        from fasthub_core.cli import app
+        assert app is not None
+
+    def test_app_has_commands(self):
+        from fasthub_core.cli.app import app
+        # Importuj komendy
+        import fasthub_core.cli.commands
+        
+        # Sprawdź zarejestrowane komendy
+        command_names = [cmd.name for cmd in app.registered_commands]
+        assert "seed" in command_names
+        assert "create-admin" in command_names
+        assert "check" in command_names
+        assert "show-config" in command_names
+        assert "shell" in command_names
+
+    def test_entry_point(self):
+        from fasthub_core.cli.entry import main
+        assert callable(main)
+
+
+# ============================================================================
+# EXPORTS
+# ============================================================================
+
+class TestExports:
+
+    def test_tenancy_exports(self):
+        from fasthub_core.tenancy import (
+            get_current_tenant, get_current_tenant_id,
+            set_current_tenant, clear_tenant_context,
+            TenantContext, TenantMiddleware,
+            require_tenant, require_tenant_admin, get_tenant_db,
+        )
+        assert TenantMiddleware is not None
+        assert callable(get_current_tenant)
+        assert callable(require_tenant)
+
+    def test_cli_export(self):
+        from fasthub_core.cli import app
+        assert app is not None
+
+    def test_main_init_exports(self):
+        from fasthub_core import TenantMiddleware, get_current_tenant
+        assert TenantMiddleware is not None
+```
+
+### Uruchom:
+```bash
+pip install typer[all] --break-system-packages
+python -m pytest tests/test_tenancy.py -v --tb=short
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "test: tenancy + CLI tests (~25 tests: context, middleware, deps, scoped, CLI)"
+```
+
+---
+
+## KROK 8: Dokumentacja
+
+W `DOKUMENTACJA_AI.md` **DODAJ**:
+
+```markdown
+## Multi-tenancy — izolacja danych między organizacjami
+
+### Jak to działa
+
+1. User loguje się → JWT z user_id
+2. TenantMiddleware przechwytuje request → znajduje organizację usera → ustawia TenantContext
+3. Każdy serwis/endpoint ma dostęp do `get_current_tenant_id()`
+4. Query filtrowane automatycznie (`tenant_query()`) lub ręcznie
+
+```
+Request (JWT) → TenantMiddleware → ContextVar(TenantContext) → endpoint
+                                                                   ↓
+                                                        get_current_tenant_id()
+                                                                   ↓
+                                                    WHERE org_id = tenant_id
+```
+
+### Użycie w endpointach
+
+```python
+# Opcja 1: Dependency (jawny, bezpieczny)
+@router.get("/data")
+async def get_data(tenant: TenantContext = Depends(require_tenant)):
+    query = select(X).where(X.organization_id == tenant.tenant_id)
+
+# Opcja 2: ContextVar (szybki, w serwisach)
+from fasthub_core.tenancy import get_current_tenant_id
+tenant_id = get_current_tenant_id()
+
+# Opcja 3: Helper (automatyczny filtr)
+from fasthub_core.tenancy.scoped import tenant_query
+query = tenant_query(select(Process), Process.organization_id)
+```
+
+### Publiczne endpointy (bez tenanta)
+
+TenantMiddleware automatycznie pomija:
+- /health, /ready, /metrics
+- /docs, /redoc, /openapi.json
+- /auth/login, /auth/register
+- /billing/webhooks
+
+Konfiguracja: `TenantMiddleware(app, excluded_paths=["/custom/public"])`
+
+## CLI — komendy administracyjne
+
+```bash
+fasthub seed              # Załaduj plany, role, uprawnienia
+fasthub create-admin      # Stwórz pierwszego admina + organizację
+fasthub check             # Sprawdź DB, Redis, Stripe, Email, Storage
+fasthub show-config       # Pokaż konfigurację
+fasthub shell             # Interaktywna konsola z modelami
+```
+
+### Rozszerzanie CLI w aplikacji
+
+```python
+from fasthub_core.cli import app as cli_app
+
+@cli_app.command()
+def import_data(file: str):
+    typer.echo(f"Importing {file}...")
+```
+```
+
+### Commit:
+```bash
+git add -A
+git commit -m "docs: multi-tenancy architecture, CLI commands"
+```
+
+---
+
+## KROK 9: Push i PR
+
+```bash
+python -m pytest tests/ -v --tb=short -q 2>&1 | tail -10
+
+git push -u origin feature/tenant-middleware-cli
+
+gh pr create \
+  --title "Brief 17: Multi-tenancy Middleware + CLI Commands" \
+  --body "Automatyczna izolacja tenantów + narzędzia administracyjne:
+
+**Multi-tenancy:**
+- TenantContext (ContextVar, async-safe per-request)
+- TenantMiddleware (auto tenant z JWT, excluded paths)
+- require_tenant, require_tenant_admin (FastAPI Depends)
+- tenant_query() helper (auto WHERE organization_id = X)
+- get_db_session() context manager
+
+**CLI (Typer):**
+- fasthub seed — plany, role, uprawnienia
+- fasthub create-admin — admin + organizacja
+- fasthub check — DB, Redis, Stripe, Email, Storage
+- fasthub show-config — konfiguracja
+- fasthub shell — interaktywna konsola
+
+~25 testów." \
+  --base main
+```
+
+---
+
+## CZEGO NIE ROBIĆ
+
+- ❌ NIE usuwaj `get_current_organization()` z auth/dependencies.py — zostaje dla kompatybilności
+- ❌ NIE dodawaj Row Level Security (RLS) na poziomie bazy — za wcześnie, FastHub nie celuje w PostgreSQL-only
+- ❌ NIE twórz osobnych schematów DB per tenant — to overkill dla polskich MŚP
+- ❌ NIE twórz komend do migracji (alembic) — alembic ma swoje CLI
+- ❌ NIE implementuj przełączania organizacji (multi-org per user) — to faza 2+
+
+---
+
+## JAK AUTOFLOW TO WYKORZYSTA
+
+```python
+# autoflow/main.py
+from fasthub_core.tenancy import TenantMiddleware
+
+app.add_middleware(TenantMiddleware, excluded_paths=[
+    "/health", "/auth", "/billing/webhooks",
+    "/public",  # publiczne endpointy AutoFlow
+])
+
+# autoflow/api/processes.py
+from fasthub_core.tenancy import require_tenant, get_current_tenant_id
+from fasthub_core.tenancy.scoped import tenant_query
+
+@router.get("/processes")
+async def list_processes(
+    tenant = Depends(require_tenant),
+    db = Depends(get_db),
+):
+    query = tenant_query(
+        select(Process).order_by(Process.created_at.desc()),
+        Process.organization_id,
+    )
+    result = await db.execute(query)
+    return result.scalars().all()
+
+# autoflow/cli.py — rozszerzenie CLI
+from fasthub_core.cli import app as cli_app
+
+@cli_app.command()
+def import_processes(file: str = typer.Argument(...)):
+    """Importuj procesy z pliku JSON."""
+    typer.echo(f"Importing from {file}...")
+```
+
+---
+
+## DELIVERABLES
+
+1. **`fasthub_core/tenancy/context.py`** — TenantContext + ContextVar (set/get/clear)
+2. **`fasthub_core/tenancy/middleware.py`** — TenantMiddleware (auto tenant z JWT)
+3. **`fasthub_core/tenancy/dependencies.py`** — require_tenant, require_tenant_admin, get_tenant_db
+4. **`fasthub_core/tenancy/scoped.py`** — tenant_query(), optional_tenant_query()
+5. **`fasthub_core/cli/app.py`** — Typer app
+6. **`fasthub_core/cli/commands.py`** — seed, create-admin, check, show-config, shell
+7. **`fasthub_core/cli/entry.py`** — entry point
+8. **Zaktualizowany `fasthub_core/db/session.py`** — get_db_session() context manager
+9. **Zaktualizowany `fasthub_core/__init__.py`** — tenancy exports
+10. **Zaktualizowany `fasthub_core/middleware/__init__.py`** — TenantMiddleware
+11. **Zaktualizowany `setup.py`** — typer + entry_points
+12. **`tests/test_tenancy.py`** — ~25 testów
+13. **DOKUMENTACJA_AI.md** — multi-tenancy, CLI
+14. **Git commit + push + PR**
+
+---
+
+## PO TYM BRIEFIE
+
+| Moduł fasthub_core | Status |
+|---|---|
+| Auth, RBAC, Audit, Notifications, WebSocket | ✅ Brief 4-9 |
+| Redis, Encryption, Events, OAuth, Webhooks, Billing | ✅ Brief 10 |
+| Logging, Monitoring, Rate Limiting, Sub Check, Health | ✅ Brief 13 |
+| File Storage (Local + S3), Feature Flags | ✅ Brief 14 |
+| Background Tasks (ARQ + Sync, pluggable) | ✅ Brief 15 |
+| Payment Gateway (multi-bramka) + Stripe + Shared Clients | ✅ Brief 16 |
+| **Multi-tenancy Middleware + CLI** | ✅ **Brief 17** |
+| Data Export (GDPR) | 🔜 Brief 18 |
+| Email Templates + Invitations | 🔜 Brief 19 |
+| Polskie bramki płatnicze (PayU, Tpay, P24) | 🔜 Brief 20 |
+
+---
+
+*Brief #17 przygotowany przez Stratega, 2026-03-02*
+*Seria: FastHub Finalizacja (5/7)*
+*Następny brief: #18 — Data Export (GDPR compliance)*

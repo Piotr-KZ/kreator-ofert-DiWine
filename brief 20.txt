@@ -1,0 +1,399 @@
+Brief 20 — Polskie bramki płatnicze — wersja rozszerzona
+
+Kontekst
+Brief 16 zbudował fundament — PaymentGateway(ABC), PaymentGatewayRegistry, StripeGateway. Ale Stripe w Polsce to nisza. Polskie firmy używają PayU, Tpay, Przelewy24. Klient końcowy chce płacić BLIKiem, przelewem z banku, kartą Visa — nie "Stripe checkout".
+Brief 20 implementuje bramki które realnie obsługują 95% polskiego rynku płatności online.
+
+Mapa polskiego rynku płatności
+BramkaUdział w rynku PLBLIKKartyPrzelewyGoogle PayApple PayPayU~40%✅✅ Visa/MC/Maestro✅✅✅Tpay (Autopay)~25%✅✅ Visa/MC/Maestro✅✅✅Przelewy24~20%✅✅ Visa/MC✅✅✅PayPal~5% międzyn.❌✅ (własne)❌❌❌Stripe~3% PL✅✅❌✅✅iMoje (ING)mały✅✅✅❌❌CashBillmały✅✅✅❌❌HotPaymikro✅✅✅❌❌PayNow (mBank)mały✅✅✅❌❌
+Priorytet Brief 20: PayU + Tpay + Przelewy24 + PayPal = pokrycie ~90% rynku.
+Niższy priorytet (Brief 21 lub później): iMoje, CashBill, HotPay, PayNow, Elavon, Revolut.
+
+Kluczowa różnica: subskrypcje
+Stripe ma natywne subskrypcje — mówisz "pobieraj 199 zł co miesiąc" i Stripe sam to robi.
+Polskie bramki tego NIE MAJĄ. PayU, Tpay, P24 obsługują jednorazowe płatności. Żeby mieć subskrypcję trzeba:
+
+Co miesiąc (cron) generować nową płatność
+Wysłać klientowi link lub obciążyć zapisaną kartę
+Sprawdzić czy zapłacił
+Jeśli nie → grace period → powiadomienie → jeśli dalej nie → cancel
+
+To wymaga nowego komponentu: RecurringManager.
+Stripe:
+    create_subscription() → Stripe sam pobiera co miesiąc → webhook "payment_succeeded"
+
+Polskie bramki:
+    create_subscription() → zapisz w bazie "plan Pro, 199 PLN, co miesiąc"
+    RecurringManager (cron co godzinę):
+        → znajdź subskrypcje gdzie current_period_end < teraz
+        → dla każdej: create_payment() przez bramkę
+        → czekaj na webhook "zapłacone"
+        → jeśli zapłacone: przedłuż period o miesiąc
+        → jeśli nie zapłacone po 3 dniach: status=past_due, wyślij mail
+        → jeśli nie zapłacone po 14 dniach: status=canceled, downgrade do free
+
+Jak działa każda bramka
+PayU
+Flow: Redirect. Tworzymy "order" przez API → dostajemy URL → klient płaci na stronie PayU → PayU wysyła notify na nasz URL.
+API: https://secure.payu.com/api/v2_1/orders
+Auth: OAuth2 (client_id + client_secret → bearer token)
+Tworzenie: POST /orders → redirectUri (tam odsyłamy klienta)
+Notify: POST na nasz endpoint z JSON (status: COMPLETED/CANCELED/...)
+Weryfikacja: signature w nagłówku (MD5 lub SHA256)
+Config:
+PAYU_POS_ID=123456
+PAYU_MD5_KEY=abc123...
+PAYU_CLIENT_ID=123456
+PAYU_CLIENT_SECRET=xyz789...
+PAYU_ENVIRONMENT=sandbox|production  # sandbox.payu.com vs secure.payu.com
+Metody płatności PayU: BLIK (blik), karty (c), przelewy bankowe (pbl), Google Pay (jp), Apple Pay (ap), raty (ai).
+Tpay (Autopay)
+Flow: Redirect. Tworzymy transakcję → dostajemy URL → klient płaci → Tpay wysyła callback.
+API: https://api.tpay.com/ (REST, nowe API)
+Auth: client_id + client_secret → OAuth2 bearer
+Tworzenie: POST /transactions → transactionPaymentUrl
+Callback: POST na nasz endpoint z danymi transakcji
+Weryfikacja: checksum (MD5 z kodem bezpieczeństwa)
+Config:
+TPAY_CLIENT_ID=xxx
+TPAY_CLIENT_SECRET=xxx
+TPAY_SECURITY_CODE=xxx
+TPAY_ENVIRONMENT=sandbox|production
+Przelewy24
+Flow: Redirect. Rejestrujemy transakcję → dostajemy token → redirect na P24 → klient płaci → P24 wywołuje callback → my weryfikujemy transakcję.
+API: https://secure.przelewy24.pl/api/v1/
+Auth: Basic (merchantId + CRC key)
+Rejestracja: POST /transaction/register → token
+Redirect: https://secure.przelewy24.pl/trnRequest/{token}
+Callback: POST na nasz endpoint
+Weryfikacja: PUT /transaction/verify (OBOWIĄZKOWE — bez tego P24 nie uznaje)
+Config:
+P24_MERCHANT_ID=123456
+P24_POS_ID=123456         # zwykle = MERCHANT_ID
+P24_CRC_KEY=abc123...
+P24_ENVIRONMENT=sandbox|production
+Ważne: P24 jako jedyna WYMAGA weryfikacji po callbacku. Po otrzymaniu notify musisz wywołać /transaction/verify — dopiero wtedy transakcja jest potwierdzona.
+PayPal
+Flow: Redirect. Tworzymy order → redirect na PayPal → klient płaci → capture.
+API: https://api-m.paypal.com/v2/
+Auth: OAuth2 (client_id + client_secret → bearer)
+Tworzenie: POST /checkout/orders → approval URL
+Po redirect: POST /checkout/orders/{id}/capture
+Webhook: POST na nasz endpoint z event
+Config:
+PAYPAL_CLIENT_ID=xxx
+PAYPAL_CLIENT_SECRET=xxx
+PAYPAL_ENVIRONMENT=sandbox|production
+PayPal MA natywne subskrypcje (Billing Plans), więc RecurringManager nie jest potrzebny dla PayPala — analogicznie do Stripe.
+
+Pliki
+fasthub_core/billing/gateways/
+    __init__.py              — eksport wszystkich bramek
+    stripe_gateway.py        — ✅ już z Brief 16
+    payu_gateway.py          — PayUGateway(PaymentGateway)
+    tpay_gateway.py          — TpayGateway(PaymentGateway)
+    p24_gateway.py           — P24Gateway(PaymentGateway)
+    paypal_gateway.py        — PayPalGateway(PaymentGateway)
+
+fasthub_core/clients/
+    base_client.py           — ✅ już z Brief 16
+    stripe_client.py         — ✅ już z Brief 16
+    fakturownia_client.py    — ✅ już z Brief 16
+    payu_client.py           — PayUClient (auth OAuth2, create order, verify)
+    tpay_client.py           — TpayClient (auth OAuth2, create transaction)
+    p24_client.py            — P24Client (auth Basic, register, verify)
+    paypal_client.py         — PayPalClient (auth OAuth2, create order, capture)
+
+fasthub_core/billing/
+    recurring_manager.py     — RecurringManager (cron, auto-płatności, grace period)
+
+RecurringManager — serce polskich subskrypcji
+pythonclass RecurringManager:
+    """
+    Zarządza cyklem subskrypcji dla bramek BEZ natywnych subskrypcji.
+    
+    Uruchamiany jako cron job (Brief 15 task queue):
+    - Co godzinę: sprawdź subskrypcje do odnowienia
+    - Generuj płatności
+    - Obsłuż grace period
+    - Downgrade jeśli nie zapłacono
+    
+    NIE dotyczy Stripe i PayPal (mają natywne subskrypcje).
+    DOTYCZY: PayU, Tpay, P24, iMoje, CashBill.
+    """
+    
+    async def process_renewals(self, db):
+        """
+        Główna metoda — wywoływana co godzinę przez cron.
+        
+        1. Znajdź subskrypcje gdzie:
+           - status = active
+           - gateway != stripe, paypal (te mają natywne)
+           - current_period_end < now
+        
+        2. Dla każdej:
+           a) Jeśli klient ma zapisaną kartę → obciąż automatycznie
+           b) Jeśli nie → wyślij mail z linkiem do płatności
+        
+        3. Obsłuż grace period:
+           - 0-3 dni po terminie: status=active, wyślij reminder
+           - 3-14 dni: status=past_due, wyślij ostrzeżenie
+           - 14+ dni: status=canceled, downgrade do free
+        """
+        ...
+    
+    async def create_renewal_payment(self, subscription, db):
+        """Stwórz płatność odnowieniową przez bramkę subskrypcji."""
+        registry = get_payment_registry()
+        result = await registry.create_payment(
+            gateway_id=subscription.gateway_id,
+            amount=subscription.amount,
+            currency=subscription.currency,
+            description=f"Odnowienie: {subscription.plan_name}",
+            return_url=f"{FRONTEND_URL}/billing/renewal-success",
+            metadata={"tenant_id": subscription.tenant_id, "renewal": True},
+        )
+        return result
+    
+    async def handle_renewal_paid(self, subscription, db):
+        """Po zapłaceniu — przedłuż okres o miesiąc/rok."""
+        if subscription.billing_interval == "monthly":
+            subscription.current_period_end += timedelta(days=30)
+        else:
+            subscription.current_period_end += timedelta(days=365)
+        subscription.status = "active"
+        ...
+    
+    async def handle_grace_period(self, subscription, days_overdue, db):
+        """Logika grace period."""
+        if days_overdue <= 3:
+            await send_templated_email("payment_reminder", ...)
+        elif days_overdue <= 14:
+            subscription.status = "past_due"
+            await send_templated_email("payment_failed", ...)
+        else:
+            subscription.status = "canceled"
+            await self._downgrade_to_free(subscription, db)
+            await send_templated_email("subscription_canceled", ...)
+Config:
+pythonRECURRING_GRACE_DAYS: int = 14          # ile dni grace period
+RECURRING_REMINDER_DAYS: List[int] = [1, 3, 7]  # kiedy wysłać reminder
+RECURRING_CHECK_INTERVAL: str = "hourly"  # jak często sprawdzać
+Cron job (dodaj do Brief 15 worker):
+python# W WorkerSettings
+cron_jobs = [
+    ...existing...,
+    cron("fasthub_core.billing.recurring_tasks.process_renewals", hour=None),  # co godzinę
+]
+
+Modele — co dodać do Subscription
+pythonclass Subscription(Base):
+    # ... istniejące pola ...
+    
+    # Nowe pola dla polskich bramek:
+    gateway_id = Column(String(50), nullable=True)        # "stripe", "payu", "tpay", "p24"
+    amount = Column(Integer, nullable=True)                # kwota w groszach (19900 = 199 PLN)
+    currency = Column(String(3), default="PLN")
+    
+    # Dla bramek z zapisaną kartą (auto-renewal):
+    gateway_customer_id = Column(String(200), nullable=True)   # ID klienta w bramce
+    gateway_payment_token = Column(String(200), nullable=True) # token karty do obciążenia
+    
+    # Renewal tracking:
+    last_renewal_attempt = Column(DateTime, nullable=True)
+    renewal_failures = Column(Integer, default=0)
+    grace_period_end = Column(DateTime, nullable=True)    # current_period_end + 14 dni
+
+Shared HTTP Clients — szczegóły
+PayUClient
+pythonclass PayUClient(BaseHTTPClient):
+    """
+    PayU REST API client.
+    
+    Auth: OAuth2 — client_credentials grant.
+    Token cache — nie pytaj o token przy każdym request.
+    
+    Docs: https://developers.payu.com/en/restapi.html
+    """
+    
+    def __init__(self, pos_id, md5_key, client_id, client_secret, sandbox=False):
+        base_url = "https://secure.snd.payu.com" if sandbox else "https://secure.payu.com"
+        super().__init__(base_url=base_url)
+        self._token = None
+        self._token_expires = None
+        ...
+    
+    async def _ensure_auth(self):
+        """OAuth2 client_credentials → bearer token (z cache)."""
+        ...
+    
+    async def create_order(self, amount, currency, description, 
+                           buyer_email, return_url, notify_url, 
+                           method=None) -> Dict:
+        """
+        POST /api/v2_1/orders
+        
+        Returns: {"redirectUri": "https://...", "orderId": "..."}
+        """
+        ...
+    
+    async def get_order(self, order_id) -> Dict:
+        """GET /api/v2_1/orders/{order_id}"""
+        ...
+    
+    async def verify_notification(self, body, headers) -> Dict:
+        """Weryfikuj signature z PayU notify."""
+        ...
+TpayClient, P24Client, PayPalClient — analogiczna struktura
+Każdy klient:
+
+Dziedziczy po BaseHTTPClient
+Ma auth (OAuth2 lub Basic)
+Ma create_payment / create_transaction
+Ma verify_callback / verify_notification
+Ma get_payment_status
+
+
+PaymentGatewayRegistry — aktualizacja from_config
+python@classmethod
+def from_config(cls) -> "PaymentGatewayRegistry":
+    registry = cls()
+    
+    # Próbuj każdą bramkę — jeśli ma klucze w env, zarejestruj
+    gateway_classes = [
+        ("fasthub_core.billing.gateways.stripe_gateway", "StripeGateway"),
+        ("fasthub_core.billing.gateways.payu_gateway", "PayUGateway"),
+        ("fasthub_core.billing.gateways.tpay_gateway", "TpayGateway"),
+        ("fasthub_core.billing.gateways.p24_gateway", "P24Gateway"),
+        ("fasthub_core.billing.gateways.paypal_gateway", "PayPalGateway"),
+    ]
+    
+    for module_path, class_name in gateway_classes:
+        try:
+            module = importlib.import_module(module_path)
+            gateway_class = getattr(module, class_name)
+            gateway = gateway_class()
+            registry.register(gateway)  # register sprawdza is_configured()
+        except ImportError:
+            pass
+    
+    return registry
+
+Webhook routing
+Każda bramka wysyła callback na inny URL. Aplikacja rejestruje endpointy:
+python# AutoFlow — routing webhooków
+@router.post("/billing/webhooks/stripe")
+async def stripe_webhook(request: Request):
+    registry = get_payment_registry()
+    return await registry.handle_webhook("stripe", await request.body(), dict(request.headers))
+
+@router.post("/billing/webhooks/payu")
+async def payu_webhook(request: Request):
+    registry = get_payment_registry()
+    return await registry.handle_webhook("payu", await request.body(), dict(request.headers))
+
+@router.post("/billing/webhooks/tpay")
+async def tpay_webhook(request: Request):
+    # analogicznie
+
+@router.post("/billing/webhooks/p24")
+async def p24_webhook(request: Request):
+    # analogicznie — P24 wymaga dodatkowej weryfikacji po callbacku!
+P24 wymaga specjalnej obsługi — po otrzymaniu callbacku MUSISZ wywołać /transaction/verify. Bez tego transakcja nie jest potwierdzona. P24Gateway.handle_webhook() robi to automatycznie.
+
+Testy (~40)
+Per bramka (~8 testów każda):
+
+Gateway class exists, implements PaymentGateway
+gateway_id, display_name poprawne
+is_configured z/bez kluczy
+get_payment_methods — zwraca BLIK, karty, przelewy (per bramka)
+create_payment — mock API, sprawdź redirect URL
+handle_webhook — mock callback, sprawdź status mapping
+verify (P24 — dodatkowa weryfikacja)
+
+RecurringManager (~8 testów):
+
+process_renewals — znajdź subskrypcje do odnowienia
+create_renewal_payment — delegacja do bramki
+handle_renewal_paid — przedłużenie okresu
+grace_period — 1 dzień (reminder), 5 dni (past_due), 15 dni (cancel)
+skip Stripe/PayPal (mają natywne)
+empty list (nic do odnowienia)
+
+Shared clients (~4 testy):
+
+PayUClient, TpayClient, P24Client, PayPalClient — class exists, has methods
+Auth token caching (PayU, Tpay)
+
+Registry integration (~4 testy):
+
+from_config auto-detect bramek
+get_available_methods z wielu bramek (deduplikacja BLIK)
+handle_webhook routing
+
+
+Config — nowe pola
+python# PayU
+PAYU_POS_ID: Optional[str] = None
+PAYU_MD5_KEY: Optional[str] = None
+PAYU_CLIENT_ID: Optional[str] = None
+PAYU_CLIENT_SECRET: Optional[str] = None
+PAYU_SANDBOX: bool = True
+
+# Tpay
+TPAY_CLIENT_ID: Optional[str] = None
+TPAY_CLIENT_SECRET: Optional[str] = None
+TPAY_SECURITY_CODE: Optional[str] = None
+TPAY_SANDBOX: bool = True
+
+# Przelewy24
+P24_MERCHANT_ID: Optional[str] = None
+P24_POS_ID: Optional[str] = None
+P24_CRC_KEY: Optional[str] = None
+P24_SANDBOX: bool = True
+
+# PayPal
+PAYPAL_CLIENT_ID: Optional[str] = None
+PAYPAL_CLIENT_SECRET: Optional[str] = None
+PAYPAL_SANDBOX: bool = True
+
+# Recurring (polskie bramki)
+RECURRING_GRACE_DAYS: int = 14
+RECURRING_REMINDER_DAYS: str = "1,3,7"  # dni po terminie kiedy mail
+
+Czego NIE robić
+
+NIE implementuj iMoje, CashBill, HotPay, PayNow — to Brief 21, niski priorytet
+NIE twórz zapisywania kart (tokenizacja) — to skomplikowane, wymaga PCI DSS, na start wystarczy redirect
+NIE twórz zwrotów częściowych dla polskich bramek — na start pełny zwrot wystarczy
+NIE twórz REST API (to per aplikacja)
+NIE rób rataplat (PayU raty, Tpay raty) — to osobny feature
+NIE testuj z prawdziwymi API — mock HTTP responses. Ale daj instrukcję jak przetestować na sandbox
+
+
+Jak AutoFlow to wykorzysta
+python# .env
+PAYU_POS_ID=123456
+PAYU_MD5_KEY=abc123
+PAYU_CLIENT_ID=123456
+PAYU_CLIENT_SECRET=xyz789
+PAYU_SANDBOX=false
+
+TPAY_CLIENT_ID=xxx
+TPAY_CLIENT_SECRET=xxx
+TPAY_SECURITY_CODE=xxx
+
+# AutoFlow nic nie musi robić w kodzie — bramki auto-rejestrują się z config
+# Frontend pyta:
+# GET /billing/payment-methods → BLIK (PayU), Visa (PayU), Przelew (PayU), Tpay...
+
+# Klient wybiera BLIK → frontend wysyła gateway_id=payu, method=blik
+# Backend: registry.create_payment("payu", amount=19900, method="blik", ...)
+# → redirect na PayU → klient płaci → webhook → done
+
+Po tym briefie — pełna tabela
+Moduł fasthub_coreBriefStatusAuth, RBAC, Audit, Notifications, WebSocket1-9✅Redis, Encryption, Events, OAuth, Webhooks, Billing10✅Monitoring, Rate Limiting, Health13✅File Storage + Feature Flags14✅Task Queue (ARQ/Sync)15✅Payment Gateway + Stripe + Shared Clients16✅Multi-tenancy + CLI17✅GDPR Export + Anonimizacja18✅Email Templates + Invitations19✅Polskie bramki (PayU, Tpay, P24, PayPal)20✅
+FastHub v2.0 = RELEASE READY.
+
+Masz trzy rozszerzone opisy — 18 (GDPR), 19 (email + invitations), 20 (polskie bramki + RecurringManager). Wystarczająco mięsa żeby Opus CLI napisał pełne briefy. Kluczowy nowy element w 20 to RecurringManager — bez niego polskie bramki nie mają subskrypcji.

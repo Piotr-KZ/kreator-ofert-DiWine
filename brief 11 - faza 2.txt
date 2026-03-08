@@ -1,0 +1,948 @@
+# BRIEF DLA WYKONAWCY — FAZA 3, ZADANIE 11
+## AutoFlow czyszczenie: zamiana lokalnych modułów na fasthub_core
+
+### Data: 2026-03-02
+### Zlecający: Strateg (Opus w projekcie Claude)
+### Wykonawca: Opus w Claude Code CLI
+### Repo: https://github.com/Piotr-KZ/autoflow
+### Folder: C:\Projekty internetowe\autoflow
+### Branch: feature/fasthub-core-integration
+
+---
+
+## KONTEKST
+
+Brief 10 przeniósł 7 uniwersalnych modułów z AutoFlow do `fasthub_core/` w repo FastHub. Teraz AutoFlow ma **duplikaty** — lokalne kopie modułów PLUS te same moduły w fasthub_core.
+
+Ten brief eliminuje duplikaty: AutoFlow przestaje używać lokalnych `app.core.redis`, `app.core.encryption`, `app.events`, itd. i zamiast tego importuje z `fasthub_core`.
+
+**Gotowe narzędzia:**
+- `scripts/migrate_imports_to_fasthub.py` — skrypt z mapą 46+ importów (z Briefu przygotowawczego)
+- `app/fasthub_manifest.py` — manifest z permissions, rolami, event types, billing resources
+
+**Skala pracy:**
+- ~47 importów do zamiany w ~15 plikach
+- 8 plików źródłowych do zastąpienia thin wrapperami (3,908 linii → ~80 linii wrapperów)
+- 1 plik do modyfikacji (main.py — startup sequence)
+- 2 pliki testowe do aktualizacji
+- 1 plik konfiguracyjny (requirements.txt)
+
+---
+
+## ZANIM ZACZNIESZ
+
+### 1. Upewnij się że Brief 10 jest skończony i zamergowany w FastHub
+
+```bash
+cd "C:\Projekty internetowe\Fasthub"
+git log --oneline -5
+# Powinien mieć commity z Brief 10 (moduły w fasthub_core/)
+```
+
+### 2. Zainstaluj fasthub_core jako dependency w AutoFlow
+
+```bash
+cd "C:\Projekty internetowe\autoflow"
+
+# Opcja A: pip install z lokalnego repo (REKOMENDOWANA na razie)
+pip install -e "C:\Projekty internetowe\Fasthub" --break-system-packages
+
+# Opcja B: pip install z GitHub (gdy FastHub będzie publiczny)
+# pip install git+https://github.com/Piotr-KZ/Fasthub.git
+
+# Weryfikacja:
+python -c "from fasthub_core.events import event_bus; print('✅ fasthub_core dostępny')"
+python -c "from fasthub_core.infrastructure.redis import get_redis; print('✅ Redis module')"
+python -c "from fasthub_core.security.encryption import encrypt_credentials; print('✅ Encryption module')"
+python -c "from fasthub_core.integrations.oauth import OAuthManager; print('✅ OAuth module')"
+python -c "from fasthub_core.integrations.webhooks import SignatureVerifier; print('✅ Webhooks module')"
+python -c "from fasthub_core.billing.service import BillingService; print('✅ Billing module')"
+```
+
+**Jeśli którykolwiek import nie działa — STOP. Brief 10 nie jest kompletny.**
+
+### 3. Stwórz branch
+
+```bash
+git checkout main
+git pull
+git checkout -b feature/fasthub-core-integration
+```
+
+---
+
+## KOLEJNOŚĆ KROKÓW
+
+```
+Krok 1: Dodaj fasthub_core do requirements.txt
+         ↓
+Krok 2: Uruchom skrypt migracji importów (--apply)
+         ↓
+Krok 3: Napraw importy ręczne (2 manual fixes)
+         ↓
+Krok 4: Zamień pliki źródłowe na thin wrappery
+         ↓
+Krok 5: Zaktualizuj main.py (startup + manifest)
+         ↓
+Krok 6: Zaktualizuj env vars (AUTOFLOW_SECRET_KEY → oba)
+         ↓
+Krok 7: Zaktualizuj testy
+         ↓
+Krok 8: Uruchom testy i weryfikację
+```
+
+---
+
+## KROK 1: REQUIREMENTS.TXT
+
+Dodaj fasthub_core do `requirements.txt`:
+
+```
+# === FASTHUB CORE (fundament SaaS) ===
+# Instalacja lokalna: pip install -e ../Fasthub
+# Instalacja z GitHub: pip install git+https://github.com/Piotr-KZ/Fasthub.git
+# fasthub-core  # odkomentuj gdy pakiet będzie na PyPI
+```
+
+**UWAGA:** Na tym etapie fasthub_core instalujemy ręcznie (`pip install -e`), nie przez requirements.txt — bo to lokalne repo, nie pakiet PyPI. Komentarz wystarczy.
+
+Sprawdź czy dependencies fasthub_core nie kolidują z AutoFlow:
+- `aioredis` vs `redis[hiredis]` — AutoFlow używa `redis[hiredis]==5.0.1`. Jeśli fasthub_core wymaga `aioredis` — mogą kolidować. Sprawdź co Brief 10 faktycznie zainstalował i UJEDNOLIĆ.
+- `cryptography` — AutoFlow pewnie już ma (przez inne zależności). OK.
+- `httpx` — AutoFlow ma `httpx==0.26.0`. OK.
+- `stripe` — Sprawdź czy AutoFlow ma. Jeśli nie — dodaj.
+
+---
+
+## KROK 2: URUCHOM SKRYPT MIGRACJI
+
+```bash
+cd "C:\Projekty internetowe\autoflow"
+
+# Najpierw dry-run (weryfikacja)
+python scripts/migrate_imports_to_fasthub.py --dry-run
+
+# Jeśli wygląda OK — apply
+python scripts/migrate_imports_to_fasthub.py --apply
+
+# Sprawdź co zostało
+python scripts/migrate_imports_to_fasthub.py --verify
+```
+
+Skrypt zamieni ~46 importów typu:
+```python
+# PRZED:
+from app.core.redis import get_redis, set_cache
+# PO:
+from fasthub_core.infrastructure.redis import get_redis, set_cache
+```
+
+**Po uruchomieniu skryptu — zrób commit:**
+```bash
+git add -A
+git commit -m "Krok 2: automated import migration to fasthub_core (46 imports)"
+```
+
+---
+
+## KROK 3: MANUAL FIXES
+
+Skrypt nie obsłuży 2 przypadków (wieloliniowe importy). Napraw ręcznie:
+
+### Fix 1: `app/api/billing.py` (linia ~24)
+
+```python
+# PRZED (wieloliniowy import):
+from app.services.billing import (
+    get_billing_plans_list,
+    get_tenant_subscription,
+    get_usage_summary,
+    create_checkout_session,
+    create_portal_session,
+    get_plan_by_slug,
+    # ... itd
+)
+
+# PO:
+from fasthub_core.billing.service import (
+    get_billing_plans_list,
+    get_tenant_subscription,
+    get_usage_summary,
+    create_checkout_session,
+    create_portal_session,
+    get_plan_by_slug,
+    # ... itd — zachowaj te same funkcje
+)
+```
+
+### Fix 2: `app/middleware/billing.py` (linia ~30)
+
+```python
+# PRZED:
+from app.services.billing import (
+    check_billing_limit,
+    increment_usage,
+    get_effective_limit,
+    # ... itd
+)
+
+# PO:
+from fasthub_core.billing.service import (
+    check_billing_limit,
+    increment_usage,
+    get_effective_limit,
+    # ... itd
+)
+```
+
+**WAŻNE:** Sprawdź DOKŁADNIE jakie funkcje są importowane — nazwy mogły się zmienić w Brief 10 (np. `check_billing_limit` → `check_limit`). Jeśli tak — popraw nazwy.
+
+### Fix 3 (dodatkowy): `app/middleware/security.py` (linia 290 w main.py)
+
+Skrypt migracji zamienił import w main.py na:
+```python
+from fasthub_core.middleware import SecurityHeadersMiddleware
+from app.middleware.security import RateLimitMiddleware
+```
+
+Sprawdź czy to działa. `SecurityHeadersMiddleware` powinien teraz pochodzić z fasthub_core, a `RateLimitMiddleware` zostaje w AutoFlow (domain-specific — ma custom konfigurację default_rpm=100, oauth_rpm=20).
+
+**Commit:**
+```bash
+git add -A
+git commit -m "Krok 3: manual import fixes (billing, middleware)"
+```
+
+---
+
+## KROK 4: THIN WRAPPERY (ZASTĄPIENIE PLIKÓW ŹRÓDŁOWYCH)
+
+**NIE USUWAJ plików źródłowych!** Zamień je na thin wrappery — re-exporty z fasthub_core. Dlaczego:
+- Inne pliki mogą importować z `app.core.redis` w sposób, który skrypt nie znalazł
+- Zewnętrzne narzędzia/skrypty mogą odwoływać się do starych ścieżek
+- Backward compatibility — stopniowa migracja jest bezpieczniejsza
+
+### 4A: `app/core/redis.py` (372 linii → ~20 linii)
+
+```python
+"""
+AutoFlow Redis — THIN WRAPPER.
+Moduł przeniesiony do fasthub_core.infrastructure.redis (Brief 10).
+Ten plik zachowany dla backward compatibility.
+"""
+
+# Re-export z fasthub_core
+from fasthub_core.infrastructure.redis import (  # noqa: F401
+    get_redis,
+    close_redis,
+    redis_health_check,
+    publish_event,
+    subscribe_events,
+    subscribe_all_events,
+    set_cache,
+    get_cache,
+    delete_cache,
+    cache_exists,
+    clear_cache_pattern,
+    get_ai_cache,
+    set_ai_cache,
+)
+
+# ARQ functions — USUNIĘTE w Brief 10, AutoFlow nie powinien ich używać
+# Jeśli coś jeszcze importuje enqueue_task/get_queue_stats — to błąd, napraw import
+```
+
+### 4B: `app/core/encryption.py` (263 linii → ~20 linii)
+
+```python
+"""
+AutoFlow Encryption — THIN WRAPPER.
+Moduł przeniesiony do fasthub_core.security.encryption (Brief 10).
+Ten plik zachowany dla backward compatibility.
+"""
+
+# Re-export z fasthub_core
+from fasthub_core.security.encryption import (  # noqa: F401
+    encrypt_credentials,
+    decrypt_credentials,
+    rotate_encryption_key,
+    generate_key,
+    mask_credentials,
+    is_encryption_available,
+)
+```
+
+### 4C: `app/events/__init__.py` (196 linii → ~30 linii)
+
+```python
+"""
+AutoFlow Event Bus — THIN WRAPPER.
+Core Event Bus przeniesiony do fasthub_core.events (Brief 10).
+Ten plik zachowuje AutoFlow-specific handlery.
+"""
+
+import logging
+from fasthub_core.events.bus import Event, EventBus, event_bus  # noqa: F401
+
+logger = logging.getLogger("autoflow.events")
+
+
+# =============================================================================
+# AUTOFLOW-SPECIFIC DEFAULT HANDLERS
+# =============================================================================
+# Te handlery SĄ specyficzne dla AutoFlow (obsługa procesów, integracji)
+# i NIE zostały przeniesione do fasthub_core
+
+async def _log_execution_failure(event):
+    """Loguj błędy wykonania procesów."""
+    logger.error(f"Execution failed: {event.get('payload', {}).get('error', 'unknown')}")
+
+async def _log_health_warning(event):
+    """Loguj ostrzeżenia o zdrowiu integracji."""
+    logger.warning(f"Integration health: {event.get('payload', {})}")
+
+async def _log_system_events(event):
+    """Loguj eventy systemowe."""
+    logger.info(f"System event: {event.get('event_type')}")
+
+
+def register_autoflow_handlers():
+    """Rejestruj AutoFlow-specific handlery w Event Bus."""
+    event_bus.register("execution.failed", _log_execution_failure)
+    event_bus.register("integrations.*", _log_health_warning)
+    event_bus.register("system.*", _log_system_events)
+```
+
+### 4D: `app/integrations/base/oauth.py` (842 linii → ~15 linii)
+
+```python
+"""
+AutoFlow OAuth Base — THIN WRAPPER.
+Core OAuth przeniesiony do fasthub_core.integrations.oauth (Brief 10).
+Ten plik zachowany dla backward compatibility.
+"""
+
+# Re-export z fasthub_core
+from fasthub_core.integrations.oauth import (  # noqa: F401
+    OAuthConfig,
+    OAuthTokens,
+    OAuthState,
+    OAuthManager,
+    TokenStorage,
+    MemoryTokenStorage,
+)
+```
+
+### 4E: `app/integrations/base/webhooks.py` (925 linii → ~15 linii)
+
+```python
+"""
+AutoFlow Webhooks Base — THIN WRAPPER.
+Core Webhooks przeniesiony do fasthub_core.integrations.webhooks (Brief 10).
+Ten plik zachowany dla backward compatibility.
+"""
+
+# Re-export z fasthub_core
+from fasthub_core.integrations.webhooks import (  # noqa: F401
+    WebhookStatus,
+    SignatureMethod,
+    WebhookConfig,
+    WebhookEvent,
+    WebhookRegistration,
+    WebhookStorage,
+    MemoryWebhookStorage,
+    SignatureVerifier,
+)
+```
+
+### 4F: `app/services/billing.py` (727 linii → ~20 linii)
+
+```python
+"""
+AutoFlow Billing Service — THIN WRAPPER.
+Core Billing przeniesiony do fasthub_core.billing.service (Brief 10).
+Ten plik zachowany dla backward compatibility.
+"""
+
+# Re-export z fasthub_core
+from fasthub_core.billing.service import *  # noqa: F401, F403
+
+# Jeśli fasthub_core nie eksportuje seed_billing_plans (mogło zmienić nazwę):
+# from fasthub_core.billing.service import seed_billing_plans  # noqa: F401
+```
+
+### 4G: `app/services/oauth_token_storage.py` (269 linii → ~15 linii)
+
+```python
+"""
+AutoFlow OAuth Token Storage — THIN WRAPPER.
+Core Storage przeniesiony do fasthub_core.integrations.oauth_storage (Brief 10).
+Ten plik zachowany dla backward compatibility.
+"""
+
+# Re-export z fasthub_core
+from fasthub_core.integrations.oauth_storage import *  # noqa: F401, F403
+```
+
+### 4H: `app/middleware/billing.py` (140 linii → ~15 linii)
+
+```python
+"""
+AutoFlow Billing Middleware — THIN WRAPPER.
+Core Billing Middleware przeniesiony do fasthub_core.billing.middleware (Brief 10).
+Ten plik zachowany dla backward compatibility.
+"""
+
+# Re-export z fasthub_core
+from fasthub_core.billing.middleware import (  # noqa: F401
+    enforce_limit,
+    require_limit,
+)
+
+# track_execution — sprawdź czy jest w fasthub_core
+# Jeśli nie — to domain-specific, zostaje tutaj:
+# async def track_execution(...): ...
+```
+
+### 4I: `app/middleware/security.py` — CZĘŚCIOWY WRAPPER
+
+**TEN PLIK NIE JEST CAŁYM WRAPPEREM.** `RateLimitMiddleware` zostaje w AutoFlow (domain-specific). Tylko `SecurityHeadersMiddleware` przeniesiony do fasthub_core.
+
+```python
+"""
+AutoFlow Security Middleware.
+
+SecurityHeadersMiddleware → fasthub_core (Brief 10)
+RateLimitMiddleware → ZOSTAJE TUTAJ (domain-specific, custom konfiguracja)
+"""
+
+import time
+import logging
+from collections import defaultdict
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request
+from starlette.responses import JSONResponse
+
+# SecurityHeaders — re-export z fasthub_core
+from fasthub_core.middleware.security_headers import SecurityHeadersMiddleware  # noqa: F401
+
+logger = logging.getLogger("autoflow.security")
+
+
+# =============================================================================
+# RATE LIMITER — ZOSTAJE W AUTOFLOW (domain-specific)
+# =============================================================================
+
+class RateLimitStore:
+    # ... ZACHOWAJ CAŁY ORYGINALNY KOD RateLimitStore ...
+    pass
+
+class RateLimitMiddleware(BaseHTTPMiddleware):
+    # ... ZACHOWAJ CAŁY ORYGINALNY KOD RateLimitMiddleware ...
+    pass
+```
+
+**INSTRUKCJA:** Skopiuj CAŁY oryginalny kod `RateLimitStore` i `RateLimitMiddleware` z obecnego pliku. Usuń TYLKO `class SecurityHeadersMiddleware` i zastąp importem z fasthub_core.
+
+**Commit:**
+```bash
+git add -A
+git commit -m "Krok 4: replace source files with thin wrappers to fasthub_core"
+```
+
+---
+
+## KROK 5: ZAKTUALIZUJ MAIN.PY
+
+### 5A: Startup — zmiana importów w lifespan
+
+Wewnątrz funkcji `lifespan()` w `app/main.py`, zmień:
+
+```python
+# PRZED (linia ~101):
+from app.services.billing import seed_billing_plans
+
+# PO:
+from fasthub_core.billing.service import seed_billing_plans
+```
+
+```python
+# PRZED (linia ~125):
+from app.core.encryption import is_encryption_available
+
+# PO:
+from fasthub_core.security.encryption import is_encryption_available
+```
+
+```python
+# PRZED (linia ~154):
+from app.core.redis import get_redis, close_redis, redis_health_check
+
+# PO:
+from fasthub_core.infrastructure.redis import get_redis, close_redis, redis_health_check
+```
+
+### 5B: Dodaj rejestrację manifestu przy starcie
+
+Po sekcji notification handlers (linia ~120), dodaj:
+
+```python
+    # === FASTHUB MANIFEST REGISTRATION ===
+    try:
+        from app.fasthub_manifest import MANIFEST, validate_manifest
+
+        # Walidacja manifestu
+        validation = validate_manifest()
+        if not validation["valid"]:
+            for err in validation["errors"]:
+                print(f"⚠️  Manifest error: {err}")
+        
+        stats = validation["stats"]
+        print(f"✅ AutoFlow manifest: {stats['total_permissions']} permissions, "
+              f"{stats['total_roles']} roles, {stats['total_event_types']} event types")
+
+        # Rejestracja w FastHub (gdy RBAC activation z poprawek FastHub jest gotowe)
+        # TODO: Odkomentuj gdy fasthub_core.rbac.register_app_permissions() istnieje
+        # from fasthub_core.rbac.service import RBACService
+        # async with _billing_session() as rbac_db:
+        #     await RBACService.register_app_permissions(rbac_db, MANIFEST["permissions"])
+        #     await RBACService.register_app_roles(rbac_db, MANIFEST["roles"])
+        
+    except Exception as e:
+        print(f"⚠️  Manifest registration: {e}")
+```
+
+### 5C: Dodaj rejestrację AutoFlow event handlers
+
+Po sekcji notification handlers, dodaj:
+
+```python
+    # AutoFlow-specific event handlers
+    try:
+        from app.events import register_autoflow_handlers
+        register_autoflow_handlers()
+        print("✅ AutoFlow event handlers registered")
+    except Exception as e:
+        print(f"⚠️  AutoFlow event handlers: {e}")
+```
+
+### 5D: Health endpoint
+
+W health endpoint (~linia 427-440), zmień:
+
+```python
+# PRZED:
+from app.core.redis import redis_health_check
+# PO:
+from fasthub_core.infrastructure.redis import redis_health_check
+
+# PRZED:
+from app.core.encryption import is_encryption_available
+# PO:
+from fasthub_core.security.encryption import is_encryption_available
+```
+
+### 5E: Env var w logach startup
+
+Zmień komunikaty o AUTOFLOW_SECRET_KEY (linie ~130-135):
+
+```python
+# PRZED:
+print("❌ KRYTYCZNY BŁĄD: Brak AUTOFLOW_SECRET_KEY w produkcji!")
+print("   Ustaw AUTOFLOW_SECRET_KEY w .env")
+raise SystemExit("Produkcja wymaga AUTOFLOW_SECRET_KEY. Aplikacja nie wystartuje.")
+
+# PO:
+print("❌ KRYTYCZNY BŁĄD: Brak FASTHUB_SECRET_KEY w produkcji!")
+print("   Ustaw FASTHUB_SECRET_KEY w .env (aliasy: AUTOFLOW_SECRET_KEY)")
+raise SystemExit("Produkcja wymaga FASTHUB_SECRET_KEY. Aplikacja nie wystartuje.")
+```
+
+I w trybie dev:
+```python
+# PRZED:
+print("   Ustaw AUTOFLOW_SECRET_KEY w .env (patrz .env.example)")
+# PO:
+print("   Ustaw FASTHUB_SECRET_KEY w .env (patrz .env.example)")
+```
+
+**Commit:**
+```bash
+git add -A
+git commit -m "Krok 5: update main.py startup — fasthub_core imports + manifest registration"
+```
+
+---
+
+## KROK 6: ENV VARS
+
+### 6A: Sprawdź co Brief 10 zrobił z encryption key
+
+Brief 10 miał zmienić `AUTOFLOW_SECRET_KEY` → `FASTHUB_SECRET_KEY`. fasthub_core powinien czytać `FASTHUB_SECRET_KEY`.
+
+Ale AutoFlow w produkcji ma `AUTOFLOW_SECRET_KEY` w `.env`. Potrzebujemy **fallback**:
+
+Sprawdź czy `fasthub_core/security/encryption.py` ma fallback:
+```python
+SECRET_KEY = os.environ.get('FASTHUB_SECRET_KEY') or os.environ.get('AUTOFLOW_SECRET_KEY')
+```
+
+**Jeśli NIE ma** — dodaj do thin wrappera `app/core/encryption.py`:
+```python
+import os
+# Backward compat: ustaw FASTHUB_SECRET_KEY jeśli tylko AUTOFLOW_SECRET_KEY istnieje
+if not os.environ.get('FASTHUB_SECRET_KEY') and os.environ.get('AUTOFLOW_SECRET_KEY'):
+    os.environ['FASTHUB_SECRET_KEY'] = os.environ['AUTOFLOW_SECRET_KEY']
+
+from fasthub_core.security.encryption import (  # noqa: F401
+    encrypt_credentials, decrypt_credentials,
+    rotate_encryption_key, generate_key,
+    mask_credentials, is_encryption_available,
+)
+```
+
+### 6B: Zaktualizuj `.env.example`
+
+```bash
+# PRZED:
+# AUTOFLOW_SECRET_KEY=your-fernet-key-here
+
+# PO:
+# FASTHUB_SECRET_KEY=your-fernet-key-here
+# # Alias (backward compat): AUTOFLOW_SECRET_KEY też działa
+```
+
+### 6C: Zaktualizuj komunikaty w `app/api/integrations.py`
+
+```python
+# PRZED (linia ~8):
+# Ustaw AUTOFLOW_SECRET_KEY w zmiennych środowiskowych.
+# PO:
+# Ustaw FASTHUB_SECRET_KEY w zmiennych środowiskowych.
+
+# PRZED (linia ~423):
+"UWAGA: Szyfrowanie nieaktywne! Ustaw AUTOFLOW_SECRET_KEY"
+# PO:
+"UWAGA: Szyfrowanie nieaktywne! Ustaw FASTHUB_SECRET_KEY"
+```
+
+**Commit:**
+```bash
+git add -A
+git commit -m "Krok 6: env vars migration AUTOFLOW_SECRET_KEY → FASTHUB_SECRET_KEY with fallback"
+```
+
+---
+
+## KROK 7: TESTY
+
+### 7A: `tests/test_encryption.py`
+
+Zmień import i env var:
+
+```python
+# PRZED:
+old_key = os.environ.pop('AUTOFLOW_SECRET_KEY', None)
+from app.core import encryption
+encryption._fernet = None
+encryption._encryption_available = None
+
+# PO:
+old_key = os.environ.pop('FASTHUB_SECRET_KEY', None)
+old_autoflow_key = os.environ.pop('AUTOFLOW_SECRET_KEY', None)
+from fasthub_core.security import encryption
+# Reset cache jeśli fasthub_core ma taki mechanizm:
+if hasattr(encryption, '_fernet'):
+    encryption._fernet = None
+if hasattr(encryption, '_encryption_available'):
+    encryption._encryption_available = None
+```
+
+Zamień WSZYSTKIE `AUTOFLOW_SECRET_KEY` na `FASTHUB_SECRET_KEY` w tym pliku.
+
+### 7B: Dodaj test integracji fasthub_core
+
+Stwórz `tests/test_fasthub_integration.py`:
+
+```python
+"""
+Testy integracji AutoFlow z fasthub_core.
+Weryfikują że thin wrappery działają i fasthub_core jest dostępny.
+"""
+import pytest
+import importlib
+
+
+class TestFastHubCoreAvailability:
+    """Sprawdź czy fasthub_core jest zainstalowany i dostępny."""
+
+    def test_redis_module(self):
+        from fasthub_core.infrastructure.redis import get_redis, set_cache, get_cache
+        assert callable(get_redis)
+        assert callable(set_cache)
+
+    def test_encryption_module(self):
+        from fasthub_core.security.encryption import encrypt_credentials, decrypt_credentials
+        assert callable(encrypt_credentials)
+
+    def test_event_bus_module(self):
+        from fasthub_core.events.bus import Event, EventBus, event_bus
+        assert isinstance(event_bus, EventBus)
+
+    def test_oauth_module(self):
+        from fasthub_core.integrations.oauth import OAuthConfig, OAuthManager
+        assert OAuthConfig is not None
+
+    def test_webhooks_module(self):
+        from fasthub_core.integrations.webhooks import SignatureVerifier, WebhookConfig
+        assert callable(SignatureVerifier.compute_signature)
+
+    def test_billing_module(self):
+        from fasthub_core.billing.service import BillingService
+        assert BillingService is not None
+
+
+class TestThinWrappers:
+    """Sprawdź że thin wrappery re-exportują poprawnie."""
+
+    def test_redis_wrapper(self):
+        from app.core.redis import get_redis, set_cache, close_redis
+        from fasthub_core.infrastructure.redis import get_redis as fh_get_redis
+        # Powinny być tym samym obiektem (re-export)
+        assert get_redis is fh_get_redis
+
+    def test_encryption_wrapper(self):
+        from app.core.encryption import encrypt_credentials
+        from fasthub_core.security.encryption import encrypt_credentials as fh_encrypt
+        assert encrypt_credentials is fh_encrypt
+
+    def test_event_bus_wrapper(self):
+        from app.events import event_bus
+        from fasthub_core.events.bus import event_bus as fh_bus
+        assert event_bus is fh_bus
+
+    def test_oauth_wrapper(self):
+        from app.integrations.base.oauth import OAuthManager
+        from fasthub_core.integrations.oauth import OAuthManager as fh_oauth
+        assert OAuthManager is fh_oauth
+
+    def test_webhooks_wrapper(self):
+        from app.integrations.base.webhooks import SignatureVerifier
+        from fasthub_core.integrations.webhooks import SignatureVerifier as fh_sig
+        assert SignatureVerifier is fh_sig
+
+    def test_billing_service_wrapper(self):
+        """billing service re-export"""
+        from app.services import billing
+        assert hasattr(billing, 'seed_billing_plans') or hasattr(billing, 'BillingService')
+
+    def test_billing_middleware_wrapper(self):
+        from app.middleware.billing import enforce_limit, require_limit
+        from fasthub_core.billing.middleware import enforce_limit as fh_enforce
+        assert enforce_limit is fh_enforce
+
+    def test_security_middleware_split(self):
+        """SecurityHeaders z fasthub_core, RateLimit z AutoFlow"""
+        from app.middleware.security import SecurityHeadersMiddleware, RateLimitMiddleware
+        from fasthub_core.middleware.security_headers import SecurityHeadersMiddleware as fh_sec
+        assert SecurityHeadersMiddleware is fh_sec
+        # RateLimitMiddleware powinien być LOKALNY (nie z fasthub_core)
+        assert RateLimitMiddleware.__module__.startswith("app.middleware")
+
+
+class TestManifest:
+    """Sprawdź manifest rejestracyjny."""
+
+    def test_manifest_loads(self):
+        from app.fasthub_manifest import MANIFEST
+        assert MANIFEST["app_name"] == "autoflow"
+
+    def test_manifest_validates(self):
+        from app.fasthub_manifest import validate_manifest
+        result = validate_manifest()
+        assert result["valid"] == True, f"Manifest errors: {result['errors']}"
+
+    def test_manifest_permissions_count(self):
+        from app.fasthub_manifest import ALL_PERMISSIONS
+        assert len(ALL_PERMISSIONS) >= 20  # 22 w oryginalnym manifeście
+
+    def test_manifest_covers_code_permissions(self):
+        """Sprawdź że manifest pokrywa permissions z kodu."""
+        import subprocess, os
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        result = subprocess.run(
+            ["grep", "-rn", 'require_permission("', "--include=*.py", "app/"],
+            capture_output=True, text=True, cwd=root
+        )
+        from app.fasthub_manifest import ALL_PERMISSIONS
+        code_perms = set()
+        for line in result.stdout.strip().split("\n"):
+            if 'require_permission("' in line:
+                perm = line.split('require_permission("')[1].split('"')[0]
+                code_perms.add(perm)
+
+        missing = code_perms - set(ALL_PERMISSIONS)
+        assert not missing, f"Permissions w kodzie ale nie w manifeście: {missing}"
+
+
+class TestNoAutoflowReferences:
+    """Sprawdź że fasthub_core nie odwołuje się do AutoFlow."""
+
+    def test_redis_no_autoflow(self):
+        import inspect
+        from fasthub_core.infrastructure import redis
+        source = inspect.getsource(redis)
+        assert "AUTOFLOW" not in source
+        assert "autoflow" not in source.lower()
+
+    def test_encryption_no_autoflow(self):
+        import inspect
+        from fasthub_core.security import encryption
+        source = inspect.getsource(encryption)
+        assert "AUTOFLOW" not in source
+
+    def test_events_no_autoflow(self):
+        import inspect
+        from fasthub_core.events import bus
+        source = inspect.getsource(bus)
+        assert "autoflow" not in source.lower()
+```
+
+**Commit:**
+```bash
+git add -A
+git commit -m "Krok 7: update tests — fasthub integration tests + wrapper verification"
+```
+
+---
+
+## KROK 8: WERYFIKACJA KOŃCOWA
+
+### 8A: Uruchom verify
+
+```bash
+python scripts/migrate_imports_to_fasthub.py --verify
+```
+
+**Oczekiwany wynik:** 0 starych importów (poza thin wrapperami i plikami w SKIP_FILES).
+
+Jeśli skrypt raportuje stare importy w plikach INNYCH niż thin wrappery — napraw je ręcznie.
+
+### 8B: Uruchom WSZYSTKIE testy
+
+```bash
+python -m pytest tests/ -v --tb=short 2>&1
+```
+
+Wszystkie testy powinny przechodzić. Jeśli jakiś test failuje:
+- `ImportError: cannot import name 'X' from fasthub_core.Y` → Brief 10 nie wyeksportował tej funkcji. Dodaj do thin wrappera albo zgłoś w raporcie.
+- `ModuleNotFoundError: No module named 'fasthub_core'` → fasthub_core nie jest zainstalowany. `pip install -e ../Fasthub`
+- `AttributeError` → nazwa funkcji zmieniła się w Brief 10. Popraw import.
+
+### 8C: Policz usunięte linie
+
+```bash
+# Ile linii miały oryginalne pliki
+echo "PRZED (oryginalne pliki):"
+echo "  redis.py:              372"
+echo "  encryption.py:         263"
+echo "  events/__init__.py:    196"
+echo "  oauth.py:              842"
+echo "  webhooks.py:           925"
+echo "  services/billing.py:   727"
+echo "  oauth_token_storage.py: 269"
+echo "  middleware/billing.py:  140"
+echo "  RAZEM:                 3,734"
+
+# Ile linii mają thin wrappery
+echo ""
+echo "PO (thin wrappery):"
+wc -l app/core/redis.py app/core/encryption.py app/events/__init__.py app/integrations/base/oauth.py app/integrations/base/webhooks.py app/services/billing.py app/services/oauth_token_storage.py app/middleware/billing.py
+```
+
+**Oczekiwany wynik:** z ~3,734 linii → ~160 linii wrapperów. Redukcja ~3,574 linii duplikatu.
+
+### 8D: Sprawdź startup
+
+```bash
+# Jeśli masz Redis i bazę:
+uvicorn app.main:app --reload
+
+# Sprawdź czy w logach startup:
+# ✅ AutoFlow manifest: 22 permissions, 4 roles, 20 event types
+# ✅ AutoFlow event handlers registered
+# ✅ fasthub_core modules loaded
+```
+
+### 8E: Final commit i push
+
+```bash
+git add -A
+git commit -m "Brief 11 complete: AutoFlow integrated with fasthub_core — 3,574 lines of duplication removed"
+git push origin feature/fasthub-core-integration
+```
+
+---
+
+## CZEGO NIE ROBIĆ
+
+- ❌ NIE usuwaj thin wrapperów — zostawiamy backward compatibility
+- ❌ NIE zmieniaj app/services/roles.py — domain-specific, zostaje
+- ❌ NIE zmieniaj app/services/workflow_executor.py — domain-specific
+- ❌ NIE zmieniaj app/services/connector_registry.py — domain-specific
+- ❌ NIE zmieniaj app/integrations/base/provider.py — domain-specific (BaseProvider)
+- ❌ NIE zmieniaj app/integrations/base/triggers.py — domain-specific
+- ❌ NIE modyfikuj app/core/auth.py — auth zostaje w AutoFlow (ma custom logikę)
+- ❌ NIE modyfikuj app/core/config.py — AutoFlow config zostaje
+- ❌ NIE modyfikuj app/core/database.py — AutoFlow database config zostaje
+- ❌ NIE usuwaj `scripts/migrate_imports_to_fasthub.py` — przydatny do weryfikacji
+- ❌ NIE uruchamiaj migracji bazy danych (Alembic) — tabele billingowe tworzą się w FastHub, nie w AutoFlow
+
+---
+
+## DELIVERABLES
+
+1. **8 thin wrapperów** zastępujących oryginalne pliki (~3,574 linii mniej duplikatu)
+2. **~47 importów zamienionych** na fasthub_core (skrypt + manual fixes)
+3. **main.py zaktualizowany** — startup importuje z fasthub_core + rejestracja manifestu
+4. **Env vars** — FASTHUB_SECRET_KEY z fallback na AUTOFLOW_SECRET_KEY
+5. **Nowe testy** — `tests/test_fasthub_integration.py` (fasthub availability, wrapper verification, manifest)
+6. **Raport:** ile linii usunięto, ile importów zamienionych, czy coś nie pasowało
+7. **Git commit + push** na branchu `feature/fasthub-core-integration`
+
+---
+
+## PODSUMOWANIE STRATEGICZNE
+
+Po tym briefie stan ekosystemu:
+
+```
+fasthub_core/ (pip-installable package)
+├── infrastructure/redis.py      ← SINGLE SOURCE OF TRUTH
+├── events/bus.py                ← SINGLE SOURCE OF TRUTH
+├── security/encryption.py       ← SINGLE SOURCE OF TRUTH
+├── integrations/oauth.py        ← SINGLE SOURCE OF TRUTH
+├── integrations/webhooks.py     ← SINGLE SOURCE OF TRUTH
+├── billing/                     ← SINGLE SOURCE OF TRUTH
+└── middleware/security_headers.py ← SINGLE SOURCE OF TRUTH
+
+autoflow/
+├── app/core/redis.py            ← thin wrapper → fasthub_core
+├── app/core/encryption.py       ← thin wrapper → fasthub_core
+├── app/events/__init__.py       ← wrapper + AutoFlow handlers
+├── app/integrations/base/oauth.py ← thin wrapper → fasthub_core
+├── app/integrations/base/webhooks.py ← thin wrapper → fasthub_core
+├── app/services/billing.py      ← thin wrapper → fasthub_core
+├── app/middleware/billing.py     ← thin wrapper → fasthub_core
+├── app/middleware/security.py    ← RateLimit LOCAL + SecurityHeaders → fasthub_core
+├── app/fasthub_manifest.py      ← deklaracja permissions, ról, eventów
+└── scripts/migrate_imports.py   ← narzędzie weryfikacji
+```
+
+**Zero duplikacji. Jeden source of truth. Backward compatible.**
+
+---
+
+*Brief #11 przygotowany przez Stratega, 2026-03-02*
+*Faza 3.0 — AutoFlow czyszczenie, integracja z fasthub_core*
+*Po tym briefie: AutoFlow gotowy do testów end-to-end z FastHub*

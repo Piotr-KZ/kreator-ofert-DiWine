@@ -1,0 +1,598 @@
+# BRIEF DLA WYKONAWCY — FAZA 1, ZADANIE 1
+## Super Admin Dashboard — zarządzanie wszystkimi organizacjami
+
+### Data: 2026-03-01
+### Zlecający: Strateg (Opus w projekcie Claude)
+### Wykonawca: Opus w Claude Code CLI
+### Repo: https://github.com/Piotr-KZ/Fasthub
+### Folder: C:\Projekty internetowe\Fasthub
+### Branch: feature/super-admin
+
+---
+
+## UWAGA — WRACAMY DO FASTHUB!
+
+Zadanie 0.3 było w AutoFlow. Teraz wracamy do repozytorium **FastHub**.
+
+---
+
+## CEL
+
+Zbudować panel Super Admina — specjalny widok dla właściciela platformy (Piotra) gdzie widzi WSZYSTKIE organizacje (firmy klientów), ich statystyki, użytkowników, i może się zalogować jako dowolny user (impersonation — do rozwiązywania problemów klientów).
+
+**Kto to używa:** Tylko Ty (właściciel platformy) i ewentualnie Twój zespół supportu.
+**Kto tego NIE widzi:** Zwykli użytkownicy, admini organizacji.
+
+---
+
+## CO ZROBIĆ — KROK PO KROKU
+
+### Krok 1: Przeczytaj istniejący kod
+
+Zanim zaczniesz — przeczytaj:
+- `fasthub_core/users/models.py` — model User, Organization, Member
+- `fasthub_core/auth/service.py` — JWT, tokeny
+- `fasthub_core/auth/dependencies.py` — get_current_user
+- `fasthub_core/config.py` — Settings
+- `fasthub-backend/app/api/` — istniejące routery (żeby znać wzorzec)
+
+### Krok 2: Stwórz nowy branch
+
+```bash
+git checkout main
+git pull
+git checkout -b feature/super-admin
+```
+
+### Krok 3: Dodaj pole `is_superadmin` do modelu User
+
+W `fasthub_core/users/models.py` dodaj pole do klasy User:
+
+```python
+is_superadmin = Column(Boolean, default=False, nullable=False)
+```
+
+To pole odróżnia zwykłego usera od Super Admina. Domyślnie NIKT nie jest Super Adminem — ustawiasz to ręcznie w bazie danych lub przez skrypt seed.
+
+### Krok 4: Stwórz dependency `require_superadmin`
+
+Nowy plik `fasthub_core/auth/superadmin.py`:
+
+```python
+"""
+Dependency do ochrony endpointów Super Admin.
+Użycie: @router.get("/admin/orgs", dependencies=[Depends(require_superadmin)])
+"""
+
+from fastapi import Depends, HTTPException, status
+from fasthub_core.auth.dependencies import get_current_user
+
+
+async def require_superadmin(current_user = Depends(get_current_user)):
+    """
+    Sprawdza czy zalogowany user jest Super Adminem.
+    Jeśli nie — zwraca 403 Forbidden.
+    """
+    if not getattr(current_user, 'is_superadmin', False):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Dostęp tylko dla Super Admina"
+        )
+    return current_user
+```
+
+### Krok 5: Stwórz moduł admin
+
+Nowy folder `fasthub_core/admin/` z plikami:
+
+**`fasthub_core/admin/__init__.py`:**
+```python
+from fasthub_core.admin.routes import router as admin_router
+from fasthub_core.admin.service import AdminService
+
+__all__ = ["admin_router", "AdminService"]
+```
+
+**`fasthub_core/admin/schemas.py`:**
+```python
+"""Pydantic schemas dla Super Admin API"""
+
+from pydantic import BaseModel
+from typing import Optional, List
+from datetime import datetime
+from uuid import UUID
+
+
+class OrganizationStats(BaseModel):
+    """Statystyki jednej organizacji"""
+    id: UUID
+    name: str
+    slug: str
+    owner_email: str
+    members_count: int
+    created_at: datetime
+    subscription_plan: Optional[str] = None
+    subscription_status: Optional[str] = None
+    last_activity: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class OrganizationList(BaseModel):
+    """Lista organizacji z paginacją"""
+    organizations: List[OrganizationStats]
+    total: int
+    page: int
+    per_page: int
+
+
+class UserDetail(BaseModel):
+    """Szczegóły użytkownika dla admina"""
+    id: UUID
+    email: str
+    full_name: Optional[str] = None
+    is_active: bool
+    is_superadmin: bool
+    created_at: datetime
+    organizations: List[dict] = []  # [{org_name, role, joined_at}]
+
+
+class UserList(BaseModel):
+    """Lista użytkowników z paginacją"""
+    users: List[UserDetail]
+    total: int
+    page: int
+    per_page: int
+
+
+class ImpersonateRequest(BaseModel):
+    """Żądanie zalogowania jako inny user"""
+    user_id: UUID
+    reason: str  # OBOWIĄZKOWE — dlaczego się logujesz jako ten user
+
+
+class ImpersonateResponse(BaseModel):
+    """Token tymczasowy do impersonation"""
+    access_token: str
+    token_type: str = "bearer"
+    impersonated_user_id: UUID
+    impersonated_user_email: str
+    expires_in_minutes: int = 30  # krótszy czas życia niż normalny token
+
+
+class SystemStats(BaseModel):
+    """Globalne statystyki systemu"""
+    total_organizations: int
+    total_users: int
+    active_users_last_30_days: int
+    total_subscriptions_active: int
+    organizations_by_plan: dict = {}  # {"free": 10, "pro": 5, "enterprise": 1}
+```
+
+**`fasthub_core/admin/service.py`:**
+```python
+"""
+Logika biznesowa Super Admin.
+Wszystkie operacje wymagają is_superadmin=True.
+"""
+
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, desc
+from typing import Optional
+from datetime import datetime, timedelta
+
+# Importuj modele z fasthub_core
+from fasthub_core.users.models import User, Organization, Member
+from fasthub_core.auth.service import create_access_token
+from fasthub_core.audit.service import AuditService
+
+
+class AdminService:
+    """Serwis Super Admin — operacje na wszystkich organizacjach i userach"""
+    
+    def __init__(self, db: AsyncSession):
+        self.db = db
+    
+    async def list_organizations(
+        self, 
+        page: int = 1, 
+        per_page: int = 20,
+        search: Optional[str] = None,
+        sort_by: str = "created_at",
+        sort_order: str = "desc"
+    ):
+        """
+        Lista WSZYSTKICH organizacji z metrykami.
+        search: filtruj po nazwie lub slug
+        """
+        query = select(Organization)
+        
+        if search:
+            query = query.where(
+                Organization.name.ilike(f"%{search}%") | 
+                Organization.slug.ilike(f"%{search}%")
+            )
+        
+        # Sortowanie
+        order_column = getattr(Organization, sort_by, Organization.created_at)
+        if sort_order == "desc":
+            query = query.order_by(desc(order_column))
+        else:
+            query = query.order_by(order_column)
+        
+        # Paginacja
+        total_query = select(func.count()).select_from(query.subquery())
+        total = (await self.db.execute(total_query)).scalar()
+        
+        query = query.offset((page - 1) * per_page).limit(per_page)
+        result = await self.db.execute(query)
+        organizations = result.scalars().all()
+        
+        # Dodaj statystyki per organizacja
+        org_stats = []
+        for org in organizations:
+            members_count = await self._count_members(org.id)
+            org_stats.append({
+                "id": org.id,
+                "name": org.name,
+                "slug": org.slug,
+                "owner_email": await self._get_owner_email(org.owner_id),
+                "members_count": members_count,
+                "created_at": org.created_at,
+                "subscription_plan": await self._get_plan(org.id),
+                "subscription_status": await self._get_subscription_status(org.id),
+                "last_activity": None,  # TODO: dodać po audit trail
+            })
+        
+        return {
+            "organizations": org_stats,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+        }
+    
+    async def get_organization_detail(self, org_id):
+        """Szczegóły organizacji z listą członków"""
+        org = await self.db.get(Organization, org_id)
+        if not org:
+            return None
+        
+        # Pobierz członków
+        members_query = select(Member).where(Member.organization_id == org_id)
+        members_result = await self.db.execute(members_query)
+        members = members_result.scalars().all()
+        
+        member_details = []
+        for member in members:
+            user = await self.db.get(User, member.user_id)
+            if user:
+                member_details.append({
+                    "user_id": user.id,
+                    "email": user.email,
+                    "full_name": getattr(user, 'full_name', None),
+                    "role": member.role,
+                    "joined_at": member.created_at,
+                })
+        
+        return {
+            "organization": org,
+            "members": member_details,
+            "members_count": len(member_details),
+        }
+    
+    async def list_users(
+        self,
+        page: int = 1,
+        per_page: int = 20,
+        search: Optional[str] = None,
+    ):
+        """Lista WSZYSTKICH użytkowników w systemie"""
+        query = select(User)
+        
+        if search:
+            query = query.where(
+                User.email.ilike(f"%{search}%") |
+                User.full_name.ilike(f"%{search}%")
+            )
+        
+        query = query.order_by(desc(User.created_at))
+        
+        total_query = select(func.count()).select_from(query.subquery())
+        total = (await self.db.execute(total_query)).scalar()
+        
+        query = query.offset((page - 1) * per_page).limit(per_page)
+        result = await self.db.execute(query)
+        users = result.scalars().all()
+        
+        return {
+            "users": users,
+            "total": total,
+            "page": page,
+            "per_page": per_page,
+        }
+    
+    async def impersonate_user(self, admin_user, target_user_id: str, reason: str):
+        """
+        Tworzy tymczasowy token do zalogowania się jako inny user.
+        LOGUJE KAŻDE UŻYCIE W AUDIT TRAIL (bezpieczeństwo).
+        """
+        target_user = await self.db.get(User, target_user_id)
+        if not target_user:
+            return None
+        
+        # Utwórz token z krótszym czasem życia (30 min zamiast 60)
+        token = create_access_token(
+            user_id=str(target_user.id),
+            extra_data={
+                "impersonated_by": str(admin_user.id),
+                "impersonation": True,
+            }
+        )
+        
+        # OBOWIĄZKOWO loguj w audit trail
+        audit = AuditService(self.db)
+        await audit.log(
+            user_id=str(admin_user.id),
+            action="impersonate",
+            resource_type="user",
+            resource_id=str(target_user_id),
+            details={
+                "reason": reason,
+                "target_email": target_user.email,
+                "admin_email": admin_user.email,
+            }
+        )
+        await self.db.commit()
+        
+        return {
+            "access_token": token,
+            "token_type": "bearer",
+            "impersonated_user_id": target_user.id,
+            "impersonated_user_email": target_user.email,
+            "expires_in_minutes": 30,
+        }
+    
+    async def get_system_stats(self):
+        """Globalne statystyki systemu"""
+        total_orgs = (await self.db.execute(
+            select(func.count(Organization.id))
+        )).scalar() or 0
+        
+        total_users = (await self.db.execute(
+            select(func.count(User.id))
+        )).scalar() or 0
+        
+        # Active users last 30 days — wymaga pola last_login
+        # Na razie zwracamy total
+        
+        return {
+            "total_organizations": total_orgs,
+            "total_users": total_users,
+            "active_users_last_30_days": total_users,  # TODO: dodać last_login
+            "total_subscriptions_active": 0,  # TODO: po integracji billing
+            "organizations_by_plan": {},  # TODO: po integracji billing
+        }
+    
+    # ---- Helpery ----
+    
+    async def _count_members(self, org_id):
+        result = await self.db.execute(
+            select(func.count(Member.id)).where(Member.organization_id == org_id)
+        )
+        return result.scalar() or 0
+    
+    async def _get_owner_email(self, owner_id):
+        if not owner_id:
+            return "brak"
+        user = await self.db.get(User, owner_id)
+        return user.email if user else "brak"
+    
+    async def _get_plan(self, org_id):
+        # TODO: po integracji billing
+        return "free"
+    
+    async def _get_subscription_status(self, org_id):
+        # TODO: po integracji billing
+        return "active"
+```
+
+**`fasthub_core/admin/routes.py`:**
+```python
+"""
+API endpoints Super Admin.
+WSZYSTKIE endpointy wymagają is_superadmin=True.
+Prefix: /api/admin
+"""
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy.ext.asyncio import AsyncSession
+from uuid import UUID
+
+from fasthub_core.db.session import get_db
+from fasthub_core.auth.superadmin import require_superadmin
+from fasthub_core.admin.service import AdminService
+from fasthub_core.admin.schemas import (
+    OrganizationList, UserList, ImpersonateRequest, 
+    ImpersonateResponse, SystemStats
+)
+
+router = APIRouter(prefix="/api/admin", tags=["Super Admin"])
+
+
+@router.get("/stats", response_model=SystemStats)
+async def get_system_stats(
+    admin = Depends(require_superadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Globalne statystyki systemu"""
+    service = AdminService(db)
+    return await service.get_system_stats()
+
+
+@router.get("/organizations", response_model=OrganizationList)
+async def list_organizations(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    search: str = Query(None, description="Szukaj po nazwie lub slug"),
+    sort_by: str = Query("created_at", description="Pole sortowania"),
+    sort_order: str = Query("desc", description="asc lub desc"),
+    admin = Depends(require_superadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista wszystkich organizacji z metrykami"""
+    service = AdminService(db)
+    return await service.list_organizations(page, per_page, search, sort_by, sort_order)
+
+
+@router.get("/organizations/{org_id}")
+async def get_organization_detail(
+    org_id: UUID,
+    admin = Depends(require_superadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Szczegóły organizacji z listą członków"""
+    service = AdminService(db)
+    result = await service.get_organization_detail(org_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Organizacja nie znaleziona")
+    return result
+
+
+@router.get("/users", response_model=UserList)
+async def list_users(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    search: str = Query(None, description="Szukaj po email lub nazwisku"),
+    admin = Depends(require_superadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Lista wszystkich użytkowników w systemie"""
+    service = AdminService(db)
+    return await service.list_users(page, per_page, search)
+
+
+@router.post("/impersonate", response_model=ImpersonateResponse)
+async def impersonate_user(
+    request: ImpersonateRequest,
+    admin = Depends(require_superadmin),
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Zaloguj się jako inny user (do debugowania problemów).
+    WYMAGA podania powodu (reason) — logowane w audit trail.
+    Token ważny 30 minut.
+    """
+    service = AdminService(db)
+    result = await service.impersonate_user(admin, str(request.user_id), request.reason)
+    if not result:
+        raise HTTPException(status_code=404, detail="Użytkownik nie znaleziony")
+    return result
+```
+
+### Krok 6: Zaktualizuj eksporty
+
+W `fasthub_core/admin/__init__.py` upewnij się że eksportuje router i service.
+
+W `fasthub_core/__init__.py` dodaj:
+```python
+from fasthub_core.admin import admin_router
+```
+
+### Krok 7: Testy
+
+Stwórz `tests/test_admin.py`:
+
+```python
+"""Testy Super Admin"""
+
+def test_admin_router_exists():
+    from fasthub_core.admin.routes import router
+    assert router is not None
+    assert router.prefix == "/api/admin"
+
+def test_admin_schemas():
+    from fasthub_core.admin.schemas import (
+        OrganizationStats, OrganizationList, UserDetail,
+        UserList, ImpersonateRequest, SystemStats
+    )
+    # Test ImpersonateRequest wymaga reason
+    req = ImpersonateRequest(
+        user_id="550e8400-e29b-41d4-a716-446655440000",
+        reason="Klient zgłosił problem z logowaniem"
+    )
+    assert req.reason == "Klient zgłosił problem z logowaniem"
+
+def test_admin_service_exists():
+    from fasthub_core.admin.service import AdminService
+    assert AdminService is not None
+
+def test_superadmin_dependency():
+    from fasthub_core.auth.superadmin import require_superadmin
+    assert callable(require_superadmin)
+
+def test_admin_routes_count():
+    """Powinno być 5 endpointów admin"""
+    from fasthub_core.admin.routes import router
+    routes = [r for r in router.routes]
+    assert len(routes) >= 5  # stats, orgs list, org detail, users, impersonate
+```
+
+Uruchom:
+```bash
+python -m pytest tests/test_admin.py -v
+```
+
+### Krok 8: Commit i push
+
+```bash
+git add -A
+git commit -m "Faza 1.1: Super Admin Dashboard — routes, service, schemas, tests"
+git push -u origin feature/super-admin
+```
+
+---
+
+## WAŻNE ZASADY BEZPIECZEŃSTWA
+
+1. **KAŻDY endpoint admina MUSI mieć** `Depends(require_superadmin)` — bez wyjątku
+2. **Impersonation MUSI logować** kto, kogo, dlaczego, kiedy — w audit trail
+3. **Token z impersonation MUSI mieć** krótszy czas życia (30 min zamiast 60)
+4. **Token z impersonation MUSI zawierać** pole `impersonated_by` — żeby w logach było widać że to admin, nie prawdziwy user
+5. **Pole `is_superadmin` NIGDY** nie może być ustawione przez API — tylko ręcznie w bazie lub przez seed
+
+---
+
+## CZEGO NIE ROBIĆ
+
+- ❌ NIE rób frontendu (strony HTML/React) — tylko backend API
+- ❌ NIE zmieniaj istniejących endpointów w `fasthub-backend/app/api/`
+- ❌ NIE dawaj możliwości ustawienia is_superadmin przez API
+- ❌ NIE rób migracji bazy danych — tylko kod, migracja osobno
+
+---
+
+## DELIVERABLES
+
+1. **`fasthub_core/auth/superadmin.py`** — dependency require_superadmin
+2. **`fasthub_core/admin/`** — folder z routes.py, service.py, schemas.py, __init__.py
+3. **Pole `is_superadmin`** w modelu User
+4. **5 endpointów:** GET /admin/stats, GET /admin/organizations, GET /admin/organizations/{id}, GET /admin/users, POST /admin/impersonate
+5. **Testy** — minimum 5 testów
+6. **Raport:** co działa, co wymaga TODO (billing integration, last_login)
+7. **Git commit + push** na branchu `feature/super-admin`
+
+---
+
+## UWAGI
+
+- Kod w briefie to WZÓR — dostosuj nazwy klas, importy do faktycznej struktury `fasthub_core/`
+- Jeśli model User nie ma pola `full_name` — użyj tego co jest (np. `first_name`, `last_name`, `name`)
+- Jeśli model Member nie ma pola `organization_id` — sprawdź jak się nazywa (może `org_id`)
+- `create_access_token` może mieć inną sygnaturę niż w briefie — dopasuj
+- AuditService może mieć inną metodę niż `log()` — sprawdź faktyczny kod
+
+---
+
+*Brief #4 przygotowany przez Stratega, 2026-03-01*
+*Następny brief (Faza 1.2 — Advanced RBAC) po odebraniu tego zadania*
