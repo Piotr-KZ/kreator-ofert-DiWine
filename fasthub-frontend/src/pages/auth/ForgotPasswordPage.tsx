@@ -1,22 +1,22 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Form, Input, Button, Card, Typography, Alert, Result } from 'antd';
-import { MailOutlined } from '@ant-design/icons';
 import { authApi } from '../../api/auth';
-
-const { Title, Text } = Typography;
+import { Btn, Fld } from '@/components/ui';
+import { APP_CONFIG } from '@/config/app.config';
 
 export default function ForgotPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [email, setEmail] = useState('');
 
-  const onFinish = async (values: { email: string }) => {
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !/\S+@\S+\.\S+/.test(email)) return;
     setLoading(true);
     setError(null);
-    
     try {
-      await authApi.forgotPassword(values.email);
+      await authApi.forgotPassword(email);
       setSuccess(true);
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to send reset email');
@@ -25,92 +25,36 @@ export default function ForgotPasswordPage() {
     }
   };
 
-  if (success) {
-    return (
-      <div style={{ 
-        minHeight: '100vh', 
-        display: 'flex', 
-        alignItems: 'center', 
-        justifyContent: 'center',
-        background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-      }}>
-        <Card style={{ width: 400, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-          <Result
-            status="success"
-            title="Check Your Email"
-            subTitle="We've sent you a password reset link. Please check your inbox."
-            extra={
-              <Link to="/login">
-                <Button type="primary">Back to Login</Button>
-              </Link>
-            }
-          />
-        </Card>
-      </div>
-    );
-  }
-
   return (
-    <div style={{ 
-      minHeight: '100vh', 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'center',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
-    }}>
-      <Card style={{ width: 400, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-        <div style={{ textAlign: 'center', marginBottom: 24 }}>
-          <Title level={2}>Reset Password</Title>
-          <Text type="secondary">Enter your email to receive a reset link</Text>
-        </div>
-
-        {error && (
-          <Alert
-            message={error}
-            type="error"
-            closable
-            onClose={() => setError(null)}
-            style={{ marginBottom: 16 }}
-          />
-        )}
-
-        <Form
-          name="forgot-password"
-          onFinish={onFinish}
-          layout="vertical"
-          size="large"
-        >
-          <Form.Item
-            name="email"
-            rules={[
-              { required: true, message: 'Please input your email!' },
-              { type: 'email', message: 'Please enter a valid email!' }
-            ]}
-          >
-            <Input 
-              prefix={<MailOutlined />} 
-              placeholder="Email" 
-            />
-          </Form.Item>
-
-          <Form.Item>
-            <Button 
-              type="primary" 
-              htmlType="submit" 
-              block 
-              loading={loading}
-            >
-              Send Reset Link
-            </Button>
-          </Form.Item>
-
-          <div style={{ textAlign: 'center' }}>
-            <Link to="/login">
-              <Text type="secondary">Back to Login</Text>
-            </Link>
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+      <div className="bg-white rounded-2xl shadow-md w-full max-w-sm p-8">
+        {success ? (
+          <div className="text-center">
+            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
+              <svg className="w-6 h-6 text-green-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+            </div>
+            <h2 className="text-lg font-bold text-gray-900 mb-2">Check Your Email</h2>
+            <p className="text-sm text-gray-500 mb-6">We've sent you a password reset link. Please check your inbox.</p>
+            <Link to="/login"><Btn variant="primary">Back to Login</Btn></Link>
           </div>
-        </Form>
-      </Card>
+        ) : (
+          <>
+            <div className="text-center mb-6">
+              <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${APP_CONFIG.logo.gradient} flex items-center justify-center mx-auto mb-3`}>
+                <span className="text-white font-extrabold text-lg">{APP_CONFIG.logo.icon}</span>
+              </div>
+              <h1 className="text-xl font-bold text-gray-900">Reset Password</h1>
+              <p className="text-sm text-gray-500 mt-1">Enter your email to receive a reset link</p>
+            </div>
+            {error && <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4"><p className="text-sm text-red-700">{error}</p></div>}
+            <form onSubmit={onSubmit} className="space-y-4">
+              <Fld label="Email" type="email" placeholder="you@example.com" value={email} onChange={setEmail} />
+              <Btn type="submit" loading={loading} className="w-full">Send Reset Link</Btn>
+            </form>
+            <div className="mt-6 text-center"><Link to="/login" className="text-sm text-gray-500 hover:text-gray-700">Back to Login</Link></div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

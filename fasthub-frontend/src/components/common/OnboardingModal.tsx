@@ -1,10 +1,8 @@
-import { useState } from 'react';
-import { Modal, Form, Input, Button, Select, message, Typography } from 'antd';
-import { HomeOutlined, PhoneOutlined, BankOutlined } from '@ant-design/icons';
-import axios from 'axios';
-
-const { Title, Text } = Typography;
-const { Option } = Select;
+import { useState } from "react";
+import axios from "axios";
+import Modal from "@/components/shared/Modal";
+import { Btn, Fld } from "@/components/ui";
+import { APP_CONFIG } from "@/config/app.config";
 
 interface OnboardingModalProps {
   visible: boolean;
@@ -21,51 +19,69 @@ export default function OnboardingModal({
   onComplete,
   onSkip,
 }: OnboardingModalProps) {
-  const [form] = Form.useForm();
   const [loading, setLoading] = useState(false);
-  const [orgType, setOrgType] = useState<'business' | 'individual'>('business');
+  const [error, setError] = useState("");
+  const [orgType, setOrgType] = useState<"business" | "individual">("business");
+  const [form, setForm] = useState({
+    org_name: organizationName,
+    nip: "",
+    phone: "",
+    billing_street: "",
+    billing_city: "",
+    billing_postal_code: "",
+    billing_country: "Poland",
+  });
+  const [errors, setErrors] = useState<Record<string, string>>({});
 
-  const handleSubmit = async (values: any) => {
+  const set = (key: string) => (val: string) =>
+    setForm((f) => ({ ...f, [key]: val }));
+
+  const validate = () => {
+    const e: Record<string, string> = {};
+    if (!form.org_name.trim()) e.org_name = "Organization name is required";
+    if (orgType === "business" && form.nip && !/^\d{10}$|^\d{3}-\d{3}-\d{2}-\d{2}$|^\d{3}-?\d{2}-?\d{2}-?\d{3}$/.test(form.nip))
+      e.nip = "NIP must be 10 digits (e.g., 1234567890 or 123-456-78-90)";
+    if (form.phone && !/^[\d\s\-+()]{9,20}$/.test(form.phone))
+      e.phone = "Phone must be 9-15 digits (e.g., +48 123 456 789)";
+    if (!form.billing_street.trim()) e.billing_street = "Street address is required";
+    if (!form.billing_city.trim()) e.billing_city = "City is required";
+    if (!form.billing_postal_code.trim()) e.billing_postal_code = "Postal code is required";
+    else if (!/^\d{2}-?\d{3}$/.test(form.billing_postal_code))
+      e.billing_postal_code = "Postal code must be 5 digits (e.g., 00-001)";
+    if (!form.billing_country.trim()) e.billing_country = "Country is required";
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const handleSubmit = async (ev: React.FormEvent) => {
+    ev.preventDefault();
+    if (!validate()) return;
+
     setLoading(true);
+    setError("");
     try {
-      const token = localStorage.getItem('access_token');
-      
+      const token = localStorage.getItem("access_token");
       await axios.patch(
-        `${import.meta.env.VITE_API_URL}/organizations/${organizationId}/complete`,
+        `${APP_CONFIG.api.baseUrl}/organizations/${organizationId}/complete`,
         {
-          name: values.org_name,
+          name: form.org_name,
           type: orgType,
-          nip: values.nip || null,
-          phone: values.phone || null,
-          billing_street: values.billing_street,
-          billing_city: values.billing_city,
-          billing_postal_code: values.billing_postal_code,
-          billing_country: values.billing_country,
+          nip: form.nip || null,
+          phone: form.phone || null,
+          billing_street: form.billing_street,
+          billing_city: form.billing_city,
+          billing_postal_code: form.billing_postal_code,
+          billing_country: form.billing_country,
         },
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
-
-      message.success('Organization profile completed!');
       onComplete();
-    } catch (error: any) {
-      console.error('Failed to complete organization:', error);
-      
-      // Show validation errors
-      if (error.response?.data?.detail) {
-        const detail = error.response.data.detail;
-        if (Array.isArray(detail)) {
-          detail.forEach((err: any) => {
-            message.error(err.msg || 'Validation error');
-          });
-        } else {
-          message.error(detail);
-        }
+    } catch (err: any) {
+      const detail = err.response?.data?.detail;
+      if (Array.isArray(detail)) {
+        setError(detail.map((e: any) => e.msg || "Validation error").join(", "));
       } else {
-        message.error('Failed to complete organization profile');
+        setError(detail || "Failed to complete organization profile");
       }
     } finally {
       setLoading(false);
@@ -73,152 +89,104 @@ export default function OnboardingModal({
   };
 
   return (
-    <Modal
-      open={visible}
-      title={null}
-      footer={null}
-      closable={false}
-      width={600}
-      maskClosable={false}
-    >
-      <div style={{ textAlign: 'center', marginBottom: 24 }}>
-        <Title level={3}>Complete Your Organization Profile</Title>
-        <Text type="secondary">
-          Add your organization details to unlock all features
-        </Text>
-      </div>
+    <Modal open={visible} onClose={() => {}} title="Complete Your Organization Profile">
+      <p className="text-sm text-gray-500 mb-6">
+        Add your organization details to unlock all features
+      </p>
 
-      <Form
-        form={form}
-        layout="vertical"
-        onFinish={handleSubmit}
-        initialValues={{
-          org_name: organizationName,
-          billing_country: 'Poland',
-        }}
-      >
-        <Form.Item
+      {error && (
+        <div className="mb-4 p-3 bg-red-50 text-red-700 text-sm rounded-lg">{error}</div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <Fld
           label="Organization Name"
-          name="org_name"
-          rules={[
-            { required: true, message: 'Please input organization name!' },
-            { min: 1, max: 255, message: 'Name must be 1-255 characters' },
-          ]}
-        >
-          <Input placeholder="Your Company Name" />
-        </Form.Item>
+          value={form.org_name}
+          onChange={set("org_name")}
+          error={errors.org_name}
+        />
 
-        <Form.Item label="Organization Type">
-          <Select value={orgType} onChange={setOrgType}>
-            <Option value="business">Business</Option>
-            <Option value="individual">Individual</Option>
-          </Select>
-        </Form.Item>
-
-        {orgType === 'business' && (
-          <Form.Item
-            label="NIP (Tax ID)"
-            name="nip"
-            rules={[
-              {
-                pattern: /^\d{10}$|^\d{3}-\d{3}-\d{2}-\d{2}$|^\d{3}-?\d{2}-?\d{2}-?\d{3}$/,
-                message: 'NIP must be 10 digits (e.g., 1234567890 or 123-456-78-90)',
-              },
-            ]}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1.5">
+            Organization Type
+          </label>
+          <select
+            value={orgType}
+            onChange={(e) => setOrgType(e.target.value as "business" | "individual")}
+            className="w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-sm outline-none transition-all focus:border-indigo-400 focus:ring-2 focus:ring-indigo-100"
           >
-            <Input
-              prefix={<BankOutlined />}
-              placeholder="1234567890 or 123-456-78-90"
-              maxLength={13}
-            />
-          </Form.Item>
+            <option value="business">Business</option>
+            <option value="individual">Individual</option>
+          </select>
+        </div>
+
+        {orgType === "business" && (
+          <Fld
+            label="NIP (Tax ID)"
+            value={form.nip}
+            onChange={set("nip")}
+            placeholder="1234567890 or 123-456-78-90"
+            error={errors.nip}
+          />
         )}
 
-        <Form.Item
+        <Fld
           label="Phone"
-          name="phone"
-          rules={[
-            {
-              pattern: /^[\d\s\-\+\(\)]{9,20}$/,
-              message: 'Phone must be 9-15 digits (e.g., +48 123 456 789)',
-            },
-          ]}
-        >
-          <Input
-            prefix={<PhoneOutlined />}
-            placeholder="+48 123 456 789"
-            maxLength={20}
-          />
-        </Form.Item>
+          type="tel"
+          value={form.phone}
+          onChange={set("phone")}
+          placeholder="+48 123 456 789"
+          error={errors.phone}
+        />
 
-        <Title level={5} style={{ marginTop: 16 }}>
-          Billing Address
-        </Title>
+        <h4 className="font-semibold text-gray-900 pt-2">Billing Address</h4>
 
-        <Form.Item
+        <Fld
           label="Street Address"
-          name="billing_street"
-          rules={[
-            { required: true, message: 'Please input street address!' },
-            { min: 1, max: 255, message: 'Address must be 1-255 characters' },
-          ]}
-        >
-          <Input prefix={<HomeOutlined />} placeholder="ul. Przykładowa 123" />
-        </Form.Item>
+          value={form.billing_street}
+          onChange={set("billing_street")}
+          placeholder="ul. Przykładowa 123"
+          error={errors.billing_street}
+        />
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-          <Form.Item
+        <div className="grid grid-cols-2 gap-4">
+          <Fld
             label="City"
-            name="billing_city"
-            rules={[
-              { required: true, message: 'Required!' },
-              { min: 1, max: 100, message: 'City must be 1-100 characters' },
-            ]}
-          >
-            <Input placeholder="Warsaw" />
-          </Form.Item>
-
-          <Form.Item
+            value={form.billing_city}
+            onChange={set("billing_city")}
+            placeholder="Warsaw"
+            error={errors.billing_city}
+          />
+          <Fld
             label="Postal Code"
-            name="billing_postal_code"
-            rules={[
-              { required: true, message: 'Required!' },
-              {
-                pattern: /^\d{2}-?\d{3}$/,
-                message: 'Postal code must be 5 digits (e.g., 00-001 or 00001)',
-              },
-            ]}
-          >
-            <Input placeholder="00-001" maxLength={6} />
-          </Form.Item>
+            value={form.billing_postal_code}
+            onChange={set("billing_postal_code")}
+            placeholder="00-001"
+            error={errors.billing_postal_code}
+          />
         </div>
 
-        <Form.Item
+        <Fld
           label="Country"
-          name="billing_country"
-          rules={[
-            { required: true, message: 'Please input country!' },
-            { min: 1, max: 100, message: 'Country must be 1-100 characters' },
-          ]}
-        >
-          <Input placeholder="Poland" />
-        </Form.Item>
+          value={form.billing_country}
+          onChange={set("billing_country")}
+          placeholder="Poland"
+          error={errors.billing_country}
+        />
 
-        <div style={{ display: 'flex', gap: 12, marginTop: 24 }}>
-          <Button onClick={onSkip} block>
+        <div className="flex gap-3 pt-4">
+          <Btn variant="ghost" onClick={onSkip} className="flex-1">
             Skip for now
-          </Button>
-          <Button type="primary" htmlType="submit" block loading={loading}>
+          </Btn>
+          <Btn type="submit" loading={loading} className="flex-1">
             Complete Profile
-          </Button>
+          </Btn>
         </div>
 
-        <div style={{ textAlign: 'center', marginTop: 12 }}>
-          <Text type="secondary" style={{ fontSize: 12 }}>
-            You can complete this later in Settings
-          </Text>
-        </div>
-      </Form>
+        <p className="text-center text-xs text-gray-400">
+          You can complete this later in Settings
+        </p>
+      </form>
     </Modal>
   );
 }

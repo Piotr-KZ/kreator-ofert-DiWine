@@ -1,511 +1,186 @@
 import { useEffect, useState } from 'react';
-import { Table, Button, Space, Typography, Modal, Form, Input, Select, message, Tag, Card, Popconfirm, Dropdown, Avatar } from 'antd';
-import { UserAddOutlined, MoreOutlined, DeleteOutlined, EditOutlined, CrownOutlined, MailOutlined, UserOutlined } from '@ant-design/icons';
 import { membersApi } from '../api/members';
 import { MemberWithUser, MemberRole } from '../types/models';
-import { useOrgStore } from '../store/orgStore';
 import { useAuthStore } from '../store/authStore';
-
-const { Title, Paragraph, Text } = Typography;
-const { Option } = Select;
-
-interface TeamMemberDisplay {
-  id: string;
-  user_id: string;
-  email: string;
-  full_name: string;
-  role: MemberRole;
-  is_active: boolean;
-  is_verified: boolean;
-  is_superuser: boolean;
-  last_login_at?: string;
-  joined_at: string;
-}
+import { useOrgStore } from '../store/orgStore';
+import { Btn, Fld, Rad, StatusBadge } from '@/components/ui';
+import Modal from '@/components/shared/Modal';
 
 export default function TeamPage() {
-  const [members, setMembers] = useState<TeamMemberDisplay[]>([]);
+  const { user } = useAuthStore();
+  const { organization } = useOrgStore();
+  const [members, setMembers] = useState<MemberWithUser[]>([]);
   const [loading, setLoading] = useState(false);
-  const [inviteModalVisible, setInviteModalVisible] = useState(false);
-  const [changeRoleModalVisible, setChangeRoleModalVisible] = useState(false);
-  const [selectedMember, setSelectedMember] = useState<TeamMemberDisplay | null>(null);
-  const [form] = Form.useForm();
-  const [roleForm] = Form.useForm();
-  
-  const { organization, fetchOrganization } = useOrgStore();
-  const currentUser = useAuthStore(state => state.user);
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteRole, setInviteRole] = useState<MemberRole>('viewer');
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchOrganization();
-  }, []);
-
-  useEffect(() => {
-    if (organization) {
-      fetchTeamMembers();
-    }
-  }, [organization]);
-
-  const fetchTeamMembers = async () => {
-    if (!organization) return;
-    
+  const fetchMembers = async () => {
     setLoading(true);
     try {
-      const { data } = await membersApi.list(organization.id);
-      
-      // Transform MemberWithUser[] to TeamMemberDisplay[]
-      const displayMembers: TeamMemberDisplay[] = data.members.map((member: MemberWithUser) => ({
-        id: member.id,
-        user_id: member.user_id,
-        email: member.user.email,
-        full_name: member.user.full_name,
-        role: member.role,
-        is_active: member.user.is_active,
-        is_verified: member.user.is_verified,
-        is_superuser: member.user.is_superuser,
-        last_login_at: member.user.last_login_at,
-        joined_at: member.joined_at,
-      }));
-      
-      setMembers(displayMembers);
-    } catch (error: any) {
-      const errorMsg = error.response?.data?.detail || 'Failed to fetch team members';
-      console.error('TeamPage error:', errorMsg);
-      if (error.response?.status !== 403) {
-        message.error(errorMsg);
+      const { data } = await membersApi.list();
+      setMembers(data.items || data || []);
+    } catch (err: any) {
+      if (err.response?.status !== 403 && err.response?.status !== 404) {
+        setError(err.response?.data?.detail || 'Failed to fetch members');
       }
     } finally {
       setLoading(false);
     }
   };
 
+  useEffect(() => { fetchMembers(); }, []);
 
+  const canManage = user?.is_superuser || (organization && members.some(m => m.user_id === user?.id && m.role === 'admin'));
 
-  const handleInviteSubmit = async (values: any) => {
-    if (!organization) return;
-    
+  const handleInvite = async () => {
+    if (!inviteEmail) return;
+    setInviteLoading(true);
     try {
-      await membersApi.invite(organization.id, {
-        email: values.email,
-        role: values.role,
-      });
-      
-      message.success('Invitation sent successfully!');
-      setInviteModalVisible(false);
-      form.resetFields();
-      fetchTeamMembers();
-    } catch (error: any) {
-      message.error(error.response?.data?.detail || 'Failed to send invitation');
+      await membersApi.invite({ email: inviteEmail, role: inviteRole });
+      setInviteOpen(false);
+      setInviteEmail('');
+      setInviteRole('viewer');
+      fetchMembers();
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to invite member');
+    } finally {
+      setInviteLoading(false);
     }
   };
 
-  const handleRemoveMember = async (member: TeamMemberDisplay) => {
-    if (!organization) return;
-    
+  const handleChangeRole = async (memberId: string, role: MemberRole) => {
     try {
-      await membersApi.remove(organization.id, member.user_id);
-      message.success('Member removed successfully!');
-      fetchTeamMembers();
-    } catch (error: any) {
-      message.error(error.response?.data?.detail || 'Failed to remove member');
+      await membersApi.changeRole(memberId, role);
+      fetchMembers();
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to change role');
     }
   };
 
-  const handleChangeRole = async (values: any) => {
-    if (!organization || !selectedMember) return;
-    
+  const handleRemove = async (memberId: string) => {
+    if (!confirm('Are you sure you want to remove this member?')) return;
     try {
-      await membersApi.changeRole(organization.id, selectedMember.user_id, {
-        role: values.role,
-      });
-      
-      message.success('Role changed successfully!');
-      setChangeRoleModalVisible(false);
-      roleForm.resetFields();
-      setSelectedMember(null);
-      fetchTeamMembers();
-    } catch (error: any) {
-      message.error(error.response?.data?.detail || 'Failed to change role');
+      await membersApi.remove(memberId);
+      fetchMembers();
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to remove member');
     }
   };
 
-  const openChangeRoleModal = (member: TeamMemberDisplay) => {
-    setSelectedMember(member);
-    roleForm.setFieldsValue({ role: member.role });
-    setChangeRoleModalVisible(true);
-  };
-
-  const isOwner = (member: TeamMemberDisplay) => {
-    return organization?.owner_id === member.user_id;
-  };
-
-  const canManageMembers = () => {
-    if (!currentUser || !organization) return false;
-    
-    // Super admins can manage all
-    if (currentUser.is_superuser) return true;
-    
-    // Organization owners can manage all
-    if (organization.owner_id === currentUser.id) return true;
-    
-    // Check if current user is admin in this organization
-    const currentMember = members.find(m => m.user_id === currentUser.id);
-    return currentMember?.role === 'admin';
-  };
-
-  const getInitials = (name: string) => {
-    if (!name) return '?';
-    const parts = name.split(' ');
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
-    }
-    return name.substring(0, 2).toUpperCase();
-  };
-
-  const columns = [
-    {
-      title: 'Member',
-      dataIndex: 'full_name',
-      key: 'full_name',
-      sorter: (a: TeamMemberDisplay, b: TeamMemberDisplay) => 
-        (a.full_name || '').localeCompare(b.full_name || ''),
-      render: (text: string, record: TeamMemberDisplay) => (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Avatar 
-            size={48} 
-            style={{ 
-              backgroundColor: '#1890ff',
-              fontSize: 18,
-              fontWeight: 600
-            }}
-          >
-            {getInitials(text)}
-          </Avatar>
-          <div>
-            <div style={{ marginBottom: 4 }}>
-              <Text strong style={{ fontSize: 15 }}>{text || 'N/A'}</Text>
-              {isOwner(record) && (
-                <Tag color="gold" icon={<CrownOutlined />} style={{ marginLeft: 8 }}>
-                  Owner
-                </Tag>
-              )}
-              {record.is_superuser && (
-                <Tag color="red" style={{ marginLeft: 8 }}>
-                  Super Admin
-                </Tag>
-              )}
-            </div>
-            <Text type="secondary" style={{ fontSize: 13 }}>{record.email}</Text>
-          </div>
-        </div>
-      ),
-    },
-    {
-      title: 'Role',
-      dataIndex: 'role',
-      key: 'role',
-      sorter: (a: TeamMemberDisplay, b: TeamMemberDisplay) => 
-        a.role.localeCompare(b.role),
-      render: (role: MemberRole) => {
-        const colors: Record<MemberRole, string> = {
-          admin: 'orange',
-          viewer: 'green',
-        };
-        return (
-          <Tag 
-            color={colors[role]} 
-            style={{ 
-              fontSize: 13, 
-              padding: '4px 12px',
-              borderRadius: 6
-            }}
-          >
-            {role.toUpperCase()}
-          </Tag>
-        );
-      },
-    },
-    {
-      title: 'Joined',
-      dataIndex: 'joined_at',
-      key: 'joined_at',
-      sorter: (a: TeamMemberDisplay, b: TeamMemberDisplay) => 
-        new Date(a.joined_at).getTime() - new Date(b.joined_at).getTime(),
-      render: (date: string) => (
-        <Text style={{ fontSize: 14 }}>
-          {new Date(date).toLocaleDateString('en-US', { 
-            month: 'short', 
-            day: 'numeric', 
-            year: 'numeric' 
-          })}
-        </Text>
-      ),
-    },
-    {
-      title: 'Last Login',
-      dataIndex: 'last_login_at',
-      key: 'last_login_at',
-      sorter: (a: TeamMemberDisplay, b: TeamMemberDisplay) => {
-        if (!a.last_login_at) return 1;
-        if (!b.last_login_at) return -1;
-        return new Date(a.last_login_at).getTime() - new Date(b.last_login_at).getTime();
-      },
-      render: (date: string) => (
-        <Text style={{ fontSize: 14 }}>
-          {date ? new Date(date).toLocaleDateString('en-US', { 
-            month: 'short', 
-            day: 'numeric', 
-            year: 'numeric' 
-          }) : <Text type="secondary">Never</Text>}
-        </Text>
-      ),
-    },
-    {
-      title: 'Status',
-      dataIndex: 'is_active',
-      key: 'is_active',
-      render: (isActive: boolean) => (
-        <Tag 
-          color={isActive ? 'green' : 'red'}
-          style={{ 
-            fontSize: 13, 
-            padding: '4px 12px',
-            borderRadius: 6
-          }}
-        >
-          {isActive ? 'Active' : 'Inactive'}
-        </Tag>
-      ),
-    },
-    {
-      title: 'Actions',
-      key: 'actions',
-      width: 100,
-      render: (_: any, record: TeamMemberDisplay) => {
-        // Cannot manage owner
-        if (isOwner(record)) {
-          return <Text type="secondary">—</Text>;
-        }
-
-        // Only admins/owners can manage members
-        if (!canManageMembers()) {
-          return <Text type="secondary">—</Text>;
-        }
-
-        const menuItems = [
-          {
-            key: 'change-role',
-            icon: <EditOutlined />,
-            label: 'Change Role',
-            onClick: () => openChangeRoleModal(record),
-          },
-          {
-            key: 'remove',
-            icon: <DeleteOutlined />,
-            label: 'Remove Member',
-            danger: true,
-            onClick: () => {
-              Modal.confirm({
-                title: 'Remove Member',
-                content: `Are you sure you want to remove ${record.full_name} from the organization?`,
-                okText: 'Remove',
-                okType: 'danger',
-                onOk: () => handleRemoveMember(record),
-              });
-            },
-          },
-        ];
-
-        return (
-          <Dropdown menu={{ items: menuItems }} trigger={['click']}>
-            <Button type="text" icon={<MoreOutlined />} size="large" />
-          </Dropdown>
-        );
-      },
-    },
-  ];
+  const adminCount = members.filter(m => m.role === 'admin').length;
+  const activeCount = members.filter(m => m.user?.is_active).length;
 
   return (
-    <div style={{ padding: '24px 0' }}>
-      {/* Header */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'flex-start', 
-        marginBottom: 32 
-      }}>
+    <div>
+      <div className="flex items-center justify-between mb-6">
         <div>
-          <Title level={2} style={{ marginBottom: 8 }}>Team</Title>
-          <Paragraph style={{ fontSize: 16, color: '#666', marginBottom: 0 }}>
-            Manage your team members and their roles
-            {organization && <Text strong> in {organization.name}</Text>}
-          </Paragraph>
+          <h1 className="text-2xl font-bold text-gray-900">Team</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            {members.length} members &middot; {activeCount} active &middot; {adminCount} admins
+          </p>
         </div>
-        {canManageMembers() && (
-          <Button 
-            type="primary" 
-            icon={<UserAddOutlined />}
-            onClick={() => setInviteModalVisible(true)}
-            size="large"
-          >
-            Invite Member
-          </Button>
+        {canManage && (
+          <Btn onClick={() => setInviteOpen(true)}>Invite Member</Btn>
         )}
       </div>
 
-      {/* Team Stats */}
-      <div style={{ marginBottom: 24 }}>
-        <Space size="large">
-          <div>
-            <Text type="secondary" style={{ fontSize: 13 }}>Total Members</Text>
-            <Title level={3} style={{ margin: 0 }}>{members.length}</Title>
-          </div>
-          <div>
-            <Text type="secondary" style={{ fontSize: 13 }}>Active</Text>
-            <Title level={3} style={{ margin: 0, color: '#52c41a' }}>
-              {members.filter(m => m.is_active).length}
-            </Title>
-          </div>
-          <div>
-            <Text type="secondary" style={{ fontSize: 13 }}>Admins</Text>
-            <Title level={3} style={{ margin: 0, color: '#faad14' }}>
-              {members.filter(m => m.role === 'admin').length}
-            </Title>
-          </div>
-        </Space>
-      </div>
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4 flex items-center justify-between">
+          <p className="text-sm text-red-700">{error}</p>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+          </button>
+        </div>
+      )}
 
-      {/* Members Table */}
-      <Card 
-        style={{ borderRadius: 8 }}
-        bodyStyle={{ padding: 0 }}
-      >
-        <Table
-          columns={columns}
-          dataSource={members}
-          rowKey="id"
-          loading={loading}
-          pagination={{ 
-            pageSize: 10,
-            showSizeChanger: true,
-            showTotal: (total) => `Total ${total} members`
-          }}
-          style={{ fontSize: 14 }}
-        />
-      </Card>
+      {loading ? (
+        <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" /></div>
+      ) : (
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <table className="w-full">
+            <thead>
+              <tr className="bg-gray-50 border-b border-gray-200">
+                <th className="text-left px-4 py-3 text-xs uppercase text-gray-500 font-medium">Name</th>
+                <th className="text-left px-4 py-3 text-xs uppercase text-gray-500 font-medium">Role</th>
+                <th className="text-left px-4 py-3 text-xs uppercase text-gray-500 font-medium">Status</th>
+                <th className="text-left px-4 py-3 text-xs uppercase text-gray-500 font-medium">Joined</th>
+                {canManage && <th className="text-right px-4 py-3 text-xs uppercase text-gray-500 font-medium">Actions</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {members.map((member) => (
+                <tr key={member.id} className="border-b border-gray-100 hover:bg-gray-50">
+                  <td className="px-4 py-3">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{member.user?.full_name || 'N/A'}</p>
+                      <p className="text-xs text-gray-500">{member.user?.email}</p>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusBadge variant={member.role === 'admin' ? 'info' : 'success'}>
+                      {member.role}
+                    </StatusBadge>
+                  </td>
+                  <td className="px-4 py-3">
+                    <StatusBadge variant={member.user?.is_active ? 'success' : 'error'}>
+                      {member.user?.is_active ? 'Active' : 'Inactive'}
+                    </StatusBadge>
+                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-500">
+                    {new Date(member.joined_at || member.created_at).toLocaleDateString()}
+                  </td>
+                  {canManage && (
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleChangeRole(member.id, member.role === 'admin' ? 'viewer' : 'admin')}
+                          className="text-xs text-indigo-600 hover:text-indigo-700"
+                        >
+                          {member.role === 'admin' ? 'Make Viewer' : 'Make Admin'}
+                        </button>
+                        <button
+                          onClick={() => handleRemove(member.id)}
+                          className="text-xs text-red-600 hover:text-red-700"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </td>
+                  )}
+                </tr>
+              ))}
+              {members.length === 0 && (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-gray-500">No team members found</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Invite Modal */}
-      <Modal
-        title={
+      <Modal open={inviteOpen} onClose={() => setInviteOpen(false)} title="Invite Member" footer={
+        <>
+          <Btn variant="ghost" onClick={() => setInviteOpen(false)}>Cancel</Btn>
+          <Btn onClick={handleInvite} loading={inviteLoading}>Send Invite</Btn>
+        </>
+      }>
+        <div className="space-y-4">
+          <Fld label="Email" type="email" placeholder="colleague@example.com" value={inviteEmail} onChange={setInviteEmail} />
           <div>
-            <Title level={4} style={{ marginBottom: 4 }}>Invite Team Member</Title>
-            <Text type="secondary">Send an invitation to join your organization</Text>
+            <label className="block text-sm font-medium text-gray-700 mb-2">Role</label>
+            <div className="space-y-2">
+              <Rad on={inviteRole === 'viewer'} onClick={() => setInviteRole('viewer')}>
+                <div><p className="text-sm font-medium">Viewer</p><p className="text-xs text-gray-500">Read-only access</p></div>
+              </Rad>
+              <Rad on={inviteRole === 'admin'} onClick={() => setInviteRole('admin')}>
+                <div><p className="text-sm font-medium">Admin</p><p className="text-xs text-gray-500">Full management access</p></div>
+              </Rad>
+            </div>
           </div>
-        }
-        open={inviteModalVisible}
-        onCancel={() => {
-          setInviteModalVisible(false);
-          form.resetFields();
-        }}
-        onOk={() => form.submit()}
-        okText="Send Invitation"
-        width={600}
-      >
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={handleInviteSubmit}
-          size="large"
-          style={{ marginTop: 24 }}
-        >
-          <Form.Item
-            name="email"
-            label="Email Address"
-            rules={[
-              { required: true, message: 'Please input email address!' },
-              { type: 'email', message: 'Please enter a valid email address!' }
-            ]}
-          >
-            <Input 
-              prefix={<MailOutlined style={{ color: '#1890ff' }} />}
-              placeholder="user@example.com"
-              type="email"
-            />
-          </Form.Item>
-
-          <Form.Item
-            name="role"
-            label="Role"
-            rules={[{ required: true, message: 'Please select role!' }]}
-            initialValue="viewer"
-            help="Choose the permission level for this team member"
-          >
-            <Select>
-              <Option value="viewer">
-                <div>
-                  <div><Text strong>Viewer</Text></div>
-                  <Text type="secondary" style={{ fontSize: 12 }}>Can view organization data only</Text>
-                </div>
-              </Option>
-              <Option value="admin">
-                <div>
-                  <div><Text strong>Admin</Text></div>
-                  <Text type="secondary" style={{ fontSize: 12 }}>Can manage members and organization settings</Text>
-                </div>
-              </Option>
-            </Select>
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      {/* Change Role Modal */}
-      <Modal
-        title={
-          <div>
-            <Title level={4} style={{ marginBottom: 4 }}>Change Member Role</Title>
-            <Text type="secondary">Update permission level for this member</Text>
-          </div>
-        }
-        open={changeRoleModalVisible}
-        onCancel={() => {
-          setChangeRoleModalVisible(false);
-          roleForm.resetFields();
-          setSelectedMember(null);
-        }}
-        onOk={() => roleForm.submit()}
-        okText="Change Role"
-        width={600}
-      >
-        <Form
-          form={roleForm}
-          layout="vertical"
-          onFinish={handleChangeRole}
-          size="large"
-          style={{ marginTop: 24 }}
-        >
-          <Paragraph style={{ fontSize: 15 }}>
-            Change role for <Text strong>{selectedMember?.full_name}</Text>
-          </Paragraph>
-          
-          <Form.Item
-            name="role"
-            label="New Role"
-            rules={[{ required: true, message: 'Please select role!' }]}
-          >
-            <Select>
-              <Option value="viewer">
-                <div>
-                  <div><Text strong>Viewer</Text></div>
-                  <Text type="secondary" style={{ fontSize: 12 }}>Can view organization data only</Text>
-                </div>
-              </Option>
-              <Option value="admin">
-                <div>
-                  <div><Text strong>Admin</Text></div>
-                  <Text type="secondary" style={{ fontSize: 12 }}>Can manage members and organization settings</Text>
-                </div>
-              </Option>
-            </Select>
-          </Form.Item>
-        </Form>
+        </div>
       </Modal>
     </div>
   );

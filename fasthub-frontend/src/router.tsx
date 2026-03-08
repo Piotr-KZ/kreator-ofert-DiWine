@@ -1,6 +1,6 @@
 import { createBrowserRouter } from 'react-router-dom';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
-import AppLayout from './components/layout/AppLayout';
+import AppShell from './components/layout/AppShell';
 
 // Auth pages
 import LoginPage from './pages/auth/LoginPage';
@@ -52,7 +52,7 @@ export const router = createBrowserRouter([
     path: '/',
     element: (
       <ProtectedRoute>
-        <AppLayout />
+        <AppShell />
       </ProtectedRoute>
     ),
     children: [

@@ -1,98 +1,59 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Form, Input, Button, Card, Typography, Steps, message } from 'antd';
-import { BankOutlined, MailOutlined, PhoneOutlined } from '@ant-design/icons';
 import { organizationsApi } from '../api/organizations';
-
-const { Title, Paragraph } = Typography;
+import { Btn, Fld } from '@/components/ui';
+import { APP_CONFIG } from '@/config/app.config';
 
 export default function OnboardingPage() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [currentStep, setCurrentStep] = useState(0);
-  const [form] = Form.useForm();
+  const [orgName, setOrgName] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
-  const onFinish = async (values: any) => {
+  const onSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!orgName.trim()) return;
     setLoading(true);
+    setError(null);
     try {
-      // Create organization via backend
-      await organizationsApi.create({
-        name: values.organization_name,
-      });
-      
-      message.success('Organization created successfully!');
+      await organizationsApi.create({ name: orgName });
       navigate('/dashboard');
-    } catch (error: any) {
-      message.error(error.response?.data?.detail || 'Failed to create organization');
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to create organization');
     } finally {
       setLoading(false);
     }
   };
 
-  const steps = [
-    {
-      title: 'Organization Details',
-      description: 'Set up your organization',
-    },
-  ];
-
   return (
-    <div style={{ 
-      minHeight: '100vh', 
-      display: 'flex', 
-      alignItems: 'center', 
-      justifyContent: 'center',
-      background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-      padding: '20px'
-    }}>
-      <Card style={{ width: 600, boxShadow: '0 4px 12px rgba(0,0,0,0.15)' }}>
-        <div style={{ textAlign: 'center', marginBottom: 32 }}>
-          <Title level={2}>Welcome to FastHub! 🎉</Title>
-          <Paragraph type="secondary">
-            Let's set up your organization to get started
-          </Paragraph>
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)' }}>
+      <div className="bg-white rounded-2xl shadow-md w-full max-w-md p-8">
+        <div className="text-center mb-6">
+          <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${APP_CONFIG.logo.gradient} flex items-center justify-center mx-auto mb-3`}>
+            <span className="text-white font-extrabold text-lg">{APP_CONFIG.logo.icon}</span>
+          </div>
+          <h1 className="text-xl font-bold text-gray-900">Welcome to {APP_CONFIG.name}!</h1>
+          <p className="text-sm text-gray-500 mt-1">Let's set up your organization to get started</p>
         </div>
 
-        <Steps current={currentStep} items={steps} style={{ marginBottom: 32 }} />
-
-        <Form
-          form={form}
-          layout="vertical"
-          onFinish={onFinish}
-        >
-          <Form.Item
-            name="organization_name"
-            label="Organization Name"
-            rules={[{ required: true, message: 'Please enter your organization name!' }]}
-          >
-            <Input 
-              prefix={<BankOutlined />} 
-              placeholder="Acme Inc." 
-              size="large"
-            />
-          </Form.Item>
-
-
-
-          <Form.Item style={{ marginTop: 32 }}>
-            <Button 
-              type="primary" 
-              htmlType="submit" 
-              block 
-              size="large"
-              loading={loading}
-            >
-              Complete Setup
-            </Button>
-          </Form.Item>
-
-          <div style={{ textAlign: 'center', marginTop: 16 }}>
-            <Paragraph type="secondary" style={{ fontSize: 12 }}>
-              You can update these details later in Settings
-            </Paragraph>
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4">
+            <p className="text-sm text-red-700">{error}</p>
           </div>
-        </Form>
-      </Card>
+        )}
+
+        <form onSubmit={onSubmit} className="space-y-4">
+          <Fld label="Organization Name" placeholder="Acme Inc." value={orgName} onChange={setOrgName} />
+          <Btn type="submit" loading={loading} className="w-full">Complete Setup</Btn>
+        </form>
+
+        <div className="text-center mt-4">
+          <button onClick={() => navigate('/dashboard')} className="text-sm text-gray-400 hover:text-gray-600">
+            Skip for now
+          </button>
+        </div>
+        <p className="text-xs text-gray-400 text-center mt-4">You can update these details later in Settings</p>
+      </div>
     </div>
   );
 }
