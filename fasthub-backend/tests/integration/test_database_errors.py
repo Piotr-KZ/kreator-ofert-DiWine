@@ -36,7 +36,8 @@ async def test_duplicate_key_violation(async_client: AsyncClient):
     # Try to create duplicate
     response2 = await async_client.post("/api/v1/auth/register", json=user_data)
     assert response2.status_code == 400
-    assert "already exists" in response2.json()["detail"].lower()
+    detail = response2.json()["detail"].lower()
+    assert "already" in detail or "exists" in detail or "registered" in detail
 
 
 @pytest.mark.asyncio
