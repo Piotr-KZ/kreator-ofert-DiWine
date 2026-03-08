@@ -762,3 +762,73 @@ cd ../autoflow && python -m pytest tests/test_fasthub_e2e.py -v  # 43 testy
 - **18 tabel w Base.metadata** — 13 oryginalnych + 5 nowych billing (billing_plans, billing_addons, tenant_addons, usage_records, billing_events)
 - **Billing models uzywaja Integer PK** (nie UUID) — BillingPlan, BillingAddon, TenantAddon, UsageRecord, BillingEvent dziedzicza z Base, nie z BaseModel
 - **AutoFlow manifest** — 22 permissions, 4 role, 19 event types, 7 billing resources
+- **Payment Gateways multi-bramka** — wiele bramek jednoczesnie, klient widzi metody ze wszystkich aktywnych
+- **Stripe webhook dedup** — stripe_event_id UNIQUE, ten sam event 2x -> skip
+- **Shared HTTP Clients** — BaseHTTPClient z retry, FakturowniaClient dual mode (provider/billing)
+
+---
+
+## 15. Bramki platnicze (Payment Gateways) — architektura multi-bramka
+
+### Model
+
+Bramki platnicze NIE dzialaja jako "albo-albo". Wiele bramek dziala JEDNOCZESNIE:
+- Wlasciciel aplikacji wlacza bramki (podaje klucze API w config)
+- Klient koncowy widzi metody platnosci ze WSZYSTKICH aktywnych bramek
+- Sam wybiera czym placi (BLIK, karta, przelew, Google Pay, PayPal)
+
+### Architektura
+
+```
+PaymentGateway (ABC)                     <- kontrakt
+    |-- StripeGateway                    <- Brief 16 (gotowe)
+    |-- PayUGateway                      <- Brief 20 (przyszlosc)
+    |-- TpayGateway                      <- Brief 20
+    |-- Przelewy24Gateway                <- Brief 20
+    +-- PayPalGateway                    <- Brief 20
+
+PaymentGatewayRegistry                   <- trzyma WSZYSTKIE aktywne bramki
+    registry.register(StripeGateway())   <- auto z config (jesli ma klucze)
+```
+
+### Hook points (logika aplikacji)
+
+StripeWebhookHandler ma 4 hook points:
+- on_checkout_completed — email powitalny, onboarding
+- on_subscription_canceled — cleanup, downgrade
+- on_payment_failed — email, powiadomienie
+- on_payment_succeeded — wystawienie faktury (Fakturownia/iFirma/KSeF)
+
+### Jak dodac nowa bramke
+
+1. Stworz klase dziedziczaca po PaymentGateway
+2. Zaimplementuj: gateway_id, get_payment_methods(), create_payment(), handle_webhook(), create_subscription(), cancel_subscription(), refund_payment(), is_configured()
+3. Zarejestruj w PaymentGatewayRegistry.from_config()
+4. Dodaj klucze API do config.py
+
+---
+
+## 16. Wspolni klienci HTTP (Shared Clients)
+
+### Problem
+
+Niektore systemy (Fakturownia, Stripe, SendGrid) sa uzywane w DWOCH kontekstach:
+1. Provider — klient automatyzuje SWOJE dane, SWOJ token
+2. Billing/System — MY jako firma uzywamy systemu, NASZ token
+
+### Rozwiazanie
+
+Wspolny klient HTTP w fasthub_core/clients/:
+- BaseHTTPClient — retry, logging, error handling
+- FakturowniaClient — API Fakturownia.pl
+- StripeClient — wrapper na Stripe SDK
+
+Dwa tryby:
+- FakturowniaClient(account="klient", api_token=klient_token)  <- provider
+- FakturowniaClient.from_config()  <- billing (nasz token z .env)
+
+| System | Provider | Wewnetrznie | Wspolny klient? |
+|---|---|---|---|
+| Fakturownia | tak | tak (faktury) | TAK |
+| Stripe | tak | tak (platnosci) | TAK |
+| Google Drive | tak | nie | NIE |

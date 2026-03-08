@@ -1,7 +1,7 @@
 # FastHub — Architektura Systemu
 
 > Dokument biznesowy dla wlasciciela i partnerow.
-> Wersja: 2.0 | Data: 2026-03-02
+> Wersja: 2.1 | Data: 2026-03-02
 
 ---
 
@@ -249,7 +249,49 @@ Proces zakonczony → Event: "execution.completed"
 
 ---
 
-### 11. Warstwa bezpieczenstwa
+### 11. Bramki platnosci (Payment Gateway — Brief 16)
+
+**Co to daje:** System moze obslugiwac platnosci przez WIELE bramek jednoczesnie — np. Stripe, PayU, Tpay. Klient widzi wszystkie dostepne metody platnosci z wszystkich aktywnych bramek.
+
+**Jak to dziala:**
+- Kazda bramka implementuje ten sam kontrakt (interfejs) — dodanie nowej to jeden plik
+- Rejestr bramek automatycznie pomija nieskonfigurowane — zero bledow
+- Metody platnosci sa deduplikowane — jesli Stripe i PayU obsluguja BLIK, pokazuje sie raz
+- Stripe obsluguje: karta, BLIK, Google Pay, Apple Pay
+
+**Architektura pluggable:**
+```
+PaymentGateway (kontrakt)
+  ├── StripeGateway   ← gotowe (Brief 16)
+  ├── PayUGateway     ← planowane (Brief 20)
+  └── TpayGateway     ← planowane (Brief 20)
+```
+
+**Stripe Webhooks:**
+- 6 typow zdarzen: checkout, subskrypcja (created/updated/deleted), platnosc (failed/succeeded)
+- 4 hook points: on_checkout_completed, on_subscription_canceled, on_payment_failed, on_payment_succeeded
+- Deduplication — ten sam event nie jest przetworzony dwa razy
+
+---
+
+### 12. Klienci HTTP (Shared Clients — Brief 16)
+
+**Co to daje:** Gotowe wrappery na zewnetrzne API — Stripe, Fakturownia — z retry, timeout, spojnym error handling.
+
+**Jak to dziala:**
+- BaseHTTPClient — bazowy klient z retry i timeout (httpx)
+- FakturowniaClient — faktury VAT (dwa tryby: token klienta lub token firmowy)
+- StripeClient — checkout, portal, webhooks, klienci
+
+**Przyklad: Fakturownia w dwoch kontekstach:**
+```
+Kontekst 1 (Provider): FakturowniaClient(account="klient", api_token="token_klienta")
+Kontekst 2 (Billing):  FakturowniaClient.from_config()  ← token firmowy z .env
+```
+
+---
+
+### 13. Warstwa bezpieczenstwa
 
 **Co to daje:** Ochrona przed typowymi atakami internetowymi — automatycznie, bez konfiguracji.
 
@@ -346,8 +388,23 @@ Logowanie / Rejestracja
 - **Testy e2e AutoFlow + fasthub_core** — 43 testy integracyjne
 - Pokrycie: encryption, event bus, OAuth, webhooks, billing, manifest, cross-module
 
+### Gotowe (Faza 4 — Briefs 13-16)
+- **Structured Logging** — JSON w produkcji, kolorowy w dev (structlog)
+- **Monitoring** — Sentry z filtrami PII (opcjonalny)
+- **Rate Limiting** — per-endpoint, Redis/memory backend (slowapi)
+- **Subscription Check** — middleware, dekorator, HTTP 402 enforcement
+- **Health Checks** — /health, /ready, custom checks z timeoutem
+- **File Storage** — S3 + Local backend, pluggable (Brief 14)
+- **Feature Flags** — check_feature, require_feature per plan (Brief 14)
+- **Background Tasks** — ARQ (Redis), pluggable backend, cron jobs (Brief 15)
+- **Payment Gateway** — multi-bramka, pluggable, StripeGateway (Brief 16)
+- **Stripe Webhooks** — 6 eventow, 4 hook points, deduplication (Brief 16)
+- **Shared HTTP Clients** — BaseHTTPClient + Fakturownia + Stripe wrapper (Brief 16)
+- 284 testow fasthub_core (zero regresji)
+
 ### Planowane
 - Brief 11: Thin wrappery w AutoFlow (zamiana lokalnych kopii na import z fasthub_core)
+- Brief 20: Kolejne bramki platnosci (PayU, Tpay, Przelewy24)
 - Szablony HTML emaili (zamiast plain text)
 - WebSocket skalowanie (Redis pub/sub dla multi-server)
 - Dashboard metryki biznesowe
@@ -357,7 +414,7 @@ Logowanie / Rejestracja
 ## Wartosc biznesowa FastHub
 
 1. **Oszczednosc czasu:** Nowa aplikacja SaaS startuje w dni, nie miesiace
-2. **Sprawdzone rozwiazania:** Kazdy modul jest przetestowany (227+ testow: 184 fasthub_core + 43 e2e AutoFlow)
+2. **Sprawdzone rozwiazania:** Kazdy modul jest przetestowany (327+ testow: 284 fasthub_core + 43 e2e AutoFlow)
 3. **Bezpieczenstwo z automatu:** Bez dodatkowej pracy — szyfrowanie, uprawnienia, audit
 4. **Elastycznosc:** Kazdy modul mozna wymienic lub rozszerzyc niezaleznie
 5. **Skalowalnosc:** System gotowy na wzrost — od startupu do enterprise
