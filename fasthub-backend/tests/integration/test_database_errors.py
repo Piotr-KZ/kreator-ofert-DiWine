@@ -1,6 +1,9 @@
 # ============================================================================
 
-from httpx import AsyncClient
+import pytest
+from uuid import uuid4
+from unittest.mock import patch
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy.exc import IntegrityError
 from app.main import app
 
@@ -8,7 +11,7 @@ from app.main import app
 @pytest.mark.asyncio
 async def test_database_connection_failure():
     """Test graceful error when database is unavailable"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         with patch('app.db.session.get_db') as mock_db:
             mock_db.side_effect = ConnectionError("Database unavailable")
             
@@ -21,7 +24,7 @@ async def test_database_connection_failure():
 @pytest.mark.asyncio
 async def test_duplicate_key_violation():
     """Test creating user with existing email returns 400"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # Create first user
         user_data = {
             "email": "duplicate@example.com",
@@ -41,7 +44,7 @@ async def test_duplicate_key_violation():
 @pytest.mark.asyncio
 async def test_foreign_key_constraint_violation():
     """Test deleting user with members returns error"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # This would be tested with proper database setup
         # For now, mock the constraint violation
         with patch('app.services.user_service.delete_user') as mock_delete:
@@ -80,7 +83,7 @@ async def test_transaction_rollback():
 @pytest.mark.asyncio
 async def test_null_constraint_violation():
     """Test creating record with missing required field returns 400"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # Try to create user without required fields
         incomplete_data = {"email": "test@example.com"}  # Missing password
         

@@ -1,10 +1,15 @@
 # ============================================================================
 
+import pytest
+from unittest.mock import patch
+from httpx import ASGITransport, AsyncClient
+from app.main import app
+
 
 @pytest.mark.asyncio
 async def test_rate_limit_exceeded():
     """Test 429 error after exceeding rate limit"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # Make 101 requests (assuming limit is 100/min)
         for i in range(101):
             response = await client.get("/api/v1/health")
@@ -18,7 +23,7 @@ async def test_rate_limit_exceeded():
 @pytest.mark.asyncio
 async def test_rate_limit_reset():
     """Test rate limit resets after time window"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # Exceed limit
         for _ in range(101):
             await client.get("/api/v1/health")
@@ -37,7 +42,7 @@ async def test_rate_limit_reset():
 @pytest.mark.asyncio
 async def test_rate_limit_per_user():
     """Test rate limit is tracked per authenticated user"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # User 1 exceeds limit
         for _ in range(101):
             await client.get("/api/v1/users/me", headers={"Authorization": "Bearer user1_token"})
@@ -53,7 +58,7 @@ async def test_rate_limit_per_user():
 @pytest.mark.asyncio
 async def test_rate_limit_per_ip():
     """Test rate limit is tracked per IP address for anonymous requests"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         # Make requests from IP 192.168.1.1
         for _ in range(101):
             await client.get("/api/v1/health", headers={"X-Forwarded-For": "192.168.1.1"})
@@ -69,7 +74,7 @@ async def test_rate_limit_per_ip():
 @pytest.mark.asyncio
 async def test_rate_limit_headers():
     """Test rate limit headers are returned (X-RateLimit-*)"""
-    async with AsyncClient(app=app, base_url="http://test") as client:
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.get("/api/v1/health")
         
         assert "X-RateLimit-Limit" in response.headers
