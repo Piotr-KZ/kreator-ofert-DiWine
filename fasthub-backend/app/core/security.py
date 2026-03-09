@@ -14,6 +14,8 @@ from fasthub_core.auth.service import (
     create_email_verification_token,
     create_password_reset_token,
     decode_verification_token,
+    create_2fa_temp_token,
+    decode_2fa_temp_token,
 )
 
 __all__ = [
@@ -28,4 +30,6 @@ __all__ = [
     "create_email_verification_token",
     "create_password_reset_token",
     "decode_verification_token",
+    "create_2fa_temp_token",
+    "decode_2fa_temp_token",
 ]

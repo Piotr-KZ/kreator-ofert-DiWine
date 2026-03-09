@@ -169,6 +169,13 @@ class Settings(BaseSettings):
     # GUS REGON API
     GUS_API_KEY: Optional[str] = None  # Brak = sandbox mode (do testów)
 
+    # 2FA (Brief 26)
+    TOTP_ISSUER_NAME: str = "FastHub"
+    TOTP_TEMP_TOKEN_EXPIRE_MINUTES: int = 5
+
+    # Sessions (Brief 26)
+    SESSION_CLEANUP_DAYS: int = 30
+
     # GDPR
     GDPR_DELETION_GRACE_DAYS: int = 14
     GDPR_EXPORT_FORMAT: str = "json"  # json (csv planned)

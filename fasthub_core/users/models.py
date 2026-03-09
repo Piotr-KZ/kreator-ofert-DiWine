@@ -5,7 +5,7 @@ Core models for multi-tenant SaaS architecture
 
 import enum
 
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy import Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
@@ -57,6 +57,12 @@ class User(BaseModel):
     position = Column(String(255), nullable=True)
     language = Column(String(10), nullable=True, default="pl")
     timezone = Column(String(50), nullable=True, default="Europe/Warsaw")
+
+    # 2FA TOTP (Brief 26)
+    totp_secret = Column(String(500), nullable=True)  # Encrypted Fernet
+    totp_enabled = Column(Boolean, default=False, nullable=False)
+    totp_verified_at = Column(DateTime, nullable=True)
+    backup_codes = Column(Text, nullable=True)  # Encrypted JSON array
 
     # Multi-org: memberships relationship (replaces single organization_id)
     memberships = relationship("Member", back_populates="user", cascade="all, delete-orphan")

@@ -87,10 +87,39 @@ def create_refresh_token(data: Dict[str, Any]) -> str:
         to_encode["sub"] = str(to_encode["sub"])
     expire = datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
 
+    # JTI for session tracking (Brief 26)
+    if "jti" not in to_encode:
+        to_encode["jti"] = str(uuid_module.uuid4())
+
     to_encode.update({"exp": expire, "iat": datetime.utcnow(), "type": "refresh"})
 
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
     return encoded_jwt
+
+
+def create_2fa_temp_token(user_id, expires_minutes: int = 5) -> str:
+    """Create short-lived temp token for 2FA authentication step."""
+    settings = get_settings()
+    expire = datetime.utcnow() + timedelta(minutes=expires_minutes)
+    data = {
+        "sub": str(user_id),
+        "type": "2fa_temp",
+        "exp": expire,
+        "iat": datetime.utcnow(),
+    }
+    return jwt.encode(data, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def decode_2fa_temp_token(token: str) -> Optional[str]:
+    """Decode 2FA temp token. Returns user_id or None."""
+    settings = get_settings()
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        if payload.get("type") != "2fa_temp":
+            return None
+        return payload.get("sub")
+    except JWTError:
+        return None
 
 
 def decode_access_token(token: str) -> Optional[Dict[str, Any]]:

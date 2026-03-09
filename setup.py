@@ -33,5 +33,8 @@ setup(
         "arq>=0.26.0",
         "typer>=0.9.0",
         "gusregon>=1.2.0",
+        "pyotp>=2.9.0",
+        "qrcode[pil]>=7.4",
+        "user-agents>=2.2.0",
     ],
 )

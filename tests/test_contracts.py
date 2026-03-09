@@ -161,7 +161,7 @@ def test_fasthub_permission_uses_rbac():
     # Domyślne role muszą istnieć
     assert "owner" in SYSTEM_ROLES
     assert "admin" in SYSTEM_ROLES
-    assert "member" in SYSTEM_ROLES
+    assert "viewer" in SYSTEM_ROLES
     # Core permissions muszą zawierać kluczowe kategorie
     assert "team" in CORE_PERMISSIONS
     assert "billing" in CORE_PERMISSIONS
