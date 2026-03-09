@@ -1,12 +1,8 @@
 import { apiClient } from './client';
 import { User } from '../types/models';
+import { UsersListResponse } from '../types/api';
 
-export interface UsersListResponse {
-  items: User[];
-  total: number;
-  page: number;
-  per_page: number;
-}
+export type { UsersListResponse };
 
 export const usersApi = {
   list: (params?: { page?: number; per_page?: number; search?: string }) =>
@@ -21,11 +17,9 @@ export const usersApi = {
   delete: (id: string) =>
     apiClient.delete(`/users/${id}`),
 
-  // Use PATCH /users/{id} for role change (backend doesn't have separate endpoint)
-  changeRole: (id: string, role: string) =>
-    apiClient.patch<User>(`/users/${id}`, { role }),
-
-  // Get current user profile
   getMe: () =>
     apiClient.get<User>('/users/me'),
+
+  updateMe: (data: { full_name?: string; email?: string }) =>
+    apiClient.patch<User>('/users/me', data),
 };

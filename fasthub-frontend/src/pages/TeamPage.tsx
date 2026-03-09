@@ -18,10 +18,11 @@ export default function TeamPage() {
   const [error, setError] = useState<string | null>(null);
 
   const fetchMembers = async () => {
+    if (!organization?.id) return;
     setLoading(true);
     try {
-      const { data } = await membersApi.list();
-      setMembers(data.items || data || []);
+      const { data } = await membersApi.list(organization.id);
+      setMembers(data.members || []);
     } catch (err: any) {
       if (err.response?.status !== 403 && err.response?.status !== 404) {
         setError(err.response?.data?.detail || 'Failed to fetch members');
@@ -31,15 +32,15 @@ export default function TeamPage() {
     }
   };
 
-  useEffect(() => { fetchMembers(); }, []);
+  useEffect(() => { fetchMembers(); }, [organization?.id]);
 
   const canManage = user?.is_superuser || (organization && members.some(m => m.user_id === user?.id && m.role === 'admin'));
 
   const handleInvite = async () => {
-    if (!inviteEmail) return;
+    if (!inviteEmail || !organization?.id) return;
     setInviteLoading(true);
     try {
-      await membersApi.invite({ email: inviteEmail, role: inviteRole });
+      await membersApi.invite(organization.id, { email: inviteEmail, role: inviteRole });
       setInviteOpen(false);
       setInviteEmail('');
       setInviteRole('viewer');
@@ -53,7 +54,7 @@ export default function TeamPage() {
 
   const handleChangeRole = async (memberId: string, role: MemberRole) => {
     try {
-      await membersApi.changeRole(memberId, role);
+      await membersApi.changeRole(memberId, { role });
       fetchMembers();
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to change role');

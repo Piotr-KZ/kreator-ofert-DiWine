@@ -8,13 +8,20 @@ export const apiClient = axios.create({
   },
 });
 
-// Request interceptor - add token
+// Request interceptor - add token + organization header
 apiClient.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem(APP_CONFIG.auth.tokenKey) || sessionStorage.getItem(APP_CONFIG.auth.tokenKey);
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
+
+    // Add X-Organization-Id for billing and other org-scoped endpoints
+    const orgId = localStorage.getItem('current_organization_id');
+    if (orgId) {
+      config.headers['X-Organization-Id'] = orgId;
+    }
+
     return config;
   },
   (error) => Promise.reject(error)

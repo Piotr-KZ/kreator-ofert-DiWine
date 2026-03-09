@@ -14,10 +14,10 @@ from app.api.v1.endpoints import (
     members,
     organizations,
     subscription_status,
-    # subscriptions,  # STRIPE REMOVED
     token_admin,
     users,
 )
+from fasthub_core.billing.api import router as billing_router
 
 api_router = APIRouter()
 
@@ -26,8 +26,7 @@ api_router.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 api_router.include_router(users.router, prefix="/users", tags=["Users"])
 api_router.include_router(organizations.router, prefix="/organizations", tags=["Organizations"])
 api_router.include_router(members.router, prefix="", tags=["Members"])  # No prefix, routes defined in endpoint
-# STRIPE REMOVED - Subscriptions endpoint removed
-# api_router.include_router(subscriptions.router, prefix="/subscriptions", tags=["Subscriptions"])
+api_router.include_router(billing_router, prefix="", tags=["Billing"])
 api_router.include_router(invoices.router, prefix="/invoices", tags=["Invoices"])
 api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 api_router.include_router(token_admin.router, prefix="/admin/tokens", tags=["Token Admin"])

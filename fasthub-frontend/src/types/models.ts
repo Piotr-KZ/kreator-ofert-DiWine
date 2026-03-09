@@ -1,12 +1,18 @@
 export interface User {
   id: string;
   email: string;
-  full_name: string;
+  full_name: string | null;
   is_active: boolean;
   is_verified: boolean;
-  is_superuser: boolean;  // Global SuperAdmin flag
-  position?: string;
-  last_login_at?: string;
+  is_superuser: boolean;
+  is_superadmin?: boolean;
+  is_email_verified?: boolean;
+  email_verified_at?: string;
+  google_id?: string;
+  github_id?: string;
+  microsoft_id?: string;
+  oauth_provider?: string;
+  avatar_url?: string;
   created_at: string;
   updated_at: string;
 }
@@ -38,19 +44,22 @@ export interface Organization {
   slug: string;
   type: 'business' | 'individual';
   nip?: string;
-  regon?: string;
-  krs?: string;
-  first_name?: string;
-  last_name?: string;
-  billing_street: string;
-  billing_city: string;
-  billing_postal_code: string;
-  billing_country: string;
-  email: string;
+  email?: string;
   phone?: string;
-  logo_url?: string;
+  owner_id: string;
+  is_complete: boolean;
+  billing_street?: string;
+  billing_city?: string;
+  billing_postal_code?: string;
+  billing_country?: string;
+  stripe_customer_id?: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface OrganizationWithStats extends Organization {
+  user_count: number;
+  subscription_status?: string;
 }
 
 export interface Subscription {
@@ -82,16 +91,15 @@ export interface Invoice {
 
 // TeamMember for display (combines User + Member)
 export interface TeamMember {
-  id: string;  // user_id
+  id: string;       // member_id (UUID)
+  user_id: string;
   email: string;
-  full_name: string;
-  role: MemberRole;  // Role in organization
-  position?: string;
+  full_name: string | null;
+  role: MemberRole;
   is_active: boolean;
   is_verified: boolean;
   is_superuser: boolean;
-  last_login_at?: string;
-  joined_at: string;  // When joined organization
+  joined_at: string;
   created_at: string;
 }
 
@@ -120,4 +128,33 @@ export interface AdminStats {
   active_subscriptions: number;
   revenue_this_month: number;
   revenue_last_month: number;
+}
+
+// Billing plan from /catalog/plans
+export interface BillingPlan {
+  slug: string;
+  name: string;
+  description?: string;
+  billing_mode: string;
+  price_monthly: number;
+  price_yearly: number;
+  currency: string;
+  max_processes: number;
+  max_executions_month: number;
+  max_integrations: number;
+  max_ai_operations_month: number;
+  max_team_members: number;
+  max_file_storage_mb: number;
+  features: Record<string, unknown>;
+  badge?: string;
+  color?: string;
+}
+
+// Usage from /billing/usage
+export interface UsageItem {
+  resource: string;
+  current: number;
+  limit: number;
+  remaining: number;
+  exceeded: boolean;
 }

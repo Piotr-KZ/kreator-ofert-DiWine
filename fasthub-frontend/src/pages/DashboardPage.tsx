@@ -93,17 +93,21 @@ export default function DashboardPage() {
           </SectionCard>
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
           <SectionCard>
             <p className="text-sm text-gray-500">Organization</p>
             <p className="text-lg font-bold text-gray-900">{organization.name}</p>
           </SectionCard>
           <SectionCard>
+            <p className="text-sm text-gray-500">Team Members</p>
+            <p className="text-lg font-bold text-gray-900">{'user_count' in organization ? (organization as any).user_count : '-'}</p>
+          </SectionCard>
+          <SectionCard>
             <p className="text-sm text-gray-500">Subscription</p>
             <div className="flex items-center gap-2 mt-1">
-              <p className="text-lg font-bold text-gray-900 capitalize">{subscription?.plan || 'Free'}</p>
-              <StatusBadge variant={subscription?.status === 'active' ? 'success' : 'warning'}>
-                {subscription?.status || 'none'}
+              <p className="text-lg font-bold text-gray-900 capitalize">{subscription?.plan?.name || subscription?.plan || 'Free'}</p>
+              <StatusBadge variant={subscription?.subscription?.status === 'active' || subscription?.status === 'active' ? 'success' : 'warning'}>
+                {subscription?.subscription?.status || subscription?.status || 'none'}
               </StatusBadge>
             </div>
           </SectionCard>

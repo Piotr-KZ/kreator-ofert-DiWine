@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useAuthStore } from '../store/authStore';
 import { useOrgStore } from '../store/orgStore';
 import { authApi } from '../api/auth';
+import { usersApi } from '../api/users';
 import { Btn, Fld, SectionCard } from '@/components/ui';
 import SidebarLayout from '@/components/layout/SidebarLayout';
 
@@ -21,7 +22,6 @@ export default function SettingsPage() {
 
   // Profile
   const [fullName, setFullName] = useState('');
-  const [position, setPosition] = useState('');
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileMsg, setProfileMsg] = useState('');
 
@@ -47,7 +47,7 @@ export default function SettingsPage() {
   const [secError, setSecError] = useState('');
 
   useEffect(() => {
-    if (user) { setFullName(user.full_name || ''); setPosition(user.position || ''); }
+    if (user) { setFullName(user.full_name || ''); }
   }, [user]);
 
   useEffect(() => {
@@ -71,7 +71,7 @@ export default function SettingsPage() {
     setProfileLoading(true);
     setProfileMsg('');
     try {
-      // using authApi or usersApi — keeping the same pattern
+      await usersApi.updateMe({ full_name: fullName });
       setProfileMsg('Profile updated');
     } catch {
       setProfileMsg('Failed to update profile');
@@ -133,7 +133,6 @@ export default function SettingsPage() {
             <div className="space-y-4">
               <Fld label="Full Name" value={fullName} onChange={setFullName} />
               <Fld label="Email" value={user?.email || ''} disabled />
-              <Fld label="Position" value={position} onChange={setPosition} placeholder="e.g. Developer" />
               {profileMsg && <p className="text-sm text-green-600">{profileMsg}</p>}
               <Btn onClick={saveProfile} loading={profileLoading}>Save Changes</Btn>
             </div>
