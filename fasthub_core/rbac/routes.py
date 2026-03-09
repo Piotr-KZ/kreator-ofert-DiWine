@@ -1,7 +1,7 @@
 """
 API endpoints RBAC.
 Zarządzanie rolami i uprawnieniami w organizacji.
-Prefix: /api/rbac
+Prefix: /rbac (podłączany w api.py → /api/v1/rbac/...)
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -19,7 +19,7 @@ from fasthub_core.rbac.schemas import (
     RoleUpdateRequest, AssignRoleRequest, UserPermissionsResponse,
 )
 
-router = APIRouter(prefix="/api/rbac", tags=["RBAC"])
+router = APIRouter(prefix="/rbac", tags=["RBAC"])
 
 
 # === PERMISSIONS ===
@@ -92,6 +92,28 @@ async def create_role(
     )
 
 
+async def _update_role_impl(role_id: UUID, request: RoleUpdateRequest, db: AsyncSession):
+    """Shared logic for PUT/PATCH role update. Allows editing system roles except Właściciel."""
+    from fasthub_core.rbac.defaults import SYSTEM_ROLES
+
+    role = await db.get(Role, role_id)
+    if not role:
+        raise HTTPException(status_code=404, detail="Rola nie znaleziona")
+
+    owner_name = SYSTEM_ROLES["owner"]["name"]
+    if role.is_system and role.name == owner_name:
+        raise HTTPException(status_code=403, detail="Nie można edytować roli Właściciel")
+
+    rbac = RBACService(db)
+    if request.name is not None or request.description is not None:
+        await rbac.update_role(role_id, name=request.name, description=request.description)
+    if request.permissions is not None:
+        await rbac.update_role_permissions(role_id, request.permissions)
+
+    await db.commit()
+    return {"status": "updated"}
+
+
 @router.put("/roles/{role_id}")
 async def update_role(
     role_id: UUID,
@@ -99,23 +121,19 @@ async def update_role(
     current_user=Depends(require_permission("team.change_roles")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Aktualizuj rolę (tylko custom, nie systemowe)"""
-    role = await db.get(Role, role_id)
-    if not role:
-        raise HTTPException(status_code=404, detail="Rola nie znaleziona")
-    if role.is_system:
-        raise HTTPException(status_code=403, detail="Nie można edytować roli systemowej")
+    """Aktualizuj rolę (systemowe oprócz Właściciela + custom)"""
+    return await _update_role_impl(role_id, request, db)
 
-    if request.name:
-        role.name = request.name
-    if request.description is not None:
-        role.description = request.description
-    if request.permissions is not None:
-        rbac = RBACService(db)
-        await rbac.update_role_permissions(role_id, request.permissions)
 
-    await db.commit()
-    return {"status": "updated"}
+@router.patch("/roles/{role_id}")
+async def patch_role(
+    role_id: UUID,
+    request: RoleUpdateRequest,
+    current_user=Depends(require_permission("team.change_roles")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Aktualizuj rolę (PATCH variant)"""
+    return await _update_role_impl(role_id, request, db)
 
 
 @router.delete("/roles/{role_id}")

@@ -31,6 +31,13 @@ CORE_PERMISSIONS = {
         ("audit.view_log", "Podgląd logów aktywności"),
         ("audit.export_log", "Eksport logów do CSV/PDF"),
     ],
+    "sites": [
+        ("sites.view", "Podgląd witryn"),
+        ("sites.create", "Tworzenie nowych witryn"),
+        ("sites.edit", "Edycja witryn"),
+        ("sites.publish", "Publikacja witryn"),
+        ("sites.delete", "Usuwanie witryn"),
+    ],
 }
 
 # === ROLE SYSTEMOWE ===
@@ -38,33 +45,48 @@ CORE_PERMISSIONS = {
 
 SYSTEM_ROLES = {
     "owner": {
-        "name": "Owner",
-        "description": "Właściciel organizacji — pełne uprawnienia",
+        "name": "Właściciel",
+        "description": "Pełna kontrola nad organizacją",
         "is_system": True,
         "is_default": False,
         "permissions": "*",  # WSZYSTKIE uprawnienia
     },
     "admin": {
         "name": "Admin",
-        "description": "Administrator — zarządza zespołem i ustawieniami",
+        "description": "Zarządzanie zespołem, ustawieniami i płatnościami",
         "is_system": True,
         "is_default": False,
         "permissions": [
             "team.view_members", "team.invite_member", "team.remove_member", "team.change_roles",
-            "billing.view_plans", "billing.view_invoices",
+            "billing.view_plans", "billing.change_plan", "billing.view_invoices",
             "settings.view", "settings.edit", "settings.manage_integrations",
-            "audit.view_log",
+            "audit.view_log", "audit.export_log",
+            "sites.view", "sites.create", "sites.edit", "sites.publish", "sites.delete",
         ],
     },
-    "member": {
-        "name": "Member",
-        "description": "Zwykły członek — podstawowe uprawnienia",
+    "editor": {
+        "name": "Edytor",
+        "description": "Tworzenie i edycja stron, bez dostępu do ustawień i płatności",
         "is_system": True,
-        "is_default": True,  # Nowi członkowie dostają tę rolę
+        "is_default": True,
         "permissions": [
             "team.view_members",
             "billing.view_plans",
             "settings.view",
+            "sites.view", "sites.create", "sites.edit",
+        ],
+    },
+    "viewer": {
+        "name": "Podgląd",
+        "description": "Tylko podgląd danych organizacji",
+        "is_system": True,
+        "is_default": False,
+        "permissions": [
+            "team.view_members",
+            "billing.view_plans",
+            "settings.view",
+            "audit.view_log",
+            "sites.view",
         ],
     },
 }

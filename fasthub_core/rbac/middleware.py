@@ -65,8 +65,6 @@ def require_permission(permission: str):
             return current_user
 
         # Fallback: sprawdź stary system Member.role
-        # Jeśli user ma ADMIN w starym systemie → traktuj jak Owner (wszystkie uprawnienia)
-        # Jeśli user ma VIEWER → traktuj jak Member (podstawowe uprawnienia)
         try:
             from sqlalchemy import select
             from fasthub_core.users.models import Member, MemberRole
@@ -80,11 +78,19 @@ def require_permission(permission: str):
             )
             member = result.scalar_one_or_none()
             if member and member.role:
-                if member.role == MemberRole.ADMIN:
-                    return current_user  # ADMIN = all permissions
+                if member.role == MemberRole.OWNER:
+                    return current_user  # Owner = all permissions
+                elif member.role == MemberRole.ADMIN:
+                    admin_perms = SYSTEM_ROLES.get("admin", {}).get("permissions", [])
+                    if permission in admin_perms:
+                        return current_user
+                elif member.role == MemberRole.EDITOR:
+                    editor_perms = SYSTEM_ROLES.get("editor", {}).get("permissions", [])
+                    if permission in editor_perms:
+                        return current_user
                 elif member.role == MemberRole.VIEWER:
-                    member_perms = SYSTEM_ROLES.get("member", {}).get("permissions", [])
-                    if permission in member_perms:
+                    viewer_perms = SYSTEM_ROLES.get("viewer", {}).get("permissions", [])
+                    if permission in viewer_perms:
                         return current_user
         except Exception:
             pass

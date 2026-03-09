@@ -18,6 +18,7 @@ from app.api.v1.endpoints import (
     users,
 )
 from fasthub_core.billing.api import router as billing_router
+from fasthub_core.rbac import rbac_router
 
 api_router = APIRouter()
 
@@ -33,3 +34,4 @@ api_router.include_router(token_admin.router, prefix="/admin/tokens", tags=["Tok
 api_router.include_router(api_tokens.router, prefix="/api-tokens", tags=["API Tokens"])
 api_router.include_router(health.router, prefix="", tags=["Health"])
 api_router.include_router(subscription_status.router, prefix="", tags=["Subscription Status"])
+api_router.include_router(rbac_router, prefix="", tags=["RBAC"])

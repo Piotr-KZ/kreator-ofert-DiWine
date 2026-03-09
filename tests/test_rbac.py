@@ -19,6 +19,7 @@ def test_rbac_service_exists():
     assert hasattr(RBACService, 'assign_role')
     assert hasattr(RBACService, 'remove_role')
     assert hasattr(RBACService, 'create_custom_role')
+    assert hasattr(RBACService, 'update_role')
     assert hasattr(RBACService, 'update_role_permissions')
     assert hasattr(RBACService, 'delete_role')
     assert hasattr(RBACService, 'list_organization_roles')
@@ -36,29 +37,35 @@ def test_rbac_middleware():
 
 
 def test_rbac_defaults():
-    """Domyślne uprawnienia i role muszą istnieć"""
+    """Domyślne uprawnienia i role muszą istnieć — 4 role + sites permissions"""
     from fasthub_core.rbac.defaults import CORE_PERMISSIONS, SYSTEM_ROLES
-    # Musi mieć minimum te kategorie
+    # Kategorie
     assert "team" in CORE_PERMISSIONS
     assert "billing" in CORE_PERMISSIONS
     assert "settings" in CORE_PERMISSIONS
     assert "audit" in CORE_PERMISSIONS
-    # Musi mieć 3 role systemowe
+    assert "sites" in CORE_PERMISSIONS
+    # 4 role systemowe
     assert "owner" in SYSTEM_ROLES
     assert "admin" in SYSTEM_ROLES
-    assert "member" in SYSTEM_ROLES
+    assert "editor" in SYSTEM_ROLES
+    assert "viewer" in SYSTEM_ROLES
     # Owner ma wszystkie permissions
     assert SYSTEM_ROLES["owner"]["permissions"] == "*"
-    # Member jest domyślną rolą
-    assert SYSTEM_ROLES["member"]["is_default"] == True
+    # Edytor jest domyślną rolą
+    assert SYSTEM_ROLES["editor"]["is_default"] == True
+    # Nazwy ról po polsku
+    assert SYSTEM_ROLES["owner"]["name"] == "Właściciel"
+    assert SYSTEM_ROLES["editor"]["name"] == "Edytor"
+    assert SYSTEM_ROLES["viewer"]["name"] == "Podgląd"
 
 
 def test_rbac_router():
-    """Router RBAC musi mieć prefix /api/rbac i minimum 8 endpointów"""
+    """Router RBAC musi mieć prefix /rbac i minimum 9 endpointów (8 + PATCH)"""
     from fasthub_core.rbac.routes import router
-    assert router.prefix == "/api/rbac"
+    assert router.prefix == "/rbac"
     routes = [r for r in router.routes]
-    assert len(routes) >= 8  # permissions, roles CRUD, assign, unassign, user-perms
+    assert len(routes) >= 9
 
 
 def test_rbac_schemas():
@@ -86,14 +93,19 @@ def test_permission_name_format():
 
 
 def test_all_core_permission_names():
-    """Musi być minimum 13 bazowych uprawnień"""
+    """Musi być minimum 18 bazowych uprawnień (13 starych + 5 sites)"""
     from fasthub_core.rbac.defaults import get_all_core_permission_names
     names = get_all_core_permission_names()
-    assert len(names) >= 13
+    assert len(names) >= 18
     assert "team.view_members" in names
     assert "billing.change_plan" in names
     assert "settings.edit" in names
     assert "audit.view_log" in names
+    assert "sites.view" in names
+    assert "sites.create" in names
+    assert "sites.edit" in names
+    assert "sites.publish" in names
+    assert "sites.delete" in names
 
 
 def test_rbac_importable_from_init():
@@ -125,3 +137,14 @@ def test_assign_role_request_schema():
 
     with pytest.raises(Exception):
         AssignRoleRequest(user_id="550e8400-e29b-41d4-a716-446655440000")
+
+
+def test_member_role_has_four_values():
+    """MemberRole enum musi mieć 4 wartości: owner, admin, editor, viewer"""
+    from fasthub_core.users.models import MemberRole
+    values = [e.value for e in MemberRole]
+    assert "owner" in values
+    assert "admin" in values
+    assert "editor" in values
+    assert "viewer" in values
+    assert len(values) == 4

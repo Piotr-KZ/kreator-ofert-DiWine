@@ -9,6 +9,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from fastapi import UploadFile, File
 from app.core.dependencies import get_current_active_user, get_current_superuser
 from app.db.session import get_db
 from app.models.member import Member
@@ -17,6 +18,9 @@ from app.schemas.user import UserResponse
 from app.services.audit_service import AuditService
 from sqlalchemy import select, func
 from fastapi import Request
+
+ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"]
+MAX_AVATAR_SIZE_MB = 5.0
 
 
 async def get_user_primary_org_id(user: User, db: AsyncSession) -> UUID:
@@ -38,6 +42,51 @@ from app.schemas.user import UserResponse, UserUpdate
 from app.services.user_service import UserService
 
 router = APIRouter()
+
+
+@router.post("/me/avatar", response_model=UserResponse)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload user avatar (max 5MB, images only)"""
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file type: {file.content_type}. Allowed: {ALLOWED_IMAGE_TYPES}"
+        )
+
+    file_data = await file.read()
+    file_size_mb = len(file_data) / (1024 * 1024)
+    if file_size_mb > MAX_AVATAR_SIZE_MB:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File too large: {file_size_mb:.1f}MB (max: {MAX_AVATAR_SIZE_MB}MB)"
+        )
+
+    org_id = await get_user_primary_org_id(current_user, db)
+
+    from fasthub_core.storage import get_storage_service
+    storage = get_storage_service(db)
+    file_record = await storage.upload(
+        file_data=file_data,
+        filename=file.filename or "avatar",
+        mime_type=file.content_type,
+        organization_id=str(org_id),
+        uploaded_by=str(current_user.id),
+        entity_type="user_avatar",
+        entity_id=str(current_user.id),
+        is_public=True,
+        check_billing_limit=False,
+    )
+
+    download_url = await storage.get_download_url(file_record.id)
+    current_user.avatar_url = download_url
+    await db.commit()
+    await db.refresh(current_user)
+
+    return current_user
 
 
 @router.get("/me", response_model=UserResponse)

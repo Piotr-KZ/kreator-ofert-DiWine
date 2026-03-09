@@ -22,4 +22,12 @@ export const organizationsApi = {
 
   delete: (id: string) =>
     apiClient.delete(`/organizations/${id}`),
+
+  uploadLogo: (orgId: string, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiClient.post<Organization>(`/organizations/${orgId}/logo`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+  },
 };

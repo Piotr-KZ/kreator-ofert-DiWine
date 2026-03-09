@@ -52,6 +52,12 @@ class User(BaseModel):
     oauth_provider = Column(String(50), nullable=True)  # "google", "github", "microsoft"
     avatar_url = Column(String(500), nullable=True)
 
+    # Profile fields (Brief 24)
+    phone = Column(String(50), nullable=True)
+    position = Column(String(255), nullable=True)
+    language = Column(String(10), nullable=True, default="pl")
+    timezone = Column(String(50), nullable=True, default="Europe/Warsaw")
+
     # Multi-org: memberships relationship (replaces single organization_id)
     memberships = relationship("Member", back_populates="user", cascade="all, delete-orphan")
 
@@ -96,6 +102,15 @@ class Organization(BaseModel):
     # Owner (nullable to break circular dependency)
     owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True)
 
+    # Extended fields (Brief 24)
+    legal_form = Column(String(100), nullable=True)
+    regon = Column(String(20), nullable=True)
+    krs = Column(String(20), nullable=True)
+    website = Column(String(500), nullable=True)
+    logo_url = Column(String(500), nullable=True)
+    rodo_inspector_name = Column(String(255), nullable=True)
+    rodo_inspector_email = Column(String(255), nullable=True)
+
     # Stripe integration
     stripe_customer_id = Column(String(255), unique=True, nullable=True)
 
@@ -115,7 +130,9 @@ class Organization(BaseModel):
 class MemberRole(str, enum.Enum):
     """Member roles within an organization"""
 
+    OWNER = "owner"
     ADMIN = "admin"
+    EDITOR = "editor"
     VIEWER = "viewer"
 
 
@@ -137,7 +154,7 @@ class Member(BaseModel):
 
     # Role within organization
     role = Column(
-        SQLEnum(MemberRole, name="memberrole", create_constraint=True, values_callable=lambda x: [e.value for e in x]),
+        SQLEnum(MemberRole, name="memberrole", create_constraint=False, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         default=MemberRole.ADMIN,
         index=True
@@ -160,9 +177,19 @@ class Member(BaseModel):
         return f"<Member user_id={self.user_id} org_id={self.organization_id} role={self.role}>"
 
     @property
+    def is_owner(self) -> bool:
+        """Check if member has owner role"""
+        return self.role == MemberRole.OWNER
+
+    @property
     def is_admin(self) -> bool:
         """Check if member has admin role"""
         return self.role == MemberRole.ADMIN
+
+    @property
+    def is_editor(self) -> bool:
+        """Check if member has editor role"""
+        return self.role == MemberRole.EDITOR
 
     @property
     def is_viewer(self) -> bool:

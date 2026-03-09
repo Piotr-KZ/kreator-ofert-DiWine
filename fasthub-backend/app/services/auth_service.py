@@ -89,11 +89,11 @@ class AuthService:
         # Create organization if needed
         if organization_name:
             organization = await self.org_repo.create(name=organization_name, owner_id=user.id)
-            # Create member record (owner gets admin role in legacy system)
+            # Create member record (owner gets owner role)
             member = Member(
                 user_id=user.id,
                 organization_id=organization.id,
-                role=MemberRole.ADMIN
+                role=MemberRole.OWNER
             )
             self.db.add(member)
             await self.db.flush()
@@ -109,7 +109,7 @@ class AuthService:
                 owner_role_result = await self.db.execute(
                     select(Role).where(
                         Role.organization_id == organization.id,
-                        Role.name == "Owner",
+                        Role.name == "Właściciel",
                         Role.is_system == True,
                     )
                 )
