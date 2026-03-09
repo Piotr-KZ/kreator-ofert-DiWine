@@ -37,14 +37,17 @@ def upgrade():
     op.add_column('organizations', sa.Column('rodo_inspector_name', sa.String(255), nullable=True))
     op.add_column('organizations', sa.Column('rodo_inspector_email', sa.String(255), nullable=True))
 
-    # === 3. Expand MemberRole enum ===
+    # === 3. Drop redundant CHECK constraint (native PG enum enforces values) ===
+    op.execute("ALTER TABLE members DROP CONSTRAINT IF EXISTS ck_member_role")
+
+    # === 4. Expand MemberRole enum ===
     # PostgreSQL ALTER TYPE ADD VALUE cannot run inside a transaction
     op.execute("COMMIT")
     op.execute("ALTER TYPE memberrole ADD VALUE IF NOT EXISTS 'owner'")
     op.execute("ALTER TYPE memberrole ADD VALUE IF NOT EXISTS 'editor'")
     op.execute("BEGIN")
 
-    # === 4. Data migration: set owner role for org owners ===
+    # === 5. Data migration: set owner role for org owners ===
     op.execute("""
         UPDATE members m
         SET role = 'owner'
@@ -54,7 +57,7 @@ def upgrade():
           AND m.role = 'admin'
     """)
 
-    # === 5. Rename RBAC system roles ===
+    # === 6. Rename RBAC system roles ===
     op.execute("""
         UPDATE roles SET name = 'Właściciel', description = 'Pełna kontrola nad organizacją'
         WHERE name = 'Owner' AND is_system = true

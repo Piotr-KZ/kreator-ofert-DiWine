@@ -154,7 +154,7 @@ class Member(BaseModel):
 
     # Role within organization
     role = Column(
-        SQLEnum(MemberRole, name="memberrole", create_constraint=True, values_callable=lambda x: [e.value for e in x]),
+        SQLEnum(MemberRole, name="memberrole", create_constraint=False, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
         default=MemberRole.ADMIN,
         index=True
