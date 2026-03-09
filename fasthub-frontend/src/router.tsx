@@ -15,6 +15,7 @@ import UsersPage from './pages/UsersPage';
 import TeamPage from './pages/TeamPage';
 import BillingPage from './pages/BillingPage';
 import SettingsPage from './pages/SettingsPage';
+import AccountPage from './pages/AccountPage';
 
 // SuperAdmin pages
 import OrganizationsPage from './pages/superadmin/OrganizationsPage';
@@ -79,6 +80,10 @@ export const router = createBrowserRouter([
       {
         path: '/settings',
         element: <SettingsPage />,
+      },
+      {
+        path: '/account',
+        element: <AccountPage />,
       },
 
       // SuperAdmin routes
