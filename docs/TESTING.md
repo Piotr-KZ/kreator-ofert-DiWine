@@ -1,7 +1,7 @@
 # FastHub — Testy
 
-> 200 testow (151 unit + 49 integration), 100% PASS
-> CI: GitHub Actions (backend + frontend)
+> ~780 testow, CI: GitHub Actions (backend + frontend)
+> Stan: Po briefach 1-28
 
 ---
 
@@ -62,15 +62,18 @@ fasthub-backend/tests/
 │   └── test_users_api.py
 └── fixtures/                            # Shared fixtures
 
-tests/                                   # fasthub_core testy (root level, 22 pliki)
+tests/                                   # fasthub_core testy (root level, 25 plikow)
+├── test_2fa_sessions.py                 # Brief 26: TOTP, kody zapasowe, sesje (28 testow)
 ├── test_admin.py
 ├── test_audit_trail.py
 ├── test_auth_improvements.py
 ├── test_background_tasks.py
 ├── test_billing_system.py
 ├── test_contracts.py
+├── test_dunning_payments_webhooks.py    # Brief 27: dunning, platnosci, webhooks (28 testow)
 ├── test_events_bus.py
 ├── test_file_storage.py
+├── test_gus_integration.py             # Brief 25: GUS API, NIP lookup (9 testow)
 ├── test_infrastructure_redis.py
 ├── test_integrations_oauth.py
 ├── test_integrations_webhooks.py
@@ -152,3 +155,5 @@ ENVIRONMENT=testing
 - `test_subscriptions_api.py` jest ignorowany w CI (`--ignore`)
 - Rate limiter jest wylaczony w testach integracyjnych (fixture `async_client`)
 - Testy uzywaja TRUNCATE zamiast DROP/CREATE tabel — szybsze
+- Nowe testy z briefow 25-28 w katalogu `tests/` (root level): test_gus_integration.py, test_2fa_sessions.py, test_dunning_payments_webhooks.py
+- `gusregon` wymaga `PYTHONUTF8=1` na Windows (cp1250 encoding issue)

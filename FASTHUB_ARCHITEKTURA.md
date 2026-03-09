@@ -1,14 +1,14 @@
 # FastHub — Architektura Systemu
 
 > Dokument biznesowy dla wlasciciela i partnerow.
-> Wersja: 3.0 | Data: 2026-03-09
-> Stan: Po mergu briefow 1-21 + modernizacja frontendu + Brief 2 integracja
+> Wersja: 4.0 | Data: 2026-03-09
+> Stan: Po briefach 1-28 (extended models, GUS, 2FA, dunning, frontend konto)
 
 ---
 
 ## Co to jest FastHub
 
-FastHub to **platforma-fundament**, na ktorej buduje sie aplikacje biznesowe typu SaaS (oprogramowanie jako usluga). Zamiast budowac kazda nowa aplikacje od zera, masz gotowe "podwozie" — logowanie, organizacje, uprawnienia, powiadomienia, platnosci (5 bramek w tym polskie), bezpieczenstwo, RODO, szablony emaili, faktury. Nowa aplikacja doklada tylko swoja unikalna logike biznesowa.
+FastHub to **platforma-fundament**, na ktorej buduje sie aplikacje biznesowe typu SaaS (oprogramowanie jako usluga). Zamiast budowac kazda nowa aplikacje od zera, masz gotowe "podwozie" — logowanie (2FA, sesje), organizacje, uprawnienia, powiadomienia, platnosci (5 bramek w tym polskie), windykacja (dunning), bezpieczenstwo, RODO, szablony emaili, faktury, GUS API, webhooks. Nowa aplikacja doklada tylko swoja unikalna logike biznesowa.
 
 **Pierwsza aplikacja budowana na FastHub:** Kreator Stron WWW (WebCreator).
 
@@ -33,9 +33,9 @@ FastHub to **platforma-fundament**, na ktorej buduje sie aplikacje biznesowe typ
 ┌────────────────────▼────────────────────────────┐
 │              BACKEND (serwer API)                │
 │     FastAPI + fasthub_core (uniwersalny pakiet)  │
-│     21 modulow: auth, billing, RBAC, GDPR,      │
-│     platnosci, powiadomienia, email, social      │
-│     login, audit, integracje, KSeF.              │
+│     27+ modulow: auth (2FA, sesje), billing,     │
+│     RBAC, GDPR, platnosci, dunning, webhooks,   │
+│     GUS API, powiadomienia, email, social login. │
 └────────────────────┬────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────┐
@@ -53,6 +53,10 @@ FastHub to **platforma-fundament**, na ktorej buduje sie aplikacje biznesowe typ
 
 Uzytkownik moze sie zalogowac na 4 sposoby: email + haslo, magiczny link (bez hasla), przez Google, przez GitHub lub Microsoft. System pamięta sesje, chroni konto, szyfruje hasla.
 
+**2FA (Brief 26):** Opcjonalna weryfikacja dwuetapowa TOTP (Google Authenticator, Authy). Konfiguracja: QR code + klucz reczny. Kody zapasowe na wypadek utraty telefonu. Przy logowaniu z 2FA: tymczasowy token (5 min) → weryfikacja kodem → pelny dostep.
+
+**Zarzadzanie sesjami (Brief 26):** Uzytkownik widzi wszystkie aktywne sesje (urzadzenie, IP, ostatnia aktywnosc). Moze wylogowac konkretna sesje lub wszystkie jednoczesnie.
+
 Zabezpieczenia: haslo min 8 znakow z wielka litera i cyfra, blokada po 5 nieudanych probach, rate limiting na rejestracje i reset hasla. Tokeny JWT (30 min) z automatycznym odswiezaniem. Wylogowanie natychmiast uniewaznija token.
 
 ### 2. Social Login (Google, GitHub, Microsoft)
@@ -62,6 +66,8 @@ Uzytkownik klika "Zaloguj przez Google" — system przekierowuje do Google, uzyt
 ### 3. Organizacje i zespoly
 
 Firma zaklada organizacje, zaprasza pracownikow mailem, kazdy ma role. Mozna miec wiele organizacji na jednym koncie. System zaproszen: wpisz email → wyslij zaproszenie → osoba klika link → dolacza do firmy z przypisana rola.
+
+**Rejestracja rozszerzona (Brief 25):** Przy rejestracji firmy mozna podac NIP — system automatycznie pobiera dane z GUS/REGON (nazwa, adres, REGON, forma prawna). Pola organizacji: forma prawna, REGON, KRS, strona WWW, logo, inspektor RODO.
 
 4 poziomy ról: Wlasciciel (pelna kontrola), Admin (zarzadzanie), Edytor (tworzenie/edycja), Podglad (tylko czytanie). Mozna tworzyc wlasne role z dowolna kombinacja uprawnien.
 
@@ -83,7 +89,13 @@ System obsluguje platnosci przez WIELE bramek jednoczesnie. Klient widzi wszystk
 
 Wlasciciel aplikacji wlacza bramki podajac klucze API. System automatycznie pomija nieskonfigurowane. Metody platnosci sa deduplikowane — jesli PayU i Tpay obsluguja BLIK, pokazuje sie raz.
 
-**Subskrypcje:** Stripe i PayPal maja wbudowane subskrypcje. Polskie bramki (PayU, Tpay, P24) nie maja — system sam zarzadza cyklem: co miesiac generuje platnosc, sprawdza czy zaplacono, jesli nie — grace period, powiadomienie, blokada.
+**Subskrypcje:** Stripe i PayPal maja wbudowane subskrypcje. Polskie bramki (PayU, Tpay, P24) nie maja — system sam zarzadza cyklem: co miesiac generuje platnosc, sprawdza czy zaplacono, jesli nie — uruchamia sciezke windykacji (dunning).
+
+**Windykacja / Dunning (Brief 27):** Konfigurowalne sciezki odzyskiwania platnosci. Domyslna sciezka: 16 krokow od dnia 0 do 45 (przypomnienie email → ostrzezenie → proba ponownej platnosci → ograniczenie dostepu → blokada → degradacja planu → anulowanie subskrypcji). Admin moze tworzyc wlasne sciezki z 11 typami akcji. Pelna historia eventow windykacji.
+
+**Historia platnosci (Brief 27):** Kazda platnosc rejestrowana w tabeli payments (kwota, bramka, metoda, status). Uzytkownik widzi pelna historie w panelu konta.
+
+**Webhooks per organizacja (Brief 27):** Organizacja moze skonfigurowac URL do otrzymywania webhookow o 13 typach eventow (platnosc, subskrypcja, faktura, zespol, plan). Podpis HMAC-SHA256, rotacja klucza, auto-disable po 10 kolejnych bledach, historia dostaw.
 
 ### 6. Faktury i KSeF
 
@@ -137,33 +149,37 @@ Szyfrowanie danych wrazliwych (Fernet AES), ochrona przed atakami (XSS, clickjac
 ## Jak to wyglada dla uzytkownika
 
 ```
-Logowanie / Rejestracja / Social Login (Google/GitHub/Microsoft)
+Logowanie / Rejestracja (+ GUS) / Social Login / 2FA
          │
          ▼
     Dashboard
     (statystyki, aktywnosc)
          │
-    ┌────┼────────────┬──────────┬──────────────┐
-    │    │             │          │              │
-    ▼    ▼             ▼          ▼              ▼
-  Zespol  Ustawienia   Billing   Faktury     Super Admin
-  (czlonkowie, (profil,  (plany,  (historia,  (organizacje,
-  zapraszanie, firma,    bramki,  PDF)        metryki,
-  role)        haslo,    status)               uzytkownicy)
-               RODO)
+    ┌────┼──────────────┬──────────────────────┐
+    │    │               │                      │
+    ▼    ▼               ▼                      ▼
+  Zespol  Konto (9 tab)  Billing            Super Admin
+  (czlon- (profil, firma, (plany, bramki,   (organizacje,
+  kowie,  plan, platnosci, checkout, status) metryki,
+  zapra-  faktury, 2FA,                      uzytkownicy,
+  szanie, sesje, zespol,                     dunning paths)
+  role)   powiadomienia,
+          API/webhooks)
 ```
 
 ---
 
 ## Co jest gotowe — pelna lista
 
-### Backend (fasthub_core) — 21 modulow
+### Backend (fasthub_core) — 27+ modulow
 | Modul | Opis | Brief |
 |-------|------|-------|
 | Auth | JWT, bcrypt, blacklist, magic link, weryfikacja email | 1-9 |
+| 2FA / TOTP | Weryfikacja dwuetapowa, QR code, kody zapasowe | 26 |
+| Session Management | Sledzenie sesji (device, IP), wylogowanie zdalne | 26 |
 | Social Login | Google, GitHub, Microsoft OAuth | 18 |
-| Users & Organizations | Multi-org, zaproszenia, role | 1-9, 19 |
-| RBAC | Role, uprawnienia, custom roles per organizacja | 1-9 |
+| Users & Organizations | Multi-org, zaproszenia, role, rozszerzone pola | 1-9, 19, 24 |
+| RBAC | 4 role systemowe (Wlasciciel/Admin/Edytor/Podglad), custom roles | 1-9, 24 |
 | Audit Trail | Historia zmian, before/after, IP tracking | 1-9 |
 | Notifications | In-app + email, preferencje, 8 typow | 1-9 |
 | WebSocket | Real-time, per user/org/broadcast | 1-9 |
@@ -171,8 +187,12 @@ Logowanie / Rejestracja / Social Login (Google/GitHub/Microsoft)
 | Event Bus | Pub/sub z wildcard matching | 10 |
 | Encryption | Fernet AES, key rotation, masking | 10 |
 | OAuth | PKCE, multi-provider, token storage | 10 |
-| Webhooks | HMAC signatures, deduplication | 10 |
+| Webhooks (system) | HMAC signatures, deduplication | 10 |
+| Webhooks (per org) | Konfigurowalne endpointy per organizacja, 13 typow eventow | 27 |
 | Billing | Plany, addony, usage tracking, limity | 10 |
+| Dunning | Konfigurowalne sciezki windykacji, 11 typow akcji, historia | 27 |
+| Payment History | Rejestracja i historia platnosci per organizacja | 27 |
+| GUS API | Pobieranie danych firm z GUS/REGON po NIP | 25 |
 | Monitoring | Sentry, structured logging | 13 |
 | Rate Limiting | Per-endpoint, Redis/memory | 13 |
 | Health Checks | /health, /ready, custom checks | 13 |
@@ -187,7 +207,7 @@ Logowanie / Rejestracja / Social Login (Google/GitHub/Microsoft)
 | GDPR | Eksport danych, anonimizacja, deletion workflow | 18 |
 | KSeF | Krajowy System e-Faktur (przygotowanie) | 21 |
 | Shared Clients | HTTP clients: Stripe, Fakturownia, PayU, Tpay, P24, PayPal | 16, 20 |
-| RecurringManager | Cykliczne platnosci dla polskich bramek | 20 |
+| RecurringManager | Cykliczne platnosci, delegacja do DunningService | 20, 27 |
 
 ### Frontend
 | Element | Opis |
@@ -195,12 +215,14 @@ Logowanie / Rejestracja / Social Login (Google/GitHub/Microsoft)
 | Design system | Tailwind CSS + Outfit font + wlasne komponenty (Btn, Fld, Tile, Chk, Rad, Toggle, SectionCard, StatusBadge, Lbl) |
 | Layouty | AppShell (ciemny header + sidebar), SidebarLayout (taby), WizardLayout (kreator krokowy) |
 | Konfiguracja | app.config.ts — nazwa, logo, kolory, URL-e w jednym pliku |
-| Strony | Login, Register, Dashboard, Team, Settings, Billing, Onboarding, Users, SuperAdmin |
+| Strony | Login, Register, Dashboard, Team, Billing, Onboarding, Users, **AccountPage (9 zakladek)**, SuperAdmin |
+| Panel Konto (Brief 28) | 9 zakladek: Profil, Firma (+ GUS lookup), Plan, Platnosci, Faktury, Bezpieczenstwo (2FA, sesje), Zespol, Powiadomienia, API/Webhooks |
+| Rejestracja (Brief 25) | Rozszerzona rejestracja z NIP → auto-uzupelnianie danych z GUS |
 | Stan | Zustand stores (auth, org, billing) |
-| API client | Axios z auto-refresh tokenow |
+| API client | Axios z auto-refresh tokenow + account.ts (2FA, sesje, GUS, webhooks, payments) |
 
 ### Testy
-200 testow (151 unit + 49 integration), 0 regresji.
+~780 testow, CI: GitHub Actions (backend + frontend).
 
 ---
 
@@ -211,8 +233,8 @@ Logowanie / Rejestracja / Social Login (Google/GitHub/Microsoft)
 3. **Zgodnosc z prawem:** RODO, KSeF ready, polskie faktury VAT
 4. **Elastycznosc:** Kazdy modul wymienny (storage: local→S3, task queue: sync→ARQ, bramka: Stripe→PayU)
 5. **Skalowalnosc:** Od startupu do enterprise
-6. **Przetestowane:** 200+ testow, CI/CD ready
+6. **Przetestowane:** 780+ testow, CI/CD ready
 
 ---
 
-*FastHub v3.0 | Zaktualizowane 2026-03-09 | Po mergu briefow 1-21 + modernizacja frontendu*
+*FastHub v4.0 | Zaktualizowane 2026-03-09 | Po briefach 1-28*
