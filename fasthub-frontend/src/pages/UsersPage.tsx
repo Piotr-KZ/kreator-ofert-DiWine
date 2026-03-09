@@ -16,7 +16,7 @@ export default function UsersPage() {
   // Edit modal
   const [editOpen, setEditOpen] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
-  const [editForm, setEditForm] = useState({ full_name: "", email: "", is_superuser: false, position: "" });
+  const [editForm, setEditForm] = useState({ full_name: "", email: "", is_superuser: false });
   const [editLoading, setEditLoading] = useState(false);
 
   // Delete confirm
@@ -48,7 +48,6 @@ export default function UsersPage() {
       full_name: user.full_name || "",
       email: user.email || "",
       is_superuser: user.is_superuser || false,
-      position: user.position || "",
     });
     setEditOpen(true);
   };
@@ -112,7 +111,6 @@ export default function UsersPage() {
               <tr className="border-b border-gray-200 bg-gray-50">
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Name</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Super Admin</th>
-                <th className="text-left px-4 py-3 font-medium text-gray-600">Position</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Status</th>
                 <th className="text-left px-4 py-3 font-medium text-gray-600">Created</th>
                 <th className="text-right px-4 py-3 font-medium text-gray-600">Actions</th>
@@ -121,7 +119,7 @@ export default function UsersPage() {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={5} className="px-4 py-12 text-center text-gray-400">
                     <div className="flex justify-center">
                       <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600" />
                     </div>
@@ -129,7 +127,7 @@ export default function UsersPage() {
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className="px-4 py-12 text-center text-gray-400">
+                  <td colSpan={5} className="px-4 py-12 text-center text-gray-400">
                     No users found
                   </td>
                 </tr>
@@ -145,7 +143,6 @@ export default function UsersPage() {
                         {u.is_superuser ? "YES" : "NO"}
                       </StatusBadge>
                     </td>
-                    <td className="px-4 py-3 text-gray-600">{u.position || "—"}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1.5">
                         <StatusBadge variant={u.is_active ? "success" : "error"}>
@@ -253,11 +250,6 @@ export default function UsersPage() {
               <option value="true">Yes — Super Admin (Global Access)</option>
             </select>
           </div>
-          <Fld
-            label="Position"
-            value={editForm.position}
-            onChange={(v) => setEditForm((f) => ({ ...f, position: v }))}
-          />
         </form>
       </Modal>
 

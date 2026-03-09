@@ -1,17 +1,36 @@
 import { apiClient } from './client';
-import { Subscription, Invoice } from '../types/models';
+import { Invoice, BillingPlan } from '../types/models';
 
 export const billingApi = {
-  // Adjusted endpoint names based on backend
+  // Subscription
   getSubscription: () =>
-    apiClient.get<Subscription>('/subscriptions/current'),
+    apiClient.get('/billing/subscription'),
 
-  upgrade: (plan: string) =>
-    apiClient.post<{ checkout_url: string }>('/subscriptions/change-plan', { plan }),
+  // Usage
+  getUsage: () =>
+    apiClient.get('/billing/usage'),
 
-  cancel: () =>
-    apiClient.post('/subscriptions/cancel'),
+  // Stripe Checkout (create payment session)
+  createCheckout: (priceId: string, successUrl: string, cancelUrl: string) =>
+    apiClient.post('/billing/checkout', {
+      price_id: priceId,
+      success_url: successUrl,
+      cancel_url: cancelUrl,
+    }),
 
+  // Stripe Customer Portal
+  createPortal: (returnUrl: string) =>
+    apiClient.post('/billing/portal', { return_url: returnUrl }),
+
+  // Catalog — plans (public)
+  getPlans: () =>
+    apiClient.get<BillingPlan[]>('/catalog/plans'),
+
+  // Catalog — addons (public)
+  getAddons: (plan?: string) =>
+    apiClient.get('/catalog/addons', { params: plan ? { plan } : {} }),
+
+  // Invoices (existing endpoints)
   listInvoices: () =>
     apiClient.get<Invoice[]>('/invoices/'),
 
@@ -21,9 +40,7 @@ export const billingApi = {
   getInvoicePdf: (id: string) =>
     apiClient.get(`/invoices/${id}/pdf`, { responseType: 'blob' }),
 
-  getBillingPortal: () =>
-    apiClient.get<{ url: string }>('/subscriptions/billing-portal'),
-
-  checkInvoice: () =>
-    apiClient.get('/subscriptions/invoice/check'),
+  // Subscription status (existing endpoint)
+  getSubscriptionStatus: () =>
+    apiClient.get('/subscription/status'),
 };

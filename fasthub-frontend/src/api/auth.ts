@@ -1,33 +1,8 @@
 import { apiClient } from './client';
 import { User } from '../types/models';
+import { LoginRequest, LoginResponse, RegisterRequest } from '../types/api';
 
-export interface LoginRequest {
-  email: string;
-  password: string;
-}
-
-export interface LoginResponse {
-  access_token: string;
-  refresh_token: string;
-  token_type: string;
-  expires_in: number;
-}
-
-export interface RegisterRequest {
-  email: string;
-  password: string;
-  full_name: string;
-  organization: {
-    name: string;
-    type: 'business' | 'individual';
-    nip?: string;
-    billing_street: string;
-    billing_city: string;
-    billing_postal_code: string;
-    billing_country: string;
-    phone?: string;
-  };
-}
+export type { LoginRequest, LoginResponse, RegisterRequest };
 
 export const authApi = {
   login: (data: LoginRequest) =>
@@ -48,7 +23,6 @@ export const authApi = {
   verifyEmail: (token: string) =>
     apiClient.post('/auth/verify-email', { token }),
 
-  // Adjusted endpoint names based on backend
   forgotPassword: (email: string) =>
     apiClient.post('/auth/password-reset/request', { email }),
 
@@ -63,5 +37,5 @@ export const authApi = {
     apiClient.post('/auth/magic-link/send', { email }),
 
   verifyMagicLink: (token: string) =>
-    apiClient.get(`/auth/magic-link/verify?token=${token}`),
+    apiClient.post('/auth/magic-link/verify', { token }),
 };

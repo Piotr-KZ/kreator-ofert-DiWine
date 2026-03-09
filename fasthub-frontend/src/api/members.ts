@@ -1,46 +1,35 @@
 import { apiClient } from './client';
-import { Member, MemberWithUser, MemberRole } from '../types/models';
+import { Member } from '../types/models';
+import { InviteMemberRequest, ChangeMemberRoleRequest, MemberListResponse } from '../types/api';
 
-export interface InviteMemberRequest {
-  user_id: string;
-  role: MemberRole;
-}
-
-export interface ChangeMemberRoleRequest {
-  role: MemberRole;
-}
-
-export interface MemberListResponse {
-  members: MemberWithUser[];
-  total: number;
-}
+export type { InviteMemberRequest, ChangeMemberRoleRequest, MemberListResponse };
 
 export const membersApi = {
   /**
-   * Invite a user to an organization
-   * POST /organizations/{organization_id}/members/invite
+   * Invite a user to an organization by email
+   * POST /organizations/{organization_id}/members
    */
   invite: (organizationId: string, data: InviteMemberRequest) =>
-    apiClient.post<Member>(`/members/organizations/${organizationId}/members/invite`, data),
+    apiClient.post<Member>(`/organizations/${organizationId}/members`, data),
 
   /**
    * List all members of an organization
    * GET /organizations/{organization_id}/members
    */
-  list: (organizationId: string) =>
-    apiClient.get<MemberListResponse>(`/members/organizations/${organizationId}/members`),
+  list: (organizationId: string, params?: { page?: number; per_page?: number; search?: string; role?: string }) =>
+    apiClient.get<MemberListResponse>(`/organizations/${organizationId}/members`, { params }),
 
   /**
    * Remove a member from an organization
-   * DELETE /organizations/{organization_id}/members/{user_id}
+   * DELETE /members/{member_id} (uses member UUID, NOT user_id)
    */
-  remove: (organizationId: string, userId: string) =>
-    apiClient.delete(`/members/organizations/${organizationId}/members/${userId}`),
+  remove: (memberId: string) =>
+    apiClient.delete(`/members/${memberId}`),
 
   /**
    * Change a member's role in an organization
-   * PATCH /organizations/{organization_id}/members/{user_id}/role
+   * PATCH /members/{member_id} (uses member UUID, NOT user_id)
    */
-  changeRole: (organizationId: string, userId: string, data: ChangeMemberRoleRequest) =>
-    apiClient.patch<Member>(`/members/organizations/${organizationId}/members/${userId}/role`, data),
+  changeRole: (memberId: string, data: ChangeMemberRoleRequest) =>
+    apiClient.patch<Member>(`/members/${memberId}`, data),
 };

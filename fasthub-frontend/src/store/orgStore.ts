@@ -23,9 +23,13 @@ export const useOrgStore = create<OrgState>((set, get) => ({
     set({ isLoading: true, error: null });
     try {
       const { data } = await organizationsApi.getMe();
-      set({ 
-        organization: data, 
-        isLoading: false 
+      // Persist org ID for API interceptor (X-Organization-Id header)
+      if (data?.id) {
+        localStorage.setItem('current_organization_id', data.id);
+      }
+      set({
+        organization: data,
+        isLoading: false
       });
     } catch (error: any) {
       set({ 

@@ -57,7 +57,16 @@ class UserResponse(UserBase):
     is_active: bool
     is_verified: bool
     is_superuser: bool
+    is_superadmin: bool = False
+    is_email_verified: bool = False
+    email_verified_at: Optional[datetime] = None
+    google_id: Optional[str] = None
+    github_id: Optional[str] = None
+    microsoft_id: Optional[str] = None
+    oauth_provider: Optional[str] = None
+    avatar_url: Optional[str] = None
     created_at: datetime
+    updated_at: Optional[datetime] = None
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -239,7 +239,7 @@ async def list_members(
 
 @router.delete("/members/{member_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def remove_member(
-    member_id: int,
+    member_id: UUID,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -287,7 +287,7 @@ async def remove_member(
 
 @router.patch("/members/{member_id}", response_model=MemberResponse)
 async def update_member_role(
-    member_id: int,
+    member_id: UUID,
     member_update: MemberUpdate,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),

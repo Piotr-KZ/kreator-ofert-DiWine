@@ -158,7 +158,6 @@ async def list_organizations(
             "billing_country": org.billing_country,
             "email": org.email,
             "phone": org.phone,
-            "logo_url": org.logo_url,
             "created_at": org.created_at.isoformat() if org.created_at else None,
             "updated_at": org.updated_at.isoformat() if org.updated_at else None,
             "users_count": users_count,
