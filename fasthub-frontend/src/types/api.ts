@@ -25,6 +25,15 @@ export interface RegisterRequest {
   email: string;
   password: string;
   full_name: string;
+  organization_name?: string;
+  account_type?: 'business' | 'individual';
+  nip?: string;
+  regon?: string;
+  krs?: string;
+  legal_form?: string;
+  street?: string;
+  city?: string;
+  postal_code?: string;
 }
 
 // Members
