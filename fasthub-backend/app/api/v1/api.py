@@ -14,8 +14,10 @@ from app.api.v1.endpoints import (
     invoices,
     members,
     organizations,
+    sessions,
     subscription_status,
     token_admin,
+    two_factor,
     users,
 )
 from fasthub_core.billing.api import router as billing_router
@@ -34,6 +36,8 @@ api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 api_router.include_router(token_admin.router, prefix="/admin/tokens", tags=["Token Admin"])
 api_router.include_router(api_tokens.router, prefix="/api-tokens", tags=["API Tokens"])
 api_router.include_router(gus.router, prefix="", tags=["GUS"])
+api_router.include_router(two_factor.router, prefix="/auth", tags=["2FA"])
+api_router.include_router(sessions.router, prefix="/auth", tags=["Sessions"])
 api_router.include_router(health.router, prefix="", tags=["Health"])
 api_router.include_router(subscription_status.router, prefix="", tags=["Subscription Status"])
 api_router.include_router(rbac_router, prefix="", tags=["RBAC"])

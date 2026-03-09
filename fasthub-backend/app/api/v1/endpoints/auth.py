@@ -68,7 +68,7 @@ async def register(
     )
 
 
-@router.post("/login", response_model=TokenResponse)
+@router.post("/login")
 @limiter.limit(RateLimits.AUTH_LOGIN)
 async def login(
     request: Request,
@@ -80,13 +80,47 @@ async def login(
     Login user
 
     Authenticates user with email and password.
-    Returns access and refresh tokens.
+    If 2FA enabled, returns temp_token instead of full tokens.
     """
     auth_service = AuthService(db)
 
     user, access_token, refresh_token = await auth_service.login(
         email=credentials.email, password=credentials.password
     )
+
+    # If 2FA is enabled, return temp token instead
+    if getattr(user, "totp_enabled", False):
+        from app.core.security import create_2fa_temp_token
+        temp_token = create_2fa_temp_token(user.id)
+        return {"requires_2fa": True, "temp_token": temp_token}
+
+    # Create session record
+    try:
+        from fasthub_core.auth.device_parser import parse_device
+        from fasthub_core.auth.session_models import UserSession
+        from app.core.security import decode_refresh_token as _decode_rt
+        from datetime import datetime, timedelta
+
+        device = parse_device(request.headers.get("User-Agent", ""))
+        rt_payload = _decode_rt(refresh_token)
+        jti = rt_payload.get("jti", "") if rt_payload else ""
+
+        session = UserSession(
+            user_id=user.id,
+            token_jti=jti,
+            device_type=device["device_type"],
+            device_name=device["device_name"],
+            browser=device["browser"],
+            os=device["os"],
+            ip_address=request.client.host if request.client else None,
+            is_active=True,
+            last_active_at=datetime.utcnow(),
+            expires_at=datetime.utcnow() + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        )
+        db.add(session)
+        await db.commit()
+    except Exception:
+        pass  # Session tracking failure should not block login
 
     return TokenResponse(
         access_token=access_token,
