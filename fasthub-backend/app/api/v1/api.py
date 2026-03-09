@@ -9,6 +9,7 @@ from app.api.v1.endpoints import (
     admin,
     api_tokens,
     auth,
+    gus,
     health,
     invoices,
     members,
@@ -32,6 +33,7 @@ api_router.include_router(invoices.router, prefix="/invoices", tags=["Invoices"]
 api_router.include_router(admin.router, prefix="/admin", tags=["Admin"])
 api_router.include_router(token_admin.router, prefix="/admin/tokens", tags=["Token Admin"])
 api_router.include_router(api_tokens.router, prefix="/api-tokens", tags=["API Tokens"])
+api_router.include_router(gus.router, prefix="", tags=["GUS"])
 api_router.include_router(health.router, prefix="", tags=["Health"])
 api_router.include_router(subscription_status.router, prefix="", tags=["Subscription Status"])
 api_router.include_router(rbac_router, prefix="", tags=["RBAC"])

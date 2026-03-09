@@ -50,6 +50,14 @@ async def register(
         password=user_data.password,
         full_name=user_data.full_name,
         organization_name=user_data.organization_name,
+        account_type=user_data.account_type,
+        nip=user_data.nip,
+        regon=user_data.regon,
+        krs=user_data.krs,
+        legal_form=user_data.legal_form,
+        street=user_data.street,
+        city=user_data.city,
+        postal_code=user_data.postal_code,
     )
 
     return TokenResponse(

@@ -18,6 +18,16 @@ class UserRegister(BaseModel):
     full_name: Optional[str] = Field(None, max_length=255)
     organization_name: Optional[str] = Field(None, max_length=255)
 
+    # Extended company fields (Brief 25 — GUS)
+    account_type: Optional[str] = Field(None, pattern="^(business|individual)$")
+    nip: Optional[str] = Field(None, max_length=50)
+    regon: Optional[str] = Field(None, max_length=20)
+    krs: Optional[str] = Field(None, max_length=20)
+    legal_form: Optional[str] = Field(None, max_length=100)
+    street: Optional[str] = Field(None, max_length=255)
+    city: Optional[str] = Field(None, max_length=100)
+    postal_code: Optional[str] = Field(None, max_length=20)
+
     @field_validator("password")
     @classmethod
     def validate_password_strength(cls, v: str) -> str:

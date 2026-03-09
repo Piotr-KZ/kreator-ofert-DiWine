@@ -166,6 +166,9 @@ class Settings(BaseSettings):
     INVOICE_SELLER_ADDRESS: str = ""
     INVOICE_BANK_ACCOUNT: str = ""
 
+    # GUS REGON API
+    GUS_API_KEY: Optional[str] = None  # Brak = sandbox mode (do testów)
+
     # GDPR
     GDPR_DELETION_GRACE_DAYS: int = 14
     GDPR_EXPORT_FORMAT: str = "json"  # json (csv planned)

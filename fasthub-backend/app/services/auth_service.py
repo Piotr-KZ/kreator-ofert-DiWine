@@ -54,6 +54,14 @@ class AuthService:
         password: str,
         full_name: Optional[str] = None,
         organization_name: Optional[str] = None,
+        account_type: Optional[str] = None,
+        nip: Optional[str] = None,
+        regon: Optional[str] = None,
+        krs: Optional[str] = None,
+        legal_form: Optional[str] = None,
+        street: Optional[str] = None,
+        city: Optional[str] = None,
+        postal_code: Optional[str] = None,
     ) -> Tuple[User, str, str]:
         """
         Register new user with organization
@@ -89,6 +97,24 @@ class AuthService:
         # Create organization if needed
         if organization_name:
             organization = await self.org_repo.create(name=organization_name, owner_id=user.id)
+            # Set extended company fields from GUS / registration
+            if account_type:
+                organization.type = account_type
+            if nip:
+                organization.nip = nip
+            if regon:
+                organization.regon = regon
+            if krs:
+                organization.krs = krs
+            if legal_form:
+                organization.legal_form = legal_form
+            if street:
+                organization.billing_street = street
+            if city:
+                organization.billing_city = city
+            if postal_code:
+                organization.billing_postal_code = postal_code
+            await self.db.flush()
             # Create member record (owner gets owner role)
             member = Member(
                 user_id=user.id,
