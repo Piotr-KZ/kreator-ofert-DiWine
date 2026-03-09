@@ -9,16 +9,19 @@ from app.api.v1.endpoints import (
     admin,
     api_tokens,
     auth,
+    dunning,
     gus,
     health,
     invoices,
     members,
     organizations,
+    payments,
     sessions,
     subscription_status,
     token_admin,
     two_factor,
     users,
+    webhook_config,
 )
 from fasthub_core.billing.api import router as billing_router
 from fasthub_core.rbac import rbac_router
@@ -38,6 +41,9 @@ api_router.include_router(api_tokens.router, prefix="/api-tokens", tags=["API To
 api_router.include_router(gus.router, prefix="", tags=["GUS"])
 api_router.include_router(two_factor.router, prefix="/auth", tags=["2FA"])
 api_router.include_router(sessions.router, prefix="/auth", tags=["Sessions"])
+api_router.include_router(dunning.router, prefix="/admin", tags=["Dunning"])
+api_router.include_router(payments.router, prefix="/billing", tags=["Payments"])
+api_router.include_router(webhook_config.router, prefix="", tags=["Webhooks"])
 api_router.include_router(health.router, prefix="", tags=["Health"])
 api_router.include_router(subscription_status.router, prefix="", tags=["Subscription Status"])
 api_router.include_router(rbac_router, prefix="", tags=["RBAC"])
