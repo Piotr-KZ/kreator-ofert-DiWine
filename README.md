@@ -1,6 +1,6 @@
 # FastHub — SaaS Boilerplate
 
-Production-ready platforma do budowy aplikacji SaaS. Gotowe "podwozie": auth, organizacje, RBAC, platnosci (5 bramek w tym polskie), RODO, powiadomienia, faktury, multi-tenancy.
+Production-ready platforma do budowy aplikacji SaaS. Gotowe "podwozie": auth (2FA, sesje), organizacje (GUS API), RBAC, platnosci (5 bramek w tym polskie), windykacja (dunning), webhooks, RODO, powiadomienia, faktury, multi-tenancy.
 
 **Pierwsza aplikacja na FastHub:** Kreator Stron WWW (WebCreator).
 
@@ -42,7 +42,7 @@ Opcjonalne zmienne: `STRIPE_SECRET_KEY`, `SENDGRID_API_KEY`, `SENTRY_DSN`, `GOOG
 
 | Warstwa | Technologie |
 |---------|------------|
-| Backend | FastAPI 0.104+, Python 3.11+, fasthub_core (21 modulow) |
+| Backend | FastAPI 0.104+, Python 3.11+, fasthub_core (27+ modulow) |
 | Baza danych | PostgreSQL 15, Redis 7, Alembic (migracje) |
 | Frontend | React 19, TypeScript, Tailwind CSS 4, Vite 7, Zustand 5 |
 | DevOps | Docker + Docker Compose, GitHub Actions CI/CD |
@@ -53,15 +53,15 @@ Opcjonalne zmienne: `STRIPE_SECRET_KEY`, `SENDGRID_API_KEY`, `SENTRY_DSN`, `GOOG
 
 ```
 Fasthub/
-├── fasthub_core/               # Uniwersalny pakiet SaaS (21 modulow)
+├── fasthub_core/               # Uniwersalny pakiet SaaS (27+ modulow)
 ├── fasthub-backend/            # FastAPI backend
 │   ├── app/                    # Kod aplikacji (API, modele, schematy, serwisy)
 │   ├── alembic/                # Migracje bazy danych
 │   └── tests/                  # Unit + integration testy
 ├── fasthub-frontend/           # React frontend
-│   ├── src/pages/              # Strony (Login, Dashboard, Team, Settings, Billing...)
-│   ├── src/components/         # UI components (Btn, Fld, Tile, SectionCard...)
-│   ├── src/api/                # API client (Axios + auto-refresh tokenow)
+│   ├── src/pages/              # Strony (Login, Dashboard, Team, Billing, AccountPage z 9 zakladkami...)
+│   ├── src/components/         # UI components (Btn, Fld, Tile, SectionCard, GUSLookup...)
+│   ├── src/api/                # API client (Axios + auto-refresh tokenow, account, gus)
 │   └── src/store/              # Zustand stores (auth, org, billing)
 ├── docker-compose.yml          # Docker orchestration
 ├── FASTHUB_DOKUMENTACJA_AI.md  # Dokumentacja techniczna (dla AI i programistow)
@@ -102,7 +102,7 @@ pytest tests/integration/ -v
 cd fasthub-frontend && npm run build
 ```
 
-200 testow (151 unit + 49 integration), 100% PASS. CI: GitHub Actions.
+~780 testow, CI: GitHub Actions (backend + frontend).
 
 Szczegoly: [docs/TESTING.md](docs/TESTING.md)
 
@@ -124,4 +124,4 @@ MIT License
 
 ---
 
-*FastHub v3.0 | 2026-03-09 | Built by Piotr-KZ*
+*FastHub v4.0 | 2026-03-09 | Built by Piotr-KZ*
