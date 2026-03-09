@@ -27,6 +27,21 @@ class RBACService:
         Sprawdza czy user ma dane uprawnienie w organizacji.
         Używane jako: if await rbac.check_permission(user.id, org.id, "processes.edit"):
         """
+        # Owner shortcut: Właściciel always has all permissions
+        owner_name = SYSTEM_ROLES["owner"]["name"]
+        owner_check = await self.db.execute(
+            select(Role)
+            .join(UserRole, UserRole.role_id == Role.id)
+            .where(
+                UserRole.user_id == user_id,
+                UserRole.organization_id == organization_id,
+                Role.name == owner_name,
+                Role.is_system == True,
+            )
+        )
+        if owner_check.scalar_one_or_none():
+            return True
+
         permissions = await self.get_user_permissions(user_id, organization_id)
         return permission in permissions
 
@@ -142,13 +157,33 @@ class RBACService:
         await self.db.flush()
         return role
 
+    async def update_role(
+        self, role_id: UUID, name: Optional[str] = None, description: Optional[str] = None
+    ) -> Role:
+        """Aktualizuj nazwę/opis roli (blokada dla Właściciela)"""
+        role = await self.db.get(Role, role_id)
+        if not role:
+            raise ValueError("Rola nie znaleziona")
+        owner_name = SYSTEM_ROLES["owner"]["name"]
+        if role.is_system and role.name == owner_name:
+            raise ValueError("Nie można modyfikować roli Właściciel")
+        if name is not None:
+            role.name = name
+        if description is not None:
+            role.description = description
+        await self.db.flush()
+        return role
+
     async def update_role_permissions(
         self, role_id: UUID, permission_names: List[str]
     ) -> None:
-        """Nadpisz permissions roli (usuń stare, dodaj nowe)"""
+        """Nadpisz permissions roli (usuń stare, dodaj nowe). Edytowalne dla wszystkich ról oprócz Właściciela."""
         role = await self.db.get(Role, role_id)
-        if role and role.is_system:
-            raise ValueError("Nie można modyfikować uprawnień roli systemowej")
+        if not role:
+            raise ValueError("Rola nie znaleziona")
+        owner_name = SYSTEM_ROLES["owner"]["name"]
+        if role.is_system and role.name == owner_name:
+            raise ValueError("Nie można modyfikować uprawnień roli Właściciel")
 
         # Usuń stare
         await self.db.execute(

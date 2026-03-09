@@ -50,6 +50,12 @@ class OrganizationUpdate(BaseModel):
     billing_city: Optional[str] = Field(None, max_length=100)
     billing_postal_code: Optional[str] = Field(None, max_length=20)
     billing_country: Optional[str] = Field(None, max_length=100)
+    legal_form: Optional[str] = Field(None, max_length=100)
+    regon: Optional[str] = Field(None, max_length=20)
+    krs: Optional[str] = Field(None, max_length=20)
+    website: Optional[str] = Field(None, max_length=500)
+    rodo_inspector_name: Optional[str] = Field(None, max_length=255)
+    rodo_inspector_email: Optional[str] = Field(None, max_length=255)
 
     @field_validator('name')
     @classmethod
@@ -132,6 +138,12 @@ class OrganizationComplete(BaseModel):
     billing_city: str = Field(..., min_length=1, max_length=100)
     billing_postal_code: str = Field(..., min_length=1, max_length=20)
     billing_country: str = Field(..., min_length=1, max_length=100)
+    legal_form: Optional[str] = Field(None, max_length=100)
+    regon: Optional[str] = Field(None, max_length=20)
+    krs: Optional[str] = Field(None, max_length=20)
+    website: Optional[str] = Field(None, max_length=500)
+    rodo_inspector_name: Optional[str] = Field(None, max_length=255)
+    rodo_inspector_email: Optional[str] = Field(None, max_length=255)
 
     @field_validator("nip")
     @classmethod
@@ -198,6 +210,13 @@ class OrganizationResponse(OrganizationBase):
     billing_city: Optional[str]
     billing_postal_code: Optional[str]
     billing_country: Optional[str]
+    legal_form: Optional[str] = None
+    regon: Optional[str] = None
+    krs: Optional[str] = None
+    website: Optional[str] = None
+    logo_url: Optional[str] = None
+    rodo_inspector_name: Optional[str] = None
+    rodo_inspector_email: Optional[str] = None
     is_complete: bool
     created_at: datetime
     updated_at: datetime

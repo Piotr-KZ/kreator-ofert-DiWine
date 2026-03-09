@@ -91,6 +91,15 @@ class UserService:
             user.email = user_update.email
             user.is_verified = False  # Require re-verification
 
+        if user_update.phone is not None:
+            user.phone = user_update.phone
+        if user_update.position is not None:
+            user.position = user_update.position
+        if user_update.language is not None:
+            user.language = user_update.language
+        if user_update.timezone is not None:
+            user.timezone = user_update.timezone
+
         if user_update.is_active is not None:
             # Only admins can activate/deactivate users
             if not current_user.is_superuser:

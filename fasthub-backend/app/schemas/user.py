@@ -33,6 +33,10 @@ class UserUpdate(BaseModel):
     full_name: Optional[str] = None
     email: Optional[EmailStr] = None
     is_active: Optional[bool] = None
+    phone: Optional[str] = None
+    position: Optional[str] = None
+    language: Optional[str] = None
+    timezone: Optional[str] = None
 
     @field_validator('full_name')
     @classmethod
@@ -65,6 +69,10 @@ class UserResponse(UserBase):
     microsoft_id: Optional[str] = None
     oauth_provider: Optional[str] = None
     avatar_url: Optional[str] = None
+    phone: Optional[str] = None
+    position: Optional[str] = None
+    language: Optional[str] = None
+    timezone: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
 

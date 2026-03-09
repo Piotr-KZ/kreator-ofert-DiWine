@@ -13,12 +13,16 @@ export interface User {
   microsoft_id?: string;
   oauth_provider?: string;
   avatar_url?: string;
+  phone?: string;
+  position?: string;
+  language?: string;
+  timezone?: string;
   created_at: string;
   updated_at: string;
 }
 
 // Member role within an organization
-export type MemberRole = 'admin' | 'viewer';
+export type MemberRole = 'owner' | 'admin' | 'editor' | 'viewer';
 
 // Member represents user's membership in an organization
 export interface Member {
@@ -52,6 +56,13 @@ export interface Organization {
   billing_city?: string;
   billing_postal_code?: string;
   billing_country?: string;
+  legal_form?: string;
+  regon?: string;
+  krs?: string;
+  website?: string;
+  logo_url?: string;
+  rodo_inspector_name?: string;
+  rodo_inspector_email?: string;
   stripe_customer_id?: string;
   created_at: string;
   updated_at: string;

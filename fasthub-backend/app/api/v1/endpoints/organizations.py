@@ -4,7 +4,7 @@ API routes for organization operations
 """
 
 from uuid import UUID
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import (
@@ -39,11 +39,11 @@ async def create_organization(
         owner_id=current_user.id,
     )
     
-    # Create owner membership as admin (legacy system)
+    # Create owner membership
     owner_member = Member(
         user_id=current_user.id,
         organization_id=org.id,
-        role=MemberRole.ADMIN,
+        role=MemberRole.OWNER,
     )
     db.add(owner_member)
     await db.flush()
@@ -59,7 +59,7 @@ async def create_organization(
         owner_role_result = await db.execute(
             select(Role).where(
                 Role.organization_id == org.id,
-                Role.name == "Owner",
+                Role.name == "Właściciel",
                 Role.is_system == True,
             )
         )
@@ -218,3 +218,54 @@ async def transfer_ownership(
     return org
 
 
+ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/svg+xml"]
+MAX_LOGO_SIZE_MB = 2.0
+
+
+@router.post("/{org_id}/logo", response_model=OrganizationResponse)
+async def upload_logo(
+    org_id: UUID,
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_organization_owner),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload organization logo (max 2MB, images only, requires owner)"""
+    if file.content_type not in ALLOWED_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid file type: {file.content_type}. Allowed: {ALLOWED_IMAGE_TYPES}"
+        )
+
+    file_data = await file.read()
+    file_size_mb = len(file_data) / (1024 * 1024)
+    if file_size_mb > MAX_LOGO_SIZE_MB:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File too large: {file_size_mb:.1f}MB (max: {MAX_LOGO_SIZE_MB}MB)"
+        )
+
+    org_service = OrganizationService(db)
+    org = await org_service.get_organization_by_id(org_id)
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    from fasthub_core.storage import get_storage_service
+    storage = get_storage_service(db)
+    file_record = await storage.upload(
+        file_data=file_data,
+        filename=file.filename or "logo",
+        mime_type=file.content_type,
+        organization_id=str(org_id),
+        uploaded_by=str(current_user.id),
+        entity_type="organization_logo",
+        entity_id=str(org_id),
+        is_public=True,
+        check_billing_limit=False,
+    )
+
+    download_url = await storage.get_download_url(file_record.id)
+    org.logo_url = download_url
+    await db.commit()
+    await db.refresh(org)
+
+    return org
