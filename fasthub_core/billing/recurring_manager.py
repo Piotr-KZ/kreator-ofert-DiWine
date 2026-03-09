@@ -101,29 +101,27 @@ class RecurringManager:
     async def _handle_subscription_renewal(
         self, subscription, days_overdue: int, grace_days: int, reminder_days: List[int],
     ) -> str:
-        """Handle a single subscription renewal."""
+        """Handle a single subscription renewal — delegates to DunningService."""
+        # Delegate to DunningService for configurable dunning path
+        try:
+            from fasthub_core.billing.dunning_service import DunningService
+            dunning = DunningService(self.db)
+            await dunning.process_overdue_subscription(subscription, days_overdue)
+        except Exception as e:
+            logger.error(f"DunningService error for sub {subscription.id}: {e}")
 
+        # Keep original status tracking logic
         if days_overdue <= 3:
-            # Try to create renewal payment
             payment_result = await self.create_renewal_payment(subscription)
             if payment_result and payment_result.success:
                 logger.info(f"Renewal payment created for sub {subscription.id}")
-
-            # Send reminder if in reminder_days
-            if days_overdue in reminder_days:
-                await self._send_reminder(subscription, days_overdue)
-                return "reminder"
             return "renewed"
 
         elif days_overdue <= grace_days:
-            # Past due — mark and warn
             await self._mark_past_due(subscription)
-            if days_overdue in reminder_days:
-                await self._send_warning(subscription, days_overdue, grace_days)
             return "past_due"
 
         else:
-            # Grace period expired — cancel and downgrade
             await self._cancel_and_downgrade(subscription)
             return "canceled"
 
