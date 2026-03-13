@@ -41,6 +41,7 @@ class PublishedSite(BaseModel):
     project = relationship("Project")
     organization = relationship("Organization", back_populates="published_sites")
     form_submissions = relationship("FormSubmission", backref="site", cascade="all, delete-orphan")
+    integrations = relationship("SiteIntegration", backref="site", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<PublishedSite {self.subdomain}>"

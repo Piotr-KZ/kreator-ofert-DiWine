@@ -294,6 +294,72 @@ export interface FormSubmission {
   created_at: string;
 }
 
+// ─── Dashboard (Brief 36) ───
+
+export interface SiteIntegration {
+  id: string;
+  provider: string;
+  status: string;
+  config_json: Record<string, string> | null;
+  connected_at: string;
+}
+
+export interface IntegrationField {
+  id: string;
+  label: string;
+  placeholder?: string;
+}
+
+export interface IntegrationCatalogItem {
+  provider: string;
+  name: string;
+  description: string;
+  difficulty: string;
+  price: string;
+  fields: IntegrationField[];
+  v2?: boolean;
+}
+
+export interface IntegrationCategory {
+  category: string;
+  category_name: string;
+  items: IntegrationCatalogItem[];
+}
+
+export interface AutomationTemplate {
+  id: string;
+  name: string;
+  description: string;
+  native: boolean;
+}
+
+export interface AutomationGroup {
+  group: string;
+  group_name: string;
+  templates: AutomationTemplate[];
+}
+
+export interface DailyVisitors {
+  date: string;
+  count: number;
+}
+
+export interface TrafficSource {
+  source: string;
+  percentage: number;
+}
+
+export interface ProjectStats {
+  period: string;
+  visitors: number;
+  leads: number;
+  bounce_rate: number | null;
+  avg_time_on_site: number | null;
+  published_at: string | null;
+  daily_visitors: DailyVisitors[];
+  traffic_sources: TrafficSource[];
+}
+
 // ─── Constants ───
 
 export const INDUSTRIES = [

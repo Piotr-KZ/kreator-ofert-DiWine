@@ -27,6 +27,8 @@ from app.api.v1.endpoints.creator import ai as creator_ai
 from app.api.v1.endpoints.creator import config as creator_config
 from app.api.v1.endpoints.creator import publishing as creator_publishing
 from app.api.v1.endpoints.creator import forms as creator_forms
+from app.api.v1.endpoints.creator import integrations as creator_integrations
+from app.api.v1.endpoints.creator import stats as creator_stats
 from app.api.v1.endpoints.creator import blocks as creator_blocks
 from app.api.v1.endpoints.creator import stock_photos as creator_stock_photos
 from app.api.v1.endpoints.creator import briefs as creator_briefs
@@ -73,3 +75,6 @@ api_router.include_router(creator_publishing.router, prefix="/projects", tags=["
 api_router.include_router(creator_forms.public_router, prefix="", tags=["Creator: Forms"])
 api_router.include_router(creator_forms.router, prefix="/projects", tags=["Creator: Forms"])
 api_router.include_router(creator_stock_photos.router, prefix="", tags=["Creator: Stock Photos"])
+api_router.include_router(creator_stats.router, prefix="/projects", tags=["Creator: Stats"])
+api_router.include_router(creator_integrations.public_router, prefix="", tags=["Creator: Integrations"])
+api_router.include_router(creator_integrations.router, prefix="/projects", tags=["Creator: Integrations"])

@@ -4,6 +4,7 @@
 
 import { apiClient } from "./client";
 import type {
+  AutomationGroup,
   BlockCategory,
   BlockTemplate,
   BriefData,
@@ -11,11 +12,14 @@ import type {
   ConfigData,
   FormSubmission,
   GenerateProgress,
+  IntegrationCategory,
   Project,
   ProjectMaterial,
   ProjectSection,
+  ProjectStats,
   PublishResult,
   ReadinessResult,
+  SiteIntegration,
   StockPhoto,
   StyleData,
   ValidationItem,
@@ -277,3 +281,29 @@ export const exportZip = (projectId: string) =>
 
 export const listFormSubmissions = (projectId: string) =>
   apiClient.get<FormSubmission[]>(`/projects/${projectId}/form-submissions`);
+
+export const markSubmissionRead = (projectId: string, submissionId: string, read: boolean) =>
+  apiClient.patch(`/projects/${projectId}/form-submissions/${submissionId}`, { read });
+
+// ─── Dashboard (Brief 36) ───
+
+export const getProjectStats = (projectId: string, period = "30d") =>
+  apiClient.get<ProjectStats>(`/projects/${projectId}/stats`, { params: { period } });
+
+export const getIntegrationsCatalog = () =>
+  apiClient.get<IntegrationCategory[]>("/integrations/catalog");
+
+export const getAutomationTemplates = () =>
+  apiClient.get<AutomationGroup[]>("/integrations/automations");
+
+export const listSiteIntegrations = (projectId: string) =>
+  apiClient.get<SiteIntegration[]>(`/projects/${projectId}/integrations`);
+
+export const connectIntegration = (projectId: string, provider: string, config_json: Record<string, string>) =>
+  apiClient.post<SiteIntegration>(`/projects/${projectId}/integrations`, { provider, config_json });
+
+export const disconnectIntegration = (projectId: string, integrationId: string) =>
+  apiClient.delete(`/projects/${projectId}/integrations/${integrationId}`);
+
+export const testIntegration = (projectId: string, integrationId: string) =>
+  apiClient.post(`/projects/${projectId}/integrations/${integrationId}/test`);

@@ -366,3 +366,61 @@ class BlockTemplateResponse(BaseModel):
     is_active: bool
 
     model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================================================
+# Dashboard: Site Integrations
+# ============================================================================
+
+
+class SiteIntegrationCreate(BaseModel):
+    provider: str = Field(..., max_length=50)
+    config_json: Optional[dict] = None
+
+
+class SiteIntegrationResponse(BaseModel):
+    id: UUID
+    site_id: UUID
+    provider: str
+    status: str
+    config_json: Optional[dict] = None
+    connected_at: Optional[datetime] = None
+    last_sync_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================================================
+# Dashboard: Project Stats
+# ============================================================================
+
+
+class DailyVisitors(BaseModel):
+    date: str
+    count: int
+
+
+class TrafficSource(BaseModel):
+    source: str
+    percentage: float
+
+
+class ProjectStatsResponse(BaseModel):
+    period: str
+    visitors: int = 0
+    leads: int = 0
+    bounce_rate: Optional[float] = None
+    avg_time_on_site: Optional[float] = None
+    published_at: Optional[datetime] = None
+    daily_visitors: list[DailyVisitors] = Field(default_factory=list)
+    traffic_sources: list[TrafficSource] = Field(default_factory=list)
+
+
+# ============================================================================
+# Dashboard: Form submission update
+# ============================================================================
+
+
+class FormSubmissionUpdate(BaseModel):
+    read: Optional[bool] = None
+    status: Optional[str] = None  # new, read, answered

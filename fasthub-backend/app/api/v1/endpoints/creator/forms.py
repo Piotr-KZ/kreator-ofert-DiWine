@@ -15,7 +15,7 @@ from app.models.form_submission import FormSubmission
 from app.models.organization import Organization
 from app.models.published_site import PublishedSite
 from app.models.user import User
-from app.schemas.creator import FormSubmissionResponse
+from app.schemas.creator import FormSubmissionResponse, FormSubmissionUpdate
 
 # Public router (no auth) — registered with prefix=""
 public_router = APIRouter()
@@ -87,3 +87,41 @@ async def list_form_submissions(
         .order_by(FormSubmission.created_at.desc())
     )
     return result.scalars().all()
+
+
+@router.patch("/{project_id}/form-submissions/{submission_id}")
+async def update_form_submission(
+    project_id: UUID,
+    submission_id: UUID,
+    body: FormSubmissionUpdate,
+    org: Organization = Depends(get_current_organization),
+    current_user: User = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark form submission as read/answered."""
+    # Verify project belongs to org
+    result = await db.execute(
+        select(PublishedSite).where(
+            PublishedSite.project_id == project_id,
+            PublishedSite.organization_id == org.id,
+        )
+    )
+    site = result.scalar_one_or_none()
+    if not site:
+        raise HTTPException(status_code=404, detail="Site not found")
+
+    result = await db.execute(
+        select(FormSubmission).where(
+            FormSubmission.id == submission_id,
+            FormSubmission.site_id == site.id,
+        )
+    )
+    submission = result.scalar_one_or_none()
+    if not submission:
+        raise HTTPException(status_code=404, detail="Submission not found")
+
+    if body.read is not None:
+        submission.read = body.read
+    await db.flush()
+    await db.refresh(submission)
+    return {"id": str(submission.id), "read": submission.read}

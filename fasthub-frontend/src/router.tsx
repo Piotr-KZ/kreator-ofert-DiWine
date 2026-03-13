@@ -21,6 +21,12 @@ import AccountPage from './pages/AccountPage';
 import OrganizationsPage from './pages/superadmin/OrganizationsPage';
 import MetricsPage from './pages/superadmin/MetricsPage';
 
+// Dashboard pages
+import DashboardLayout from './pages/dashboard/DashboardLayout';
+import MySites from './pages/dashboard/MySites';
+import SiteDashboard from './pages/dashboard/SiteDashboard';
+import IntegrationsGlobal from './pages/dashboard/IntegrationsGlobal';
+
 // Creator pages
 import CreatorLayout from './pages/creator/CreatorLayout';
 import CreateProject from './pages/creator/CreateProject';
@@ -60,6 +66,21 @@ export const router = createBrowserRouter([
         <OnboardingPage />
       </ProtectedRoute>
     ),
+  },
+
+  // Dashboard routes (Brief 36)
+  {
+    path: '/panel',
+    element: (
+      <ProtectedRoute>
+        <DashboardLayout />
+      </ProtectedRoute>
+    ),
+    children: [
+      { index: true, element: <MySites /> },
+      { path: 'sites/:siteId', element: <SiteDashboard /> },
+      { path: 'integrations', element: <IntegrationsGlobal /> },
+    ],
   },
 
   // Creator routes
