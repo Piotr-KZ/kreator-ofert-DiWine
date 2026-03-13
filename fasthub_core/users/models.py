@@ -70,6 +70,9 @@ class User(BaseModel):
     # API tokens
     api_tokens = relationship("APIToken", back_populates="user", cascade="all, delete-orphan")
 
+    # WebCreator relationships
+    created_projects = relationship("Project", foreign_keys="Project.created_by")
+
     def __repr__(self):
         return f"<User {self.email}>"
 
@@ -124,6 +127,10 @@ class Organization(BaseModel):
     members = relationship("Member", back_populates="organization", cascade="all, delete-orphan")
     subscriptions = relationship("Subscription", back_populates="organization")
     invoices = relationship("Invoice", back_populates="organization")
+
+    # WebCreator relationships
+    projects = relationship("Project", back_populates="organization", cascade="all, delete-orphan")
+    published_sites = relationship("PublishedSite", back_populates="organization")
 
     def __repr__(self):
         return f"<Organization {self.name}>"

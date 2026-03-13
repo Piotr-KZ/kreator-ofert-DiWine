@@ -23,6 +23,12 @@ from app.api.v1.endpoints import (
     users,
     webhook_config,
 )
+from app.api.v1.endpoints.creator import blocks as creator_blocks
+from app.api.v1.endpoints.creator import briefs as creator_briefs
+from app.api.v1.endpoints.creator import materials as creator_materials
+from app.api.v1.endpoints.creator import projects as creator_projects
+from app.api.v1.endpoints.creator import sections as creator_sections
+from app.api.v1.endpoints.creator import styles as creator_styles
 from fasthub_core.billing.api import router as billing_router
 from fasthub_core.rbac import rbac_router
 
@@ -47,3 +53,11 @@ api_router.include_router(webhook_config.router, prefix="", tags=["Webhooks"])
 api_router.include_router(health.router, prefix="", tags=["Health"])
 api_router.include_router(subscription_status.router, prefix="", tags=["Subscription Status"])
 api_router.include_router(rbac_router, prefix="", tags=["RBAC"])
+
+# WebCreator endpoints
+api_router.include_router(creator_projects.router, prefix="/projects", tags=["Creator: Projects"])
+api_router.include_router(creator_briefs.router, prefix="/projects", tags=["Creator: Briefs"])
+api_router.include_router(creator_materials.router, prefix="/projects", tags=["Creator: Materials"])
+api_router.include_router(creator_styles.router, prefix="/projects", tags=["Creator: Styles"])
+api_router.include_router(creator_sections.router, prefix="/projects", tags=["Creator: Sections"])
+api_router.include_router(creator_blocks.router, prefix="", tags=["Creator: Blocks"])

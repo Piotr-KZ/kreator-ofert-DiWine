@@ -190,6 +190,19 @@ async def startup_event():
         logger.error(f"❌ Failed to seed RBAC permissions: {e}")
         logger.warning("⚠️ RBAC permissions not seeded — endpoints may reject requests")
 
+    # Seed WebCreator block categories
+    try:
+        logger.info("🧱 Seeding block categories...")
+        from app.services.creator.block_service import seed_block_categories
+        from app.db.session import get_db
+
+        async for db in get_db():
+            created = await seed_block_categories(db)
+            logger.info(f"✅ Block categories seeded ({created} new)")
+            break
+    except Exception as e:
+        logger.error(f"❌ Failed to seed block categories: {e}")
+
 
 # Shutdown event
 @app.on_event("shutdown")

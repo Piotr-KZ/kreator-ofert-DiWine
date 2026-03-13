@@ -63,7 +63,14 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
 
     # Clean up data after test using TRUNCATE (much faster than DROP/CREATE)
     async with test_engine.begin() as conn:
-        await conn.execute(text("TRUNCATE TABLE invoices, subscriptions, api_tokens, audit_logs, members, users, organizations RESTART IDENTITY CASCADE"))
+        await conn.execute(text(
+            "TRUNCATE TABLE "
+            "published_sites, ai_generation_logs, ai_conversations, "
+            "project_materials, project_sections, projects, "
+            "block_templates, block_categories, "
+            "invoices, subscriptions, api_tokens, audit_logs, members, users, organizations "
+            "RESTART IDENTITY CASCADE"
+        ))
 
 
 @pytest.fixture
