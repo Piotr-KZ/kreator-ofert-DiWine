@@ -29,7 +29,7 @@ async def save_config(
     svc = ProjectService(db)
     project = await svc.get_project_or_404(project_id, org.id)
 
-    existing = project.config_json or {}
+    existing = dict(project.config_json or {})
     incoming = data.model_dump(exclude_none=True)
 
     # Merge at top level (forms, social, seo, legal, hosting)
@@ -39,6 +39,7 @@ async def save_config(
         else:
             existing[key] = value
 
+    # Assign a new dict to ensure SQLAlchemy detects the change
     project.config_json = existing
     await db.flush()
     await db.refresh(project)
