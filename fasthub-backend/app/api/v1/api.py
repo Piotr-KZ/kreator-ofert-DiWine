@@ -23,7 +23,9 @@ from app.api.v1.endpoints import (
     users,
     webhook_config,
 )
+from app.api.v1.endpoints.creator import ai as creator_ai
 from app.api.v1.endpoints.creator import blocks as creator_blocks
+from app.api.v1.endpoints.creator import stock_photos as creator_stock_photos
 from app.api.v1.endpoints.creator import briefs as creator_briefs
 from app.api.v1.endpoints.creator import materials as creator_materials
 from app.api.v1.endpoints.creator import projects as creator_projects
@@ -61,3 +63,6 @@ api_router.include_router(creator_materials.router, prefix="/projects", tags=["C
 api_router.include_router(creator_styles.router, prefix="/projects", tags=["Creator: Styles"])
 api_router.include_router(creator_sections.router, prefix="/projects", tags=["Creator: Sections"])
 api_router.include_router(creator_blocks.router, prefix="", tags=["Creator: Blocks"])
+api_router.include_router(creator_ai.router, prefix="/projects", tags=["Creator: AI"])
+api_router.include_router(creator_ai.usage_router, prefix="/admin", tags=["Creator: AI"])
+api_router.include_router(creator_stock_photos.router, prefix="", tags=["Creator: Stock Photos"])

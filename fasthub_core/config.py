@@ -191,6 +191,16 @@ class Settings(BaseSettings):
     AWS_S3_REGION: str = "eu-central-1"
     AWS_S3_ENDPOINT_URL: Optional[str] = None  # MinIO, Wasabi, DigitalOcean Spaces
 
+    # Stock Photos (Brief 34)
+    UNSPLASH_ACCESS_KEY: Optional[str] = None
+    PEXELS_API_KEY: Optional[str] = None
+
+    # AI / Anthropic (Brief 31)
+    ANTHROPIC_API_KEY: Optional[str] = None
+    AI_MODEL_FAST: str = "claude-haiku-4-5-20251001"
+    AI_MODEL_SMART: str = "claude-sonnet-4-20250514"
+    AI_VISION_MAX_ITERATIONS: int = 3
+
     class Config:
         env_file = ".env"
         case_sensitive = True

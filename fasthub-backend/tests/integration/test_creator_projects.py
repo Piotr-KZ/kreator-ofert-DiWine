@@ -435,15 +435,15 @@ async def test_project_belongs_to_org(async_client, auth_headers, db_session, te
 
 @pytest.mark.asyncio
 async def test_seed_categories(db_session):
-    """Seed 20 categories."""
+    """Seed 21 categories (NA, HE, FI, OF, CE, ZE, OP, FA, CT, KO, FO, GA, RE, PR, PB, RO, KR, CF, OB, LO, ST)."""
     from app.services.creator.block_service import seed_block_categories
 
     created = await seed_block_categories(db_session)
-    assert created == 20
+    assert created == 21
 
     result = await db_session.execute(select(BlockCategory))
     categories = result.scalars().all()
-    assert len(categories) == 20
+    assert len(categories) == 21
 
     # Idempotent — run again
     created2 = await seed_block_categories(db_session)

@@ -190,18 +190,21 @@ async def startup_event():
         logger.error(f"❌ Failed to seed RBAC permissions: {e}")
         logger.warning("⚠️ RBAC permissions not seeded — endpoints may reject requests")
 
-    # Seed WebCreator block categories
+    # Seed WebCreator block categories + templates
     try:
         logger.info("🧱 Seeding block categories...")
         from app.services.creator.block_service import seed_block_categories
+        from app.services.creator.seed_blocks import seed_block_templates
         from app.db.session import get_db
 
         async for db in get_db():
-            created = await seed_block_categories(db)
-            logger.info(f"✅ Block categories seeded ({created} new)")
+            cat_created = await seed_block_categories(db)
+            logger.info(f"✅ Block categories seeded ({cat_created} new)")
+            tpl_created = await seed_block_templates(db)
+            logger.info(f"✅ Block templates seeded ({tpl_created} new)")
             break
     except Exception as e:
-        logger.error(f"❌ Failed to seed block categories: {e}")
+        logger.error(f"❌ Failed to seed blocks: {e}")
 
 
 # Shutdown event
@@ -211,3 +214,10 @@ async def shutdown_event():
     Actions to perform on application shutdown
     """
     logger.info("👋 FastHub Backend shutting down")
+
+    # Shutdown Playwright browser if running
+    try:
+        from app.services.ai.screenshot import ScreenshotService
+        await ScreenshotService.shutdown()
+    except Exception:
+        pass

@@ -21,6 +21,17 @@ import AccountPage from './pages/AccountPage';
 import OrganizationsPage from './pages/superadmin/OrganizationsPage';
 import MetricsPage from './pages/superadmin/MetricsPage';
 
+// Creator pages
+import CreatorLayout from './pages/creator/CreatorLayout';
+import CreateProject from './pages/creator/CreateProject';
+import Step1Brief from './pages/creator/Step1Brief';
+import Step2Materials from './pages/creator/Step2Materials';
+import Step3Style from './pages/creator/Step3Style';
+import Step4Validation from './pages/creator/Step4Validation';
+import GeneratingOverlay from './pages/creator/GeneratingOverlay';
+import Step5Wireframe from './pages/creator/Step5Wireframe';
+import Step6Preview from './pages/creator/Step6Preview';
+
 export const router = createBrowserRouter([
   // Public routes
   {
@@ -46,6 +57,33 @@ export const router = createBrowserRouter([
         <OnboardingPage />
       </ProtectedRoute>
     ),
+  },
+
+  // Creator routes
+  {
+    path: '/creator/new',
+    element: (
+      <ProtectedRoute>
+        <CreateProject />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/creator/:projectId',
+    element: (
+      <ProtectedRoute>
+        <CreatorLayout />
+      </ProtectedRoute>
+    ),
+    children: [
+      { path: 'step/1', element: <Step1Brief /> },
+      { path: 'step/2', element: <Step2Materials /> },
+      { path: 'step/3', element: <Step3Style /> },
+      { path: 'step/4', element: <Step4Validation /> },
+      { path: 'generating', element: <GeneratingOverlay /> },
+      { path: 'step/5', element: <Step5Wireframe /> },
+      { path: 'step/6', element: <Step6Preview /> },
+    ],
   },
 
   // Protected routes

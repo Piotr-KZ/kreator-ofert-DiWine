@@ -43,6 +43,9 @@ typer==0.15.3
 sendgrid==6.11.0
 jinja2==3.1.6
 
+# AI / Anthropic
+anthropic==0.49.0
+
 # External APIs
 requests==2.31.0
 httpx==0.26.0
@@ -55,6 +58,9 @@ google-auth-oauthlib==1.2.0
 # PDF Generation
 reportlab==4.0.9
 weasyprint==60.2
+
+# Image Processing
+Pillow==11.1.0
 
 # Testing
 pytest==7.4.4
