@@ -65,7 +65,7 @@ async def db_session() -> AsyncGenerator[AsyncSession, None]:
     async with test_engine.begin() as conn:
         await conn.execute(text(
             "TRUNCATE TABLE "
-            "published_sites, ai_generation_logs, ai_conversations, "
+            "form_submissions, published_sites, ai_generation_logs, ai_conversations, "
             "project_materials, project_sections, projects, "
             "block_templates, block_categories, "
             "invoices, subscriptions, api_tokens, audit_logs, members, users, organizations "

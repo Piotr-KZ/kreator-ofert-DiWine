@@ -31,6 +31,9 @@ import Step4Validation from './pages/creator/Step4Validation';
 import GeneratingOverlay from './pages/creator/GeneratingOverlay';
 import Step5Wireframe from './pages/creator/Step5Wireframe';
 import Step6Preview from './pages/creator/Step6Preview';
+import Step7Config from './pages/creator/Step7Config';
+import Step8Readiness from './pages/creator/Step8Readiness';
+import Step9Publish from './pages/creator/Step9Publish';
 
 export const router = createBrowserRouter([
   // Public routes
@@ -83,6 +86,9 @@ export const router = createBrowserRouter([
       { path: 'generating', element: <GeneratingOverlay /> },
       { path: 'step/5', element: <Step5Wireframe /> },
       { path: 'step/6', element: <Step6Preview /> },
+      { path: 'step/7', element: <Step7Config /> },
+      { path: 'step/8', element: <Step8Readiness /> },
+      { path: 'step/9', element: <Step9Publish /> },
     ],
   },
 

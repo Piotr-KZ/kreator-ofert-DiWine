@@ -7,10 +7,15 @@ import type {
   BlockCategory,
   BlockTemplate,
   BriefData,
+  CheckItem,
+  ConfigData,
+  FormSubmission,
   GenerateProgress,
   Project,
   ProjectMaterial,
   ProjectSection,
+  PublishResult,
+  ReadinessResult,
   StockPhoto,
   StyleData,
   ValidationItem,
@@ -237,3 +242,38 @@ export const downloadStockPhoto = (
   data: { url: string; slot_id: string; section_id: string; aspect_ratio?: string },
 ) =>
   apiClient.post<{ file_url: string }>(`/projects/${projectId}/stock-photos/download`, data);
+
+// ─── Config (Step 7) ───
+
+export const saveConfig = (projectId: string, data: Partial<ConfigData>) =>
+  apiClient.put<{ config_json: ConfigData }>(`/projects/${projectId}/config`, data);
+
+export const getConfig = (projectId: string) =>
+  apiClient.get<{ config_json: ConfigData }>(`/projects/${projectId}/config`);
+
+export const suggestSeo = (projectId: string) =>
+  apiClient.post<{ meta_title: string; meta_description: string; og_title: string; og_description: string }>(
+    `/projects/${projectId}/ai/suggest-seo`,
+  );
+
+// ─── Publishing (Steps 8-9) ───
+
+export const checkReadiness = (projectId: string) =>
+  apiClient.post<ReadinessResult>(`/projects/${projectId}/check-readiness`);
+
+export const publishProject = (projectId: string) =>
+  apiClient.post<PublishResult>(`/projects/${projectId}/publish`);
+
+export const unpublishProject = (projectId: string) =>
+  apiClient.post<{ status: string }>(`/projects/${projectId}/unpublish`);
+
+export const republishProject = (projectId: string) =>
+  apiClient.post<PublishResult>(`/projects/${projectId}/republish`);
+
+export const exportZip = (projectId: string) =>
+  apiClient.get<Blob>(`/projects/${projectId}/export-zip`, { responseType: "blob" });
+
+// ─── Form Submissions ───
+
+export const listFormSubmissions = (projectId: string) =>
+  apiClient.get<FormSubmission[]>(`/projects/${projectId}/form-submissions`);

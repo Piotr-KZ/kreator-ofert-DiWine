@@ -199,6 +199,24 @@ Wypełnij te sloty:\n{slots_schema}""",
         return response.data.get("checks", [])
 
     # ═══════════════════════════════════════
+    # ETAP 7: SUGESTIE SEO
+    # ═══════════════════════════════════════
+
+    async def suggest_seo(self, project: Project) -> dict:
+        """AI suggests SEO metadata based on project brief and content."""
+        context = self._build_full_project_state(project)
+
+        response = await self.claude.complete_json(
+            system=PROMPTS["suggest_seo"],
+            user_message=f"Zaproponuj SEO dla tego projektu:\n\n{context}",
+            model_tier="fast",
+        )
+
+        await log_ai_call(self.db, project, "suggest_seo", response)
+
+        return response.data
+
+    # ═══════════════════════════════════════
     # HELPERS
     # ═══════════════════════════════════════
 

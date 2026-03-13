@@ -186,6 +186,114 @@ export interface Project {
   updated_at: string;
 }
 
+// ─── Config (Step 7) ───
+
+export interface FormsConfig {
+  contact_email?: string;
+  thank_you_message?: string;
+  thank_you_url?: string;
+  send_email_notification?: boolean;
+  fields?: Array<{ name: string; type: string; required?: boolean }>;
+}
+
+export interface SocialConfig {
+  facebook?: string;
+  instagram?: string;
+  linkedin?: string;
+  twitter?: string;
+  youtube?: string;
+  tiktok?: string;
+}
+
+export interface TrackingConfig {
+  ga4_id?: string;
+  gtm_id?: string;
+  fb_pixel_id?: string;
+  hotjar_id?: string;
+  linkedin_id?: string;
+  gsc_verification?: string;
+  custom_head?: string;
+  custom_body?: string;
+}
+
+export interface SeoConfig {
+  meta_title?: string;
+  meta_description?: string;
+  og_title?: string;
+  og_description?: string;
+  og_image?: string;
+  canonical_url?: string;
+  tracking?: TrackingConfig;
+}
+
+export interface CookieBanner {
+  enabled: boolean;
+  style: "bar" | "modal" | "corner";
+  text?: string;
+}
+
+export interface LegalSource {
+  source: "ai" | "own" | "none";
+  html?: string;
+}
+
+export interface LegalConfig {
+  privacy_policy?: LegalSource;
+  terms?: LegalSource;
+  cookie_banner?: CookieBanner;
+  rodo?: { enabled: boolean; text?: string };
+}
+
+export interface HostingConfig {
+  domain_type: "subdomain" | "custom";
+  subdomain?: string;
+  custom_domain?: string;
+  deploy_method: "auto" | "ftp" | "zip";
+  ftp?: { host?: string; port?: number; username?: string; password?: string; path?: string };
+}
+
+export interface ConfigData {
+  forms?: FormsConfig;
+  social?: SocialConfig;
+  seo?: SeoConfig;
+  legal?: LegalConfig;
+  hosting?: HostingConfig;
+}
+
+// ─── Readiness (Step 8) ───
+
+export interface CheckItem {
+  key: string;
+  status: "pass" | "warn" | "error";
+  message: string;
+  suggestion?: string;
+  fix_tab?: string;
+}
+
+export interface ReadinessResult {
+  checks: CheckItem[];
+  can_publish: boolean;
+  score: number;
+}
+
+// ─── Publishing (Step 9) ───
+
+export interface PublishResult {
+  subdomain: string;
+  url: string;
+  status: string;
+  published_at?: string;
+}
+
+export interface FormSubmission {
+  id: string;
+  site_id: string;
+  data_json: Record<string, unknown>;
+  ip?: string;
+  read: boolean;
+  created_at: string;
+}
+
 // ─── Constants ───
 
 export const INDUSTRIES = [

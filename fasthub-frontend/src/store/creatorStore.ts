@@ -7,10 +7,14 @@ import * as api from "@/api/creator";
 import type {
   BriefData,
   ChatMessage,
+  CheckItem,
+  ConfigData,
   GenerateProgress,
   Project,
   ProjectMaterial,
   ProjectSection,
+  PublishResult,
+  ReadinessResult,
   StyleData,
   ValidationItem,
 } from "@/types/creator";
@@ -73,6 +77,10 @@ interface CreatorState {
   sections: ProjectSection[];
   renderedHtml: string;
   renderedCss: string;
+  config: ConfigData;
+  readinessChecks: CheckItem[];
+  isPublishing: boolean;
+  publishResult: PublishResult | null;
 
   // Status
   isLoading: boolean;
@@ -99,6 +107,13 @@ interface CreatorState {
   setStep: (step: number) => void;
   reset: () => void;
 
+  // Brief 35 actions
+  saveConfig: (data: Partial<ConfigData>) => Promise<void>;
+  loadConfig: () => Promise<void>;
+  runReadinessCheck: () => Promise<ReadinessResult | null>;
+  publishProject: () => Promise<PublishResult | null>;
+  exportZip: () => Promise<void>;
+
   // Brief 34 actions
   loadSections: () => Promise<void>;
   addSection: (blockCode: string, variant?: string) => Promise<ProjectSection | null>;
@@ -121,6 +136,10 @@ export const useCreatorStore = create<CreatorState>((set, get) => ({
   sections: [],
   renderedHtml: "",
   renderedCss: "",
+  config: {},
+  readinessChecks: [],
+  isPublishing: false,
+  publishResult: null,
   isLoading: false,
   isSaving: false,
   lastSavedAt: null,
@@ -278,6 +297,78 @@ export const useCreatorStore = create<CreatorState>((set, get) => ({
 
   setStep: (step) => set({ currentStep: step }),
 
+  // ─── Brief 35 actions ───
+
+  saveConfig: async (data) => {
+    const { project } = get();
+    if (!project) return;
+    set({ isSaving: true });
+    try {
+      const { data: result } = await api.saveConfig(project.id, data);
+      set({ config: result.config_json, isSaving: false, lastSavedAt: new Date() });
+    } catch (e) {
+      console.error("Failed to save config:", e);
+      set({ isSaving: false });
+    }
+  },
+
+  loadConfig: async () => {
+    const { project } = get();
+    if (!project) return;
+    try {
+      const { data: result } = await api.getConfig(project.id);
+      set({ config: result.config_json });
+    } catch (e) {
+      console.error("Failed to load config:", e);
+    }
+  },
+
+  runReadinessCheck: async () => {
+    const { project } = get();
+    if (!project) return null;
+    set({ isValidating: true });
+    try {
+      const { data: result } = await api.checkReadiness(project.id);
+      set({ readinessChecks: result.checks, isValidating: false });
+      return result;
+    } catch (e) {
+      console.error("Failed to run readiness check:", e);
+      set({ isValidating: false });
+      return null;
+    }
+  },
+
+  publishProject: async () => {
+    const { project } = get();
+    if (!project) return null;
+    set({ isPublishing: true });
+    try {
+      const { data: result } = await api.publishProject(project.id);
+      set({ isPublishing: false, publishResult: result });
+      return result;
+    } catch (e) {
+      console.error("Failed to publish project:", e);
+      set({ isPublishing: false });
+      return null;
+    }
+  },
+
+  exportZip: async () => {
+    const { project } = get();
+    if (!project) return;
+    try {
+      const { data: blob } = await api.exportZip(project.id);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${project.name.replace(/\s+/g, "_")}.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      console.error("Failed to export ZIP:", e);
+    }
+  },
+
   // ─── Brief 34 actions ───
 
   loadSections: async () => {
@@ -417,6 +508,10 @@ export const useCreatorStore = create<CreatorState>((set, get) => ({
       sections: [],
       renderedHtml: "",
       renderedCss: "",
+      config: {},
+      readinessChecks: [],
+      isPublishing: false,
+      publishResult: null,
       isLoading: false,
       isSaving: false,
       lastSavedAt: null,

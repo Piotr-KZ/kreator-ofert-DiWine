@@ -180,6 +180,155 @@ class ReorderData(BaseModel):
 # Block Templates
 # ============================================================================
 
+# ============================================================================
+# Config (step 7)
+# ============================================================================
+
+class FormsConfig(BaseModel):
+    contact_email: Optional[str] = None
+    thank_you_message: Optional[str] = None
+    thank_you_url: Optional[str] = None
+    send_email_notification: bool = True
+    fields: Optional[list[dict]] = None
+
+
+class SocialConfig(BaseModel):
+    facebook: Optional[str] = None
+    instagram: Optional[str] = None
+    linkedin: Optional[str] = None
+    twitter: Optional[str] = None
+    youtube: Optional[str] = None
+    tiktok: Optional[str] = None
+
+
+class TrackingConfig(BaseModel):
+    ga4_id: Optional[str] = None
+    gtm_id: Optional[str] = None
+    fb_pixel_id: Optional[str] = None
+    hotjar_id: Optional[str] = None
+    linkedin_id: Optional[str] = None
+    gsc_verification: Optional[str] = None
+    custom_head: Optional[str] = None
+    custom_body: Optional[str] = None
+
+
+class SeoConfig(BaseModel):
+    meta_title: Optional[str] = None
+    meta_description: Optional[str] = None
+    og_title: Optional[str] = None
+    og_description: Optional[str] = None
+    og_image: Optional[str] = None
+    canonical_url: Optional[str] = None
+    tracking: Optional[TrackingConfig] = None
+
+
+class CookieBanner(BaseModel):
+    enabled: bool = False
+    style: str = "bar"  # bar, modal, corner
+    text: Optional[str] = None
+
+
+class RodoClause(BaseModel):
+    enabled: bool = False
+    text: Optional[str] = None
+
+
+class LegalSource(BaseModel):
+    source: str = "none"  # ai, own, none
+    html: Optional[str] = None
+
+
+class LegalConfig(BaseModel):
+    privacy_policy: Optional[LegalSource] = None
+    terms: Optional[LegalSource] = None
+    cookie_banner: Optional[CookieBanner] = None
+    rodo: Optional[RodoClause] = None
+
+
+class FtpConfig(BaseModel):
+    host: Optional[str] = None
+    port: int = 21
+    username: Optional[str] = None
+    password: Optional[str] = None
+    path: Optional[str] = None
+
+
+class HostingConfig(BaseModel):
+    domain_type: str = "subdomain"  # subdomain, custom
+    subdomain: Optional[str] = None
+    custom_domain: Optional[str] = None
+    deploy_method: str = "auto"  # auto, ftp, zip
+    ftp: Optional[FtpConfig] = None
+
+
+class ConfigData(BaseModel):
+    forms: Optional[FormsConfig] = None
+    social: Optional[SocialConfig] = None
+    seo: Optional[SeoConfig] = None
+    legal: Optional[LegalConfig] = None
+    hosting: Optional[HostingConfig] = None
+
+
+# ============================================================================
+# Readiness (step 8)
+# ============================================================================
+
+class CheckItem(BaseModel):
+    key: str
+    status: str  # pass, warn, error
+    message: str
+    suggestion: Optional[str] = None
+    fix_tab: Optional[str] = None
+
+
+class ReadinessResponse(BaseModel):
+    checks: list[CheckItem]
+    can_publish: bool
+    score: int
+
+
+# ============================================================================
+# Publishing (step 9)
+# ============================================================================
+
+class PublishResponse(BaseModel):
+    subdomain: str
+    url: str
+    status: str
+    published_at: datetime
+
+
+class PublishedSiteResponse(BaseModel):
+    id: UUID
+    project_id: UUID
+    subdomain: Optional[str] = None
+    custom_domain: Optional[str] = None
+    is_active: bool
+    published_at: Optional[datetime] = None
+    last_updated_at: Optional[datetime] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================================================
+# Form Submissions
+# ============================================================================
+
+class FormSubmissionResponse(BaseModel):
+    id: UUID
+    site_id: UUID
+    data_json: dict
+    ip: Optional[str] = None
+    read: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+# ============================================================================
+# Block Templates
+# ============================================================================
+
 class BlockMatchRequest(BaseModel):
     block_type: Optional[str] = None
     media_type: Optional[str] = None

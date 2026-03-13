@@ -15,6 +15,7 @@ from app.models.project_material import ProjectMaterial
 from app.models.block_template import BlockCategory, BlockTemplate
 from app.models.ai_conversation import AIConversation, AIGenerationLog
 from app.models.published_site import PublishedSite
+from app.models.form_submission import FormSubmission
 
 __all__ = [
     "BaseModel",
@@ -37,4 +38,5 @@ __all__ = [
     "AIConversation",
     "AIGenerationLog",
     "PublishedSite",
+    "FormSubmission",
 ]

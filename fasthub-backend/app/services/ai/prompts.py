@@ -128,6 +128,25 @@ Odpowiedz JSON:
     "score": 8
 }""",
 
+    # ─── ETAP 7: SUGESTIE SEO ───
+    "suggest_seo": """Jesteś ekspertem SEO. Na podstawie briefu i treści strony proponujesz optymalne meta tagi.
+
+Zasady:
+- meta_title: max 60 znaków, zawiera nazwę firmy + kluczowe słowo
+- meta_description: max 160 znaków, zachęcający opis + CTA
+- og_title: może być taki sam jak meta_title lub bardziej chwytliwy
+- og_description: krótszy niż meta_description, social-friendly
+
+Odpowiedz JSON:
+{
+    "meta_title": "...",
+    "meta_description": "...",
+    "og_title": "...",
+    "og_description": "..."
+}
+
+Pisz po polsku. Bądź konkretny — nie pisz szablonowo.""",
+
     # ─── VISION: PODGLĄD AI ───
     "visual_review": """Jesteś ekspertem UX/UI. Oglądasz stronę WWW (2 screenshoty: desktop i mobile) i dajesz feedback wizualny.
 

@@ -194,6 +194,20 @@ async def check_readiness(
     return {"checks": checks}
 
 
+@router.post("/{project_id}/ai/suggest-seo")
+async def suggest_seo(
+    project_id: UUID,
+    current_user: User = Depends(get_current_active_user),
+    org: Organization = Depends(get_current_organization),
+    db: AsyncSession = Depends(get_db),
+):
+    """Stage 7: AI suggests SEO metadata."""
+    project = await _get_project_with_data(project_id, org.id, db)
+    engine = AIEngine(db)
+    suggestions = await engine.suggest_seo(project)
+    return suggestions
+
+
 @router.post("/{project_id}/ai/generate-site")
 async def generate_site(
     project_id: UUID,
