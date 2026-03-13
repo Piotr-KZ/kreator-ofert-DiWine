@@ -216,3 +216,6 @@ def get_settings() -> Settings:
     if _settings is None:
         _settings = Settings()
     return _settings
+
+# Module-level singleton — used by `from fasthub_core.config import settings`
+settings = get_settings()
