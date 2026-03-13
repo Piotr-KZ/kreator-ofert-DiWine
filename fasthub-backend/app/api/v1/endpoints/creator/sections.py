@@ -5,7 +5,7 @@ Creator: Sections endpoints (steps 5-6).
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user, get_current_organization
@@ -28,8 +28,13 @@ async def list_sections(
 ):
     """List project sections (sorted by position)."""
     svc = ProjectService(db)
-    project = await svc.get_project_or_404(project_id, org.id)
-    return project.sections
+    await svc.get_project_or_404(project_id, org.id)
+    result = await db.execute(
+        select(ProjectSection)
+        .where(ProjectSection.project_id == project_id)
+        .order_by(ProjectSection.position)
+    )
+    return result.scalars().all()
 
 
 @router.post(

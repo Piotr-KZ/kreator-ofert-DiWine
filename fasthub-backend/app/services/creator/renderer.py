@@ -79,7 +79,7 @@ class BlockRenderer:
 
     def _render_conditions(self, html: str, data: dict) -> str:
         """Handle {{#if slot}}...{{/if}}."""
-        pattern = r"\{\{#if (\S+)\}\}(.*?)\{\{/if\}\}"
+        pattern = r"\{\{#if ([\w.]+)\}\}(.*?)\{\{/if\}\}"
 
         def replace_condition(match: re.Match) -> str:
             key = match.group(1)

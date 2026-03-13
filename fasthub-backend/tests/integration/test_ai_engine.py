@@ -17,6 +17,7 @@ from app.models.ai_conversation import AIConversation, AIGenerationLog
 from app.models.block_template import BlockCategory, BlockTemplate
 from app.models.project import Project
 from app.models.project_section import ProjectSection
+from app.services.ai.engine import AIEngine
 
 
 # ============================================================================
@@ -50,7 +51,7 @@ async def ai_project(db_session: AsyncSession, test_organization, test_user) -> 
     )
     db_session.add(project)
     await db_session.commit()
-    await db_session.refresh(project)
+    await db_session.refresh(project, ["materials"])
     return project
 
 
@@ -199,7 +200,7 @@ async def test_stream():
         mock_stream.text_stream = mock_text_stream()
         mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
         mock_stream.__aexit__ = AsyncMock(return_value=False)
-        mock_client.messages.stream.return_value = mock_stream
+        mock_client.messages.stream = MagicMock(return_value=mock_stream)
         mock_anthropic.AsyncAnthropic.return_value = mock_client
 
         client = ClaudeClient()
@@ -218,8 +219,6 @@ async def test_stream():
 @pytest.mark.asyncio
 async def test_validate_project_ok(db_session, ai_project):
     """Consistent brief → items with status=ok."""
-    from app.services.ai.engine import AIEngine
-
     data = {
         "items": [
             {"key": "goal_ok", "status": "ok", "message": "Cel spójny"},
@@ -370,10 +369,8 @@ async def test_chat_stream(db_session, ai_project):
         mock_stream.text_stream = mock_text_stream()
         mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
         mock_stream.__aexit__ = AsyncMock(return_value=False)
-        mock_client.messages.stream.return_value = mock_stream
+        mock_client.messages.stream = MagicMock(return_value=mock_stream)
         mock_anthropic.AsyncAnthropic.return_value = mock_client
-
-        from app.services.ai.engine import AIEngine
 
         engine = AIEngine(db_session)
         chunks = []
@@ -405,10 +402,8 @@ async def test_chat_history(db_session, ai_project):
         mock_stream.text_stream = mock_text_stream()
         mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
         mock_stream.__aexit__ = AsyncMock(return_value=False)
-        mock_client.messages.stream.return_value = mock_stream
+        mock_client.messages.stream = MagicMock(return_value=mock_stream)
         mock_anthropic.AsyncAnthropic.return_value = mock_client
-
-        from app.services.ai.engine import AIEngine
 
         engine = AIEngine(db_session)
         async for _ in engine.chat_stream(
@@ -438,8 +433,6 @@ async def test_generate_privacy_policy(db_session, ai_project):
         )
         mock_anthropic.AsyncAnthropic.return_value = mock_client
 
-        from app.services.ai.engine import AIEngine
-
         engine = AIEngine(db_session)
         result = await engine.generate_legal(ai_project, "privacy_policy")
 
@@ -458,8 +451,6 @@ async def test_generate_rodo_clause(db_session, ai_project):
             return_value=_mock_anthropic_response(text=clause)
         )
         mock_anthropic.AsyncAnthropic.return_value = mock_client
-
-        from app.services.ai.engine import AIEngine
 
         engine = AIEngine(db_session)
         result = await engine.generate_legal(ai_project, "rodo_clause")
@@ -576,8 +567,6 @@ async def test_feedback_loop_converges(db_session, ai_project):
 @pytest.mark.asyncio
 async def test_ai_call_logged(db_session, ai_project):
     """After AI call → record in ai_generation_logs."""
-    from app.services.ai.engine import AIEngine
-
     data = {"items": [{"key": "test", "status": "ok", "message": "OK"}], "summary": "OK"}
 
     with patch("app.services.ai.claude_client.anthropic") as mock_anthropic:
@@ -679,7 +668,7 @@ async def test_chat_endpoint_sse(async_client, auth_headers, db_session, ai_proj
         mock_stream.text_stream = mock_text_stream()
         mock_stream.__aenter__ = AsyncMock(return_value=mock_stream)
         mock_stream.__aexit__ = AsyncMock(return_value=False)
-        mock_client.messages.stream.return_value = mock_stream
+        mock_client.messages.stream = MagicMock(return_value=mock_stream)
         mock_anthropic.AsyncAnthropic.return_value = mock_client
 
         resp = await async_client.post(
