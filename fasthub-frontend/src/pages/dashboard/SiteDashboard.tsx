@@ -54,7 +54,7 @@ export default function SiteDashboard() {
   if (!siteId) return null;
 
   return (
-    <div className="flex h-full">
+    <div className="flex h-full" data-testid="site-dashboard">
       {/* Sidebar — site list */}
       <aside className="w-56 bg-white border-r border-gray-200 p-4 overflow-auto flex-shrink-0 hidden lg:block">
         <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Strony</h3>
@@ -502,7 +502,7 @@ function TabForms({
                   </td>
                   <td className="px-5 py-3">
                     <p className="text-sm text-gray-700 truncate max-w-xs">
-                      {Object.entries(sub.data_json).map(([k, v]) => `${k}: ${v}`).join(", ")}
+                      {Object.entries(sub.data_json || {}).map(([k, v]) => `${k}: ${v}`).join(", ")}
                     </p>
                   </td>
                   <td className="px-5 py-3 text-sm text-gray-500">{sub.ip || "—"}</td>
@@ -537,7 +537,7 @@ function TabForms({
       >
         {selected && (
           <div className="space-y-3">
-            {Object.entries(selected.data_json).map(([key, value]) => (
+            {Object.entries(selected.data_json || {}).map(([key, value]) => (
               <div key={key}>
                 <label className="text-xs font-medium text-gray-500 uppercase">{key}</label>
                 <p className="text-sm text-gray-900 mt-0.5">{String(value)}</p>
