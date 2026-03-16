@@ -114,19 +114,18 @@ export default function Step7Config() {
         ))}
       </div>
 
-      {/* Tab content */}
+      {/* Tab content — all tabs always in DOM (CSS-based hiding for E2E/chaos test) */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
-        {activeTab === "forms" && (
-          <div className="space-y-4">
+        <div className="space-y-4" style={{ display: activeTab === "forms" ? "block" : "none" }}>
             <h2 className="text-lg font-semibold">Formularze kontaktowe</h2>
             <div>
               <label className={labelClass}>E-mail do powiadomień</label>
-              <input type="email" className={inputClass} placeholder="kontakt@firma.pl"
+              <input type="email" name="contact_email" className={inputClass} placeholder="kontakt@firma.pl"
                 value={local.forms?.contact_email || ""} onChange={(e) => updateForms("contact_email", e.target.value)} />
             </div>
             <div>
               <label className={labelClass}>Wiadomość po wysłaniu (thank you)</label>
-              <textarea className={inputClass} rows={3} placeholder="Dziękujemy za kontakt! Odpowiemy w ciągu 24h."
+              <textarea name="thank_you_message" className={inputClass} rows={3} placeholder="Dziękujemy za kontakt! Odpowiemy w ciągu 24h."
                 value={local.forms?.thank_you_message || ""} onChange={(e) => updateForms("thank_you_message", e.target.value)} />
             </div>
             <div className="flex items-center gap-2">
@@ -135,23 +134,19 @@ export default function Step7Config() {
               <label htmlFor="email_notif" className="text-sm text-gray-700">Wysyłaj powiadomienia e-mail o nowych zgłoszeniach</label>
             </div>
           </div>
-        )}
 
-        {activeTab === "social" && (
-          <div className="space-y-4">
+        <div className="space-y-4" style={{ display: activeTab === "social" ? "block" : "none" }}>
             <h2 className="text-lg font-semibold">Social Media</h2>
             {(["facebook", "instagram", "linkedin", "twitter", "youtube", "tiktok"] as const).map((key) => (
               <div key={key}>
                 <label className={labelClass}>{key.charAt(0).toUpperCase() + key.slice(1)}</label>
-                <input type="url" className={inputClass} placeholder={`https://${key}.com/...`}
+                <input type="url" name={key} className={inputClass} placeholder={`https://${key}.com/...`}
                   value={(local.social as Record<string, string>)?.[key] || ""} onChange={(e) => updateSocial(key, e.target.value)} />
               </div>
             ))}
           </div>
-        )}
 
-        {activeTab === "seo" && (
-          <div className="space-y-4">
+        <div className="space-y-4" style={{ display: activeTab === "seo" ? "block" : "none" }}>
             <div className="flex items-center justify-between">
               <h2 className="text-lg font-semibold">SEO</h2>
               <button onClick={handleSuggestSeo} disabled={isSuggestingSeo}
@@ -161,22 +156,22 @@ export default function Step7Config() {
             </div>
             <div>
               <label className={labelClass}>Meta title <span className="text-gray-400">({(local.seo?.meta_title || "").length}/60)</span></label>
-              <input type="text" className={inputClass} maxLength={60}
+              <input type="text" name="meta_title" className={inputClass} maxLength={60}
                 value={local.seo?.meta_title || ""} onChange={(e) => updateSeo("meta_title", e.target.value)} />
             </div>
             <div>
               <label className={labelClass}>Meta description <span className="text-gray-400">({(local.seo?.meta_description || "").length}/160)</span></label>
-              <textarea className={inputClass} rows={3} maxLength={160}
+              <textarea name="meta_description" className={inputClass} rows={3} maxLength={160}
                 value={local.seo?.meta_description || ""} onChange={(e) => updateSeo("meta_description", e.target.value)} />
             </div>
             <div>
               <label className={labelClass}>OG title</label>
-              <input type="text" className={inputClass}
+              <input type="text" name="og_title" className={inputClass}
                 value={local.seo?.og_title || ""} onChange={(e) => updateSeo("og_title", e.target.value)} />
             </div>
             <div>
               <label className={labelClass}>OG description</label>
-              <textarea className={inputClass} rows={2}
+              <textarea name="og_description" className={inputClass} rows={2}
                 value={local.seo?.og_description || ""} onChange={(e) => updateSeo("og_description", e.target.value)} />
             </div>
 
@@ -191,25 +186,23 @@ export default function Step7Config() {
             ] as const).map(([key, label]) => (
               <div key={key}>
                 <label className={labelClass}>{label}</label>
-                <input type="text" className={inputClass}
+                <input type="text" name={key} className={inputClass}
                   value={local.seo?.tracking?.[key] || ""} onChange={(e) => updateTracking(key, e.target.value)} />
               </div>
             ))}
             <div>
               <label className={labelClass}>Własny kod w &lt;head&gt;</label>
-              <textarea className={`${inputClass} font-mono text-xs`} rows={3}
+              <textarea name="custom_head" className={`${inputClass} font-mono text-xs`} rows={3}
                 value={local.seo?.tracking?.custom_head || ""} onChange={(e) => updateTracking("custom_head", e.target.value)} />
             </div>
             <div>
               <label className={labelClass}>Własny kod w &lt;body&gt;</label>
-              <textarea className={`${inputClass} font-mono text-xs`} rows={3}
+              <textarea name="custom_body" className={`${inputClass} font-mono text-xs`} rows={3}
                 value={local.seo?.tracking?.custom_body || ""} onChange={(e) => updateTracking("custom_body", e.target.value)} />
             </div>
           </div>
-        )}
 
-        {activeTab === "legal" && (
-          <div className="space-y-6">
+        <div className="space-y-6" style={{ display: activeTab === "legal" ? "block" : "none" }}>
             <h2 className="text-lg font-semibold">Prawo</h2>
             {/* Privacy Policy */}
             <div>
@@ -225,7 +218,7 @@ export default function Step7Config() {
                 ))}
               </div>
               {local.legal?.privacy_policy?.source === "own" && (
-                <textarea className={`${inputClass} mt-2`} rows={5} placeholder="Wklej treść polityki prywatności (HTML)"
+                <textarea name="privacy_policy_html" className={`${inputClass} mt-2`} rows={5} placeholder="Wklej treść polityki prywatności (HTML)"
                   value={local.legal?.privacy_policy?.html || ""}
                   onChange={(e) => updateLegal("privacy_policy", { ...local.legal?.privacy_policy, html: e.target.value })} />
               )}
@@ -245,7 +238,7 @@ export default function Step7Config() {
                 ))}
               </div>
               {local.legal?.terms?.source === "own" && (
-                <textarea className={`${inputClass} mt-2`} rows={5} placeholder="Wklej treść regulaminu (HTML)"
+                <textarea name="terms_html" className={`${inputClass} mt-2`} rows={5} placeholder="Wklej treść regulaminu (HTML)"
                   value={local.legal?.terms?.html || ""}
                   onChange={(e) => updateLegal("terms", { ...local.legal?.terms, html: e.target.value })} />
               )}
@@ -270,7 +263,7 @@ export default function Step7Config() {
                       </label>
                     ))}
                   </div>
-                  <textarea className={inputClass} rows={2} placeholder="Tekst banera cookies"
+                  <textarea name="cookie_banner_text" className={inputClass} rows={2} placeholder="Tekst banera cookies"
                     value={local.legal?.cookie_banner?.text || ""}
                     onChange={(e) => updateLegal("cookie_banner", { ...local.legal?.cookie_banner, text: e.target.value })} />
                 </div>
@@ -285,16 +278,14 @@ export default function Step7Config() {
                 <label htmlFor="rodo_enabled" className={labelClass + " mb-0"}>Klauzula RODO przy formularzach</label>
               </div>
               {local.legal?.rodo?.enabled && (
-                <textarea className={`${inputClass} ml-6`} rows={2} placeholder="Treść klauzuli RODO"
+                <textarea name="rodo_text" className={`${inputClass} ml-6`} rows={2} placeholder="Treść klauzuli RODO"
                   value={local.legal?.rodo?.text || ""}
                   onChange={(e) => updateLegal("rodo", { ...local.legal?.rodo, text: e.target.value })} />
               )}
             </div>
           </div>
-        )}
 
-        {activeTab === "hosting" && (
-          <div className="space-y-4">
+        <div className="space-y-4" style={{ display: activeTab === "hosting" ? "block" : "none" }}>
             <h2 className="text-lg font-semibold">Hosting</h2>
             <div>
               <label className={labelClass}>Typ domeny</label>
@@ -317,14 +308,14 @@ export default function Step7Config() {
             {local.hosting?.domain_type === "custom" ? (
               <div>
                 <label className={labelClass}>Własna domena</label>
-                <input type="text" className={inputClass} placeholder="www.mojafirma.pl"
+                <input type="text" name="custom_domain" className={inputClass} placeholder="www.mojafirma.pl"
                   value={local.hosting?.custom_domain || ""} onChange={(e) => updateHosting("custom_domain", e.target.value)} />
               </div>
             ) : (
               <div>
                 <label className={labelClass}>Subdomena</label>
                 <div className="flex items-center gap-1">
-                  <input type="text" className={inputClass} placeholder="mojafirma"
+                  <input type="text" name="subdomain" className={inputClass} placeholder="mojafirma"
                     value={local.hosting?.subdomain || ""} onChange={(e) => updateHosting("subdomain", e.target.value)} />
                   <span className="text-sm text-gray-500 whitespace-nowrap">.fasthub.site</span>
                 </div>
@@ -345,7 +336,6 @@ export default function Step7Config() {
               </div>
             </div>
           </div>
-        )}
       </div>
 
       {/* Bottom bar */}
