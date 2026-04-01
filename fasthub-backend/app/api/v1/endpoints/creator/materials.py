@@ -4,7 +4,9 @@ Creator: Materials endpoints (step 2).
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Form, UploadFile, status
+import re
+
+from fastapi import APIRouter, Depends, Form, HTTPException, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_active_user, get_current_organization
@@ -16,6 +18,15 @@ from app.schemas.creator import LinkMaterial, MaterialResponse
 from app.services.creator.project_service import ProjectService
 
 router = APIRouter()
+
+_MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10 MB
+_ALLOWED_MIME_TYPES = {
+    "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml",
+    "application/pdf",
+    "video/mp4", "video/webm",
+    "text/plain", "text/csv",
+}
+_SAFE_FILENAME_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9._-]{0,254}$')
 
 
 @router.post(
@@ -36,22 +47,41 @@ async def upload_material(
     svc = ProjectService(db)
     await svc.get_project_or_404(project_id, org.id)
 
+    # Validate content type
+    if file.content_type and file.content_type not in _ALLOWED_MIME_TYPES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File type not allowed: {file.content_type}",
+        )
+
+    # Read content with size limit
+    content = await file.read()
+    file_size = len(content)
+    if file_size > _MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"File too large (max {_MAX_UPLOAD_SIZE // (1024*1024)} MB)",
+        )
+
+    # Sanitize filename
+    safe_filename = file.filename or "upload"
+    if not _SAFE_FILENAME_RE.match(safe_filename):
+        # Replace unsafe chars
+        safe_filename = re.sub(r'[^a-zA-Z0-9._-]', '_', safe_filename)[:255]
+
     # Upload to FastHub Storage (S3/local)
     try:
         from fasthub_core.storage import upload_file
         file_url = await upload_file(file, folder=f"projects/{project_id}/materials")
     except ImportError:
         # Storage not yet configured — store placeholder
-        file_url = f"/uploads/projects/{project_id}/materials/{file.filename}"
-
-    content = await file.read()
-    file_size = len(content)
+        file_url = f"/uploads/projects/{project_id}/materials/{safe_filename}"
 
     material = ProjectMaterial(
         project_id=project_id,
         type=type,
         file_url=file_url,
-        original_filename=file.filename,
+        original_filename=safe_filename,
         file_size=file_size,
         mime_type=file.content_type,
         description=description,

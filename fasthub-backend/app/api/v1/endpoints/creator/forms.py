@@ -4,8 +4,10 @@ Creator: Form submission endpoints — public submit + protected list.
 
 from uuid import UUID
 
+import json
+
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -24,8 +26,21 @@ public_router = APIRouter()
 router = APIRouter()
 
 
+_MAX_FORM_DATA_SIZE = 64 * 1024  # 64 KB serialized
+
+
 class FormSubmitData(BaseModel):
     data: dict
+
+    @field_validator("data")
+    @classmethod
+    def validate_data_size(cls, v: dict) -> dict:
+        serialized = json.dumps(v)
+        if len(serialized) > _MAX_FORM_DATA_SIZE:
+            raise ValueError(f"Form data too large (max {_MAX_FORM_DATA_SIZE // 1024} KB)")
+        if len(v) > 50:
+            raise ValueError("Too many form fields (max 50)")
+        return v
 
 
 @public_router.post("/sites/{subdomain}/form-submit", status_code=status.HTTP_201_CREATED)

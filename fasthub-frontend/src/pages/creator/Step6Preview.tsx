@@ -218,6 +218,7 @@ export default function Step6Preview() {
                 className="w-full border-0"
                 style={{ width: vpConfig.width, minHeight: 800 }}
                 title="Podglad strony"
+                sandbox="allow-same-origin allow-popups"
               />
             ) : (
               <div className="flex items-center justify-center h-96 text-gray-400 text-sm">

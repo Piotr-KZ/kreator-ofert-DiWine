@@ -1,10 +1,12 @@
 #!/bin/bash
 set -e
 
-# Load .env.production if it exists and DATABASE_URL is empty
-if [ -z "$DATABASE_URL" ] && [ -f "/app/.env.production" ]; then
-    echo "=== LOADING .env.production (environment vars not available) ==="
-    export $(cat /app/.env.production | grep -v '^#' | xargs)
+# Fallback: load .env if DATABASE_URL not set via environment
+if [ -z "$DATABASE_URL" ] && [ -f "/app/.env" ]; then
+    echo "=== Loading .env (environment vars not available) ==="
+    set -a
+    . /app/.env
+    set +a
 fi
 
 # Decode Base64 encoded variables if they exist
@@ -25,12 +27,15 @@ ENVIRONMENT=${ENVIRONMENT}
 BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}
 EOF
 
-echo "=== DEBUG ==="
-echo "DATABASE_URL=${DATABASE_URL}"
-echo "SECRET_KEY=${SECRET_KEY}"
-echo "ENVIRONMENT=${ENVIRONMENT}"
-echo "BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}"
-echo "============"
+# Debug info (only in development, secrets masked)
+if [ "$ENVIRONMENT" = "development" ]; then
+    echo "=== DEBUG (dev only) ==="
+    echo "DATABASE_URL=***masked***"
+    echo "SECRET_KEY=***masked***"
+    echo "ENVIRONMENT=${ENVIRONMENT}"
+    echo "BACKEND_CORS_ORIGINS=${BACKEND_CORS_ORIGINS}"
+    echo "========================"
+fi
 
 # Run database migrations
 echo "Running database migrations..."

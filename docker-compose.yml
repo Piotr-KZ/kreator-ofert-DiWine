@@ -55,8 +55,8 @@ services:
       # CORS (dopuszczamy localhost:3000)
       BACKEND_CORS_ORIGINS: http://localhost:3000,http://localhost:3001
       
-      # JWT Secret (zmień na produkcji! )
-      SECRET_KEY: your-secret-key-change-in-production
+      # JWT Secret — OVERRIDE via .env or Docker secrets in production!
+      SECRET_KEY: ${SECRET_KEY:-dev-only-change-me}
       
       # Environment
       ENVIRONMENT: development

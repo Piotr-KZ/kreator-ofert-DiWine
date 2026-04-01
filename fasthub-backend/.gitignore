@@ -30,6 +30,9 @@ ENV/
 .env
 .env.local
 .env.*.local
+.env.test
+.env.production
+.env.staging
 
 # IDEs
 .vscode/
@@ -69,6 +72,3 @@ dmypy.json
 
 # Pyre
 .pyre/
-.env.production
-.env.staging
-.env.local

@@ -3,8 +3,10 @@ PublishingEngine — render, package, and publish a website.
 Brief 35: step 9 — publish pipeline.
 """
 
+import html as html_mod
 import io
 import logging
+import re
 import zipfile
 from datetime import datetime
 from typing import Optional
@@ -33,7 +35,9 @@ class PublishingEngine:
 
         config = project.config_json or {}
         hosting = config.get("hosting", {})
-        subdomain = hosting.get("subdomain") or project.domain or self._slugify(project.name)
+        raw_subdomain = hosting.get("subdomain") or project.domain or self._slugify(project.name)
+        # Validate subdomain format
+        subdomain = self._sanitize_subdomain(raw_subdomain)
 
         # Check existing
         result = await self.db.execute(
@@ -122,18 +126,27 @@ class PublishingEngine:
         tracking = seo.get("tracking", {}) or {}
         legal = config.get("legal", {}) or {}
 
-        meta_title = seo.get("meta_title", project.name)
-        meta_desc = seo.get("meta_description", "")
-        og_title = seo.get("og_title", meta_title)
-        og_desc = seo.get("og_description", meta_desc)
-        og_image = seo.get("og_image", "")
-        canonical = seo.get("canonical_url", "")
+        _e = html_mod.escape
+        meta_title = _e(seo.get("meta_title", project.name) or "")
+        meta_desc = _e(seo.get("meta_description", "") or "")
+        og_title = _e(seo.get("og_title", "") or "") or meta_title
+        og_desc = _e(seo.get("og_description", "") or "") or meta_desc
+        og_image = _e(seo.get("og_image", "") or "")
+        canonical = _e(seo.get("canonical_url", "") or "")
 
         # Head tracking scripts
         head_scripts = []
 
+        def _safe_tracking_id(val: str | None) -> str | None:
+            """Allow only safe tracking IDs (alphanumeric, dash, underscore)."""
+            if not val:
+                return None
+            if not re.match(r'^[a-zA-Z0-9_-]+$', val):
+                return None
+            return val
+
         # GA4
-        ga4 = tracking.get("ga4_id")
+        ga4 = _safe_tracking_id(tracking.get("ga4_id"))
         if ga4:
             head_scripts.append(
                 f'<script async src="https://www.googletagmanager.com/gtag/js?id={ga4}"></script>\n'
@@ -142,7 +155,7 @@ class PublishingEngine:
             )
 
         # GTM
-        gtm = tracking.get("gtm_id")
+        gtm = _safe_tracking_id(tracking.get("gtm_id"))
         if gtm:
             head_scripts.append(
                 f"<script>(function(w,d,s,l,i){{w[l]=w[l]||[];w[l].push({{'gtm.start':new Date().getTime(),"
@@ -152,7 +165,7 @@ class PublishingEngine:
             )
 
         # FB Pixel
-        fb_pixel = tracking.get("fb_pixel_id")
+        fb_pixel = _safe_tracking_id(tracking.get("fb_pixel_id"))
         if fb_pixel:
             head_scripts.append(
                 f"<script>!function(f,b,e,v,n,t,s){{if(f.fbq)return;n=f.fbq=function(){{n.callMethod?"
@@ -164,7 +177,7 @@ class PublishingEngine:
             )
 
         # Hotjar
-        hotjar = tracking.get("hotjar_id")
+        hotjar = _safe_tracking_id(tracking.get("hotjar_id"))
         if hotjar:
             head_scripts.append(
                 f"<script>(function(h,o,t,j,a,r){{h.hj=h.hj||function(){{(h.hj.q=h.hj.q||[]).push(arguments)}};"
@@ -174,7 +187,7 @@ class PublishingEngine:
             )
 
         # LinkedIn Insight
-        linkedin = tracking.get("linkedin_id")
+        linkedin = _safe_tracking_id(tracking.get("linkedin_id"))
         if linkedin:
             head_scripts.append(
                 f'<script>_linkedin_partner_id="{linkedin}";window._linkedin_data_partner_ids='
@@ -182,12 +195,20 @@ class PublishingEngine:
             )
 
         # GSC verification
-        gsc = tracking.get("gsc_verification")
+        gsc = _safe_tracking_id(tracking.get("gsc_verification"))
         if gsc:
-            head_scripts.append(f'<meta name="google-site-verification" content="{gsc}">')
+            head_scripts.append(f'<meta name="google-site-verification" content="{_e(gsc)}">')
 
-        # Custom head
-        custom_head = tracking.get("custom_head", "")
+        # Custom head / body — strip <script> tags to prevent XSS.
+        # Users should use the tracking ID fields instead.
+        def _strip_scripts(val: str | None) -> str:
+            if not val:
+                return ""
+            return re.sub(r'<script[\s\S]*?</script>', '', val, flags=re.IGNORECASE)
+
+        custom_head = _strip_scripts(tracking.get("custom_head", ""))
+        # Only allow safe meta/link tags in custom_head
+        custom_head = re.sub(r'<(?!meta |link |!--|style )([^>]+)>', '', custom_head, flags=re.IGNORECASE)
 
         # Body scripts
         body_scripts = []
@@ -199,15 +220,15 @@ class PublishingEngine:
                 f'height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>'
             )
 
-        # Custom body
-        custom_body = tracking.get("custom_body", "")
+        # Custom body — strip scripts
+        custom_body = _strip_scripts(tracking.get("custom_body", ""))
 
         # Cookie banner
         cookie_html = ""
         cb = legal.get("cookie_banner", {})
         if isinstance(cb, dict) and cb.get("enabled"):
             style = cb.get("style", "bar")
-            text = cb.get("text", "Ta strona używa cookies. Kontynuując, akceptujesz ich użycie.")
+            text = _e(cb.get("text", "Ta strona używa cookies. Kontynuując, akceptujesz ich użycie.") or "")
             cookie_html = self._build_cookie_banner(style, text)
 
         # Build full document
@@ -342,8 +363,9 @@ Sitemap: https://{domain}/sitemap.xml"""
 
         thank_you = forms.get("thank_you_message")
         if thank_you:
+            safe_ty = html_mod.escape(str(thank_you))
             pages["dziekujemy.html"] = self._wrap_subpage(
-                "Dziękujemy!", f"<div style='text-align:center;padding:4rem 1rem'><h1>Dziękujemy!</h1><p>{thank_you}</p></div>",
+                "Dziękujemy!", f"<div style='text-align:center;padding:4rem 1rem'><h1>Dziękujemy!</h1><p>{safe_ty}</p></div>",
                 project,
             )
 
@@ -360,7 +382,7 @@ Sitemap: https://{domain}/sitemap.xml"""
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{title} — {project.name}</title>
+<title>{html_mod.escape(title)} — {html_mod.escape(project.name or '')}</title>
 <link href="https://fonts.googleapis.com/css2?family={heading_font.replace(' ', '+')}:wght@400;600;700&family={body_font.replace(' ', '+')}:wght@300;400;500&display=swap" rel="stylesheet">
 <style>
 body {{ font-family: '{body_font}', system-ui; color: #1f2937; max-width: 800px; margin: 0 auto; padding: 2rem; line-height: 1.7; }}
@@ -373,6 +395,14 @@ a {{ color: var(--color-primary, #4F46E5); }}
 <p style="margin-top:3rem;text-align:center"><a href="/">&larr; Wróć na stronę główną</a></p>
 </body>
 </html>"""
+
+    @staticmethod
+    def _sanitize_subdomain(subdomain: str) -> str:
+        """Ensure subdomain contains only valid characters."""
+        import re as _re
+        clean = _re.sub(r'[^a-z0-9-]', '', subdomain.lower().strip())
+        clean = clean.strip('-')[:63]  # DNS label max 63 chars
+        return clean or "site"
 
     @staticmethod
     def _slugify(text: str) -> str:

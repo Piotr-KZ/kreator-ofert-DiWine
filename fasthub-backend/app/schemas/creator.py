@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 # ============================================================================
@@ -116,6 +116,14 @@ class LinkMaterial(BaseModel):
     type: str  # link, inspiration, competitor
     description: Optional[str] = None
 
+    @field_validator("url")
+    @classmethod
+    def validate_url_scheme(cls, v: str) -> str:
+        v = v.strip()
+        if not v.startswith(("http://", "https://")):
+            raise ValueError("Only http/https URLs allowed")
+        return v
+
 
 class MaterialResponse(BaseModel):
     id: UUID
@@ -202,14 +210,14 @@ class SocialConfig(BaseModel):
 
 
 class TrackingConfig(BaseModel):
-    ga4_id: Optional[str] = None
-    gtm_id: Optional[str] = None
-    fb_pixel_id: Optional[str] = None
-    hotjar_id: Optional[str] = None
-    linkedin_id: Optional[str] = None
-    gsc_verification: Optional[str] = None
-    custom_head: Optional[str] = None
-    custom_body: Optional[str] = None
+    ga4_id: Optional[str] = Field(None, max_length=30, pattern=r'^[a-zA-Z0-9_-]+$')
+    gtm_id: Optional[str] = Field(None, max_length=30, pattern=r'^[a-zA-Z0-9_-]+$')
+    fb_pixel_id: Optional[str] = Field(None, max_length=30, pattern=r'^[a-zA-Z0-9_-]+$')
+    hotjar_id: Optional[str] = Field(None, max_length=30, pattern=r'^[a-zA-Z0-9_-]+$')
+    linkedin_id: Optional[str] = Field(None, max_length=30, pattern=r'^[a-zA-Z0-9_-]+$')
+    gsc_verification: Optional[str] = Field(None, max_length=100, pattern=r'^[a-zA-Z0-9_-]+$')
+    custom_head: Optional[str] = Field(None, max_length=5000)
+    custom_body: Optional[str] = Field(None, max_length=5000)
 
 
 class SeoConfig(BaseModel):
