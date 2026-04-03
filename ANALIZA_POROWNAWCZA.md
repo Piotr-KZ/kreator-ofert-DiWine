@@ -1,323 +1,649 @@
-# Analiza porównawcza: AutoFlow vs FastHub
+# Szczegółowa analiza porównawcza: AutoFlow vs FastHub (tylko boilerplate)
 
 > Ostatnia aktualizacja: 2026-04-03
-> Cel: Pełne porównanie obu systemów moduł po module. Baza wiedzy do migracji.
+> Porównanie TYLKO overlapping features (nie domain-specific jak workflow engine, connectors, scheduler)
+> Analiza na poziomie kodu — konkretne funkcje, linie, różnice
 
 ---
 
-## 1. PODSUMOWANIE
+## 1. AUTENTYKACJA — linia po linii
 
-| Aspekt | AutoFlow | FastHub |
-|--------|----------|---------|
-| **Przeznaczenie** | Automatyzacja procesów biznesowych (BPA) | Uniwersalny boilerplate SaaS |
-| **Skala** | ~125 plików Python, ~62k LoC | ~376 plików (315 Py + 61 TS), ~47k LoC |
-| **Endpointy** | 18 routerów, ~145 endpointów | 23 routery, ~80 endpointów |
-| **Modele DB** | 23 tabele, Integer PK | 29 modeli, UUID PK |
-| **Testy** | ~80+ (głównie e2e) | 645+ (unit + integration) |
-| **Frontend** | React 18 + Tailwind (JSX) | React 19 + TypeScript + Tailwind 4 (TSX) |
-| **Produkcja** | Render (Docker) | Render (Docker) |
+### 1.1 Hashowanie haseł
 
----
+| | AutoFlow (`app/core/auth.py`) | FastHub (`fasthub_core/auth/service.py`) |
+|--|--|--|
+| **Implementacja** | `pwd_context.hash(password)` | `pwd_context.hash(password)` |
+| **Verify** | Try-catch, zwraca False na błąd | Bez try-catch, error bubbles up |
+| **Biblioteka** | passlib + bcrypt | passlib + bcrypt |
 
-## 2. PORÓWNANIE MODUŁ PO MODULE
+**Werdykt**: Identyczne. AutoFlow ma lepszy error handling (defensive).
 
-### 2.1 Autentykacja (Auth)
+### 1.2 Walidacja siły hasła
 
-| Cecha | AutoFlow | FastHub | Który lepszy |
-|-------|----------|---------|--------------|
-| Password hashing | bcrypt (passlib) | bcrypt (passlib) | **Identyczne** |
-| JWT algorytm | HS256 | HS256 | **Identyczne** |
-| JWT claims | sub, email, tenant_id, exp | sub, jti, exp, iat, type | **FastHub** (JTI = blacklist) |
-| Token expiry | 60min access / 30d refresh | 15-30min access / 7-30d refresh | **FastHub** (krótsze = bezpieczniejsze) |
-| Token blacklist | Brak | Redis (via JTI) | **FastHub** |
-| 2FA/TOTP | Brak | RFC 6238, backup codes | **FastHub** |
-| Social login | Brak | Google, GitHub, Microsoft (PKCE) | **FastHub** |
-| Magic links | Brak | Tak | **FastHub** |
-| Session tracking | Brak | UserSession (device, IP, browser) | **FastHub** |
-| Password reset | Własny (1h token) | Własny + magic link | **FastHub** |
-| Password validation | Brak | 8+ chars, upper, lower, digit | **FastHub** |
-| Demo mode | demo@autoflow.pl / demo123 | Konfigurowalny | **AutoFlow** (wygodniejsze dev) |
+| | AutoFlow | FastHub |
+|--|--|--|
+| **Implementacja** | **BRAK** — akceptuje `"a1"` jako hasło | 8+ znaków, wielka litera, mała litera, cyfra |
 
-**Wniosek**: FastHub jest znacznie lepszy — JTI, 2FA, social login, sessions. AutoFlow ma tylko podstawy.
+**Werdykt**: **FastHub wygrywa**. AutoFlow ma lukę bezpieczeństwa — brak jakiejkolwiek walidacji.
 
-### 2.2 Użytkownicy i organizacje (Users/Org)
+### 1.3 Tworzenie tokenów JWT
 
-| Cecha | AutoFlow | FastHub | Który lepszy |
-|-------|----------|---------|--------------|
-| User PK | Integer (autoincrement) | UUID (uuid4) | **FastHub** (bezpieczniejsze) |
-| User pola | email, name, company, plan, preferences | email, full_name, phone, position, language, timezone, avatar, OAuth IDs, 2FA | **FastHub** (bogatsze) |
-| Organization pola | slug, name, company_name, nip, settings | slug, name, nip, regon, krs, billing address, logo, stripe_customer_id, restrict_scope | **FastHub** (pełniejsze) |
-| Member role | String: system_admin, process_admin, department_manager, employee | Enum: OWNER, ADMIN, EDITOR, VIEWER | **Zależy** — AutoFlow ma role domenowe, FastHub generyczne |
-| Member junction | OrganizationMember z permissions JSON override | Member z role enum | **AutoFlow** (permissions override jest elastyczniejszy) |
-| Multi-org | Tak (tenant_id) | Tak (Member junction, wiele org per user) | **FastHub** (user w wielu org jednocześnie) |
+| Cecha | AutoFlow | FastHub |
+|--|--|--|
+| Claims | `sub`, `email`, `tenant_id`, `exp`, `type` | `sub`, `jti`, `iat`, `exp`, `type` |
+| JTI (token ID) | **BRAK** | UUID per token |
+| iat (issued-at) | **BRAK** | `datetime.utcnow()` |
+| UUID handling | N/A (int user_id) | Konwertuje UUID→string |
+| Settings | Module-level zmienne | `get_settings()` (testowalne) |
+| Blacklist | **NIEMOŻLIWY** (brak JTI) | Możliwy (JTI w Redis) |
 
-**Wniosek**: FastHub lepszy w core (UUID, bogate pola, multi-org). AutoFlow ma lepsze role domenowe (process_admin, department_manager) — do zachowania jako warstwa nad FastHub.
+**Werdykt**: **FastHub wygrywa zdecydowanie**. Bez JTI AutoFlow **nie może unieważnić tokenów** — logout jest fikcyjny.
 
-### 2.3 RBAC (Role-Based Access Control)
+### 1.4 Dekodowanie tokenów — KRYTYCZNY BUG w AutoFlow
 
-| Cecha | AutoFlow | FastHub | Który lepszy |
-|-------|----------|---------|--------------|
-| System | 4 string roles + permissions JSON | Permission + Role + RolePermission + UserRole (4 tabele) | **FastHub** (enterprise RBAC) |
-| Granularność | processes.create, integrations.manage | processes.edit, billing.view, team.manage (dowolne) | **FastHub** (dowolne permissions) |
-| Custom roles | Brak (4 stałe role) | Tak (per-organizacja) | **FastHub** |
-| Permission override | JSON na OrganizationMember | Via custom Role | **AutoFlow** (prostsze), **FastHub** (skalowalniejsze) |
-| Hierarchia | system_admin > process_admin > dept_manager > employee | Owner > Admin > Editor > Viewer | **Podobne** |
+```python
+# AutoFlow — JEDNA funkcja dla wszystkich typów tokenów:
+def decode_token(token: str) -> Optional[Dict]:
+    payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+    return payload  # NIE sprawdza type!
 
-**Wniosek**: FastHub ma enterprise-grade RBAC. AutoFlow wystarczy dla prostych scenariuszy ale nie skaluje się.
+# FastHub — OSOBNE funkcje:
+def decode_access_token(token: str):
+    payload = jwt.decode(...)
+    if payload.get("type") != "access":
+        return None  # BLOKUJE refresh token użyty jako access!
 
-### 2.4 Billing (Płatności)
+def decode_refresh_token(token: str):
+    if payload.get("type") != "refresh":
+        return None
+```
 
-| Cecha | AutoFlow | FastHub | Który lepszy |
-|-------|----------|---------|--------------|
-| Bramki | Stripe (via fasthub_core, częściowo) | Stripe + PayU + Tpay + P24 + PayPal | **FastHub** (5 bramek) |
-| Subscription model | Podstawowy (plan + status) | Pełny (gateway_id, grace_period, renewal_failures) | **FastHub** |
-| Recurring | Stripe native only | RecurringManager (cron dla polskich bramek) | **FastHub** |
-| Dunning | Brak | DunningPath + DunningStep + DunningEvent (12 action types) | **FastHub** |
-| Kupony | Brak | Coupon + CouponUsage (%, fixed, per-plan) | **FastHub** |
-| Payment methods | Brak | SavedPaymentMethod (tokenized cards) | **FastHub** |
-| Feature flags | Brak | check_feature(), require_feature(), get_plan_features() | **FastHub** |
-| Restrict scope | Brak | RestrictScope (no_create, view_only, full_block) | **FastHub** |
-| Invoices | Brak | Invoice + PDF + Stripe sync + Fakturownia + KSeF | **FastHub** |
-| Usage tracking | UsageRecord (prosty) | UsageRecord + BillingEvent + audit | **FastHub** |
-| Billing plans | BillingPlan (basic) | BillingPlan + BillingAddon + TenantAddon | **FastHub** |
+**BUG**: W AutoFlow **refresh token może być użyty jako access token**. Atakujący z refresh tokenem (ważnym 30 dni) może go użyć zamiast access tokena (60 min). FastHub to blokuje.
 
-**Wniosek**: FastHub ZDECYDOWANIE lepszy — pełny system billing z dunning, kupony, 5 bramek, invoices, feature flags. AutoFlow ma tylko szkielet.
+**Werdykt**: **FastHub wygrywa**. AutoFlow ma podatność token confusion.
 
-### 2.5 Notifikacje
+### 1.5 Rejestracja użytkownika
 
-| Cecha | AutoFlow | FastHub | Który lepszy |
-|-------|----------|---------|--------------|
-| Kanały | in_app, email, sms, all | in_app + email (SendGrid) + SMS (SMSAPI) | **Podobne** |
-| Preferencje | Brak | NotificationPreference per user per type | **FastHub** |
-| MessageLog | Brak | MessageLog (tracking email/SMS delivery) | **FastHub** |
-| Event-driven | Event bus handlers | Event bus + notification routing | **FastHub** |
+| Cecha | AutoFlow | FastHub |
+|--|--|--|
+| Auto-tworzenie org | Tak (slug z emaila) | Tak (w service layer) |
+| Email verification | **BRAK** — natychmiast login | Wymagana (token 24h) |
+| Slug collision | Dokłada `-{user_id}` | W service layer |
+| Domyślna rola | `system_admin` | `OWNER` |
+| Demo mode | `is_demo=False` flag | Brak (strict) |
 
-### 2.6 Audit Log
+**Werdykt**: **FastHub wygrywa** — weryfikacja email zapobiega fake rejestracjom.
 
-| Cecha | AutoFlow | FastHub | Który lepszy |
-|-------|----------|---------|--------------|
-| Pola | action, resource_type/id, actor, details, ip | action, resource_type/id, user_id, org_id, before/after, ip, user_agent, impersonation | **FastHub** (before/after snapshots!) |
-| Sensitive filter | Brak | Automatyczne ukrywanie password, token, secret | **FastHub** |
-| Auto-summary | Brak | Generowane z changes | **FastHub** |
+### 1.6 Login
 
-### 2.7 Bezpieczeństwo (Security)
+| Cecha | AutoFlow | FastHub |
+|--|--|--|
+| 2FA/TOTP | **BRAK** | Tak (temp_token → weryfikacja kodu) |
+| Session tracking | **BRAK** | UserSession (device, browser, OS, IP) |
+| Device parsing | **BRAK** | User-Agent → device_type, browser, os |
+| Rate limiting | **BRAK** | `@limiter.limit(RateLimits.AUTH_LOGIN)` |
+| Demo password | Hardcoded `"demo123"` | Brak |
+| Last login update | Tak | Tak |
 
-| Cecha | AutoFlow | FastHub | Który lepszy |
-|-------|----------|---------|--------------|
-| Encryption | Fernet AES (thin wrapper z fasthub_core) | Fernet AES + mask_credentials + key rotation | **Identyczne** (AutoFlow używa fasthub_core) |
-| SSRF protection | Brak (po audycie: basic) | SafeHttpClient (private IP block, redirect validation) | **FastHub** |
-| Rate limiting | Per-IP (100/min) | Per-endpoint (auth: 5/min, API: 100/min) | **FastHub** (per-endpoint) |
-| Security headers | Middleware (basic) | HSTS, X-Frame-Options, CSP, X-Content-Type-Options | **FastHub** |
-| Input validation | Pydantic | Pydantic + SafeId, SafeSlug, SafeFilename validators | **FastHub** |
-| SQL injection | SQLAlchemy ORM | SQLAlchemy ORM + query validator | **FastHub** |
+**Werdykt**: **FastHub wygrywa zdecydowanie** — 2FA, sessions, device tracking, rate limiting.
 
-### 2.8 Event Bus
+### 1.7 Logout
 
-| Cecha | AutoFlow | FastHub | Który lepszy |
-|-------|----------|---------|--------------|
-| Implementacja | Redis pub/sub (thin wrapper) | EventBus singleton z wildcard patterns (fnmatch) | **Identyczne** (AutoFlow re-exportuje fasthub_core) |
-| Handlers | Notification handlers | Notification + audit + webhook routing | **FastHub** (więcej integracji) |
+| | AutoFlow | FastHub |
+|--|--|--|
+| **Implementacja** | **BRAK** — token ważny do exp | Blacklist via JTI w Redis |
+| **Mechanizm** | — | `blacklist_token(jti, expires_in)` → Redis SETEX |
+| **Backend** | — | RedisBlacklist + InMemoryBlacklist (fallback) |
+| **Weryfikacja** | — | Każdy request sprawdza `is_token_blacklisted()` |
 
-### 2.9 Storage (Pliki)
+**Werdykt**: **FastHub wygrywa absolutnie**. AutoFlow NIE MA LOGOUT — tokeny działają do expiry.
 
-| Cecha | AutoFlow | FastHub | Który lepszy |
-|-------|----------|---------|--------------|
-| Implementacja | Brak | FileUpload model + Local/S3 backend + signed URLs + MIME validation | **FastHub** |
+### 1.8 2FA / TOTP
 
-### 2.10 GDPR
+| | AutoFlow | FastHub |
+|--|--|--|
+| **Implementacja** | **BRAK** | RFC 6238, pyotp, QR code, backup codes |
+| **Secret** | — | Fernet-encrypted w User.totp_secret |
+| **Backup codes** | — | 10 jednorazowych (hex, 8 znaków) |
+| **Verify window** | — | ±1 (30s tolerancja) |
 
-| Cecha | AutoFlow | FastHub | Który lepszy |
-|-------|----------|---------|--------------|
-| Export | Brak | ZIP export per-module (user, billing, audit, notifications) | **FastHub** |
-| Anonymization | Brak | Irreversible anonymization | **FastHub** |
-| Deletion | Brak | Scheduled with 14-day grace period | **FastHub** |
-| DeletionRequest | Brak | Model + service + auto-export | **FastHub** |
+**Werdykt**: **FastHub wygrywa absolutnie**.
 
-### 2.11 Invitations
+### 1.9 Session tracking
 
-| Cecha | AutoFlow | FastHub | Który lepszy |
-|-------|----------|---------|--------------|
-| Implementacja | Brak (invited_by field only) | Invitation model + token + expiry + accept/reject/cancel | **FastHub** |
+| | AutoFlow | FastHub |
+|--|--|--|
+| **Model** | **BRAK** | UserSession (user_id, token_jti, device_type, device_name, browser, os, ip_address, is_active, last_active_at, expires_at, revoked_at) |
+| **Device parser** | — | User-Agent → structured device info |
+| **Revoke** | — | Endpoint do usunięcia sesji z innego urządzenia |
 
-### 2.12 Background Tasks
+**Werdykt**: **FastHub wygrywa absolutnie**.
 
-| Cecha | AutoFlow | FastHub | Który lepszy |
-|-------|----------|---------|--------------|
-| Queue | Redis LPUSH (własny) | ARQ (async Redis) + Sync fallback | **FastHub** (ARQ production-grade) |
-| Scheduler | Asyncio loop (własny, prosty) | ARQ cron + maintenance_tasks | **Podobne** — AutoFlow potrzebuje własny scheduler dla procesów |
+### 1.10 Magic links (passwordless login)
 
-### 2.13 Multi-tenancy
+| | AutoFlow | FastHub |
+|--|--|--|
+| **Implementacja** | **BRAK** | `/magic-link/send` + `/magic-link/verify` |
 
-| Cecha | AutoFlow | FastHub | Który lepszy |
-|-------|----------|---------|--------------|
-| Identyfikator | tenant_id = org.slug (string) | organization_id = UUID FK | **FastHub** (UUID FK = type-safe, relational) |
-| Middleware | Custom (X-User-Id header fallback) | TenantMiddleware (ContextVar, JWT) | **FastHub** |
-| Query isolation | Manual WHERE tenant_id = ... | tenant_query() helper | **FastHub** |
+### 1.11 Email verification
 
-### 2.14 Email
+| | AutoFlow | FastHub |
+|--|--|--|
+| **Implementacja** | **BRAK** | Token 24h, endpoint `/verify-email` |
 
-| Cecha | AutoFlow | FastHub | Który lepszy |
-|-------|----------|---------|--------------|
-| Transport | Brak (planowany) | SMTP + SendGrid + Console (factory) | **FastHub** |
-| Templates | Brak | Jinja2, 8 szablonów HTML+TXT | **FastHub** |
-| Tracking | Brak | MessageLog + SendGrid webhooks (bounce/complaint) | **FastHub** |
+### 1.12 Password reset
 
-### 2.15 CLI
+| Cecha | AutoFlow | FastHub |
+|--|--|--|
+| Token expiry | 1h | 1h |
+| JTI w tokenie | **BRAK** | Tak (można unieważnić link) |
+| Siła nowego hasła | **BRAK walidacji** | `validate_password_strength()` |
+| Token type | `"reset"` | `"password_reset"` |
 
-| Cecha | AutoFlow | FastHub | Który lepszy |
-|-------|----------|---------|--------------|
-| Implementacja | Brak | Typer: seed, create-admin, check, show-config, shell | **FastHub** |
+**Werdykt**: **FastHub wygrywa** — JTI + walidacja siły hasła.
 
----
+### 1.13 Permissions middleware
 
-## 3. CO JEST UNIKALNE DLA AUTOFLOW (nie ma w FastHub)
+| Cecha | AutoFlow | FastHub |
+|--|--|--|
+| Fine-grained | `require_permission("processes.create")` | Tylko superuser/owner checks |
+| Role hierarchy | `is_role_higher_or_equal()` dynamiczny | Hardcoded checks |
+| Disable mode | `PERMISSIONS_ENABLED` flag (dev) | Brak |
+| Error detail | Rich object `{error, permission, role, message}` | Simple string |
+| Fallback | Demo user, X-User-Id header | Strict JWT only |
 
-Te moduły są **domenowe** — specyficzne dla automatyzacji procesów:
+**Werdykt**: **AutoFlow wygrywa** — bardziej granularne permissions, lepsze errory, dev-friendly.
+Ale FastHub ma to w RBAC module (4 tabele, custom roles per-org) — bardziej skalowalnie.
 
-### 3.1 Workflow Execution Engine
-- `app/executor/context.py` — ExecutionContext, StepResult
-- `app/executor/data_flow.py` — Variable resolution ({{step_N.field}})
-- `app/executor/handlers.py` — ConnectorActionHandler, ConditionHandler, HttpRequestHandler
-- `app/services/workflow_executor.py` — Orkiestrator workflow
+### AUTH PODSUMOWANIE
 
-### 3.2 Connector Registry (62+ providers)
-- `app/services/connector_registry.py` — Registry pattern
-- `app/integrations/` — 62+ native providers:
-  - Google (Gmail, Drive, Calendar, Sheets, Contacts, Analytics, Ads, Meet, Translate, Vision)
-  - Microsoft (Outlook, OneDrive, Teams, Excel, SharePoint, Planner, Power BI)
-  - Polish: Fakturownia, KSeF, SMSAPI, LiveSpace, Bitrix24, mBank, ING, PKO BP
-  - Marketing: HubSpot, Mailchimp, ActiveCampaign, SendGrid, Brevo, GetResponse, FreshMail, ConvertKit
-  - AI: Claude API, OCR (Tesseract)
-  - Email: IMAP/SMTP
+| Feature | AutoFlow | FastHub | Kto lepszy |
+|---------|:--------:|:-------:|:----------:|
+| Password hashing | ✅ | ✅ | Remis |
+| Password strength | ❌ | ✅ | **FastHub** |
+| JWT z JTI | ❌ | ✅ | **FastHub** |
+| Token type safety | ❌ BUG | ✅ | **FastHub** |
+| Email verification | ❌ | ✅ | **FastHub** |
+| 2FA/TOTP | ❌ | ✅ | **FastHub** |
+| Session tracking | ❌ | ✅ | **FastHub** |
+| Magic links | ❌ | ✅ | **FastHub** |
+| Token blacklist (logout) | ❌ | ✅ | **FastHub** |
+| Rate limiting auth | ❌ | ✅ | **FastHub** |
+| Password reset | ⚠️ | ✅ | **FastHub** |
+| Fine-grained permissions | ✅ | ⚠️ | **AutoFlow** |
+| Dev-friendly fallbacks | ✅ | ❌ | **AutoFlow** |
+| Defensive error handling | ✅ | ❌ | **AutoFlow** |
 
-### 3.3 Process Templates
-- 20+ pre-built templates (email→invoice, CRM sync, etc.)
-- Category-based organization
-- Fork from template → custom process
-
-### 3.4 Scheduler (Process-Aware)
-- Cron expression parser
-- Continuous mode (interval polling)
-- Email trigger (polling inbox)
-- Webhook trigger
-- Error recovery with exponential backoff
-
-### 3.5 Full-Text Search
-- PostgreSQL tsvector + GIN indexes
-- Search across processes, templates, integrations, tags
-
-### 3.6 AI Result Cache
-- SHA-256 content hashing
-- TTL-based expiry
-- Hit count tracking
-- Schema-aware (same content, different schema = different cache)
-
-### 3.7 Tagging System
-- Polymorphic (tag any resource type)
-- AI auto-tagging (confidence score)
-- Manual + system tags
-
-### 3.8 WebSocket Real-Time
-- Channel-based subscriptions (process:5, execution:123, monitoring)
-- Redis bridge for multi-worker
-- Live execution log streaming
-
-### 3.9 OAuth Integration Flow (for connectors)
-- Google, Microsoft OAuth dance
-- Token refresh, encrypted storage
-- Resource discovery (folders, channels)
+**Wynik Auth: FastHub 11 : 3 AutoFlow**
 
 ---
 
-## 4. CO FASTHUB MA A AUTOFLOW NIE POTRZEBUJE
+## 2. BILLING — linia po linii
 
-- **Frontend admin panel** (AdminShell.tsx) — AutoFlow ma własny UI
-- **SuperAdmin panel** — AutoFlow będzie miał własny
-- **Onboarding wizard** — AutoFlow ma inny flow
+### 2.1 Modele billing
+
+| Cecha | AutoFlow | FastHub |
+|--|--|--|
+| BillingPlan PK | Integer | Integer |
+| BillingPlan pola | Identyczne (slug, name, price, limits, features JSON) | Identyczne |
+| Subscription PK | Integer, tenant_id (string) | UUID, organization_id (UUID FK) |
+| Subscription FK | Brak FK do organizations | Proper FK constraint |
+| Multi-gateway | ❌ Stripe-only | ✅ gateway_id (stripe/payu/tpay/p24/paypal) |
+| Saved card | ❌ | ✅ gateway_payment_token |
+| Renewal tracking | ❌ | ✅ last_renewal_attempt, renewal_failures, grace_period_end |
+| Amount storage | ❌ | ✅ amount (grosze) + currency |
+
+**Werdykt**: **FastHub wygrywa** — multi-gateway, saved cards, renewal tracking.
+
+### 2.2 Subscription enforcement
+
+| | AutoFlow | FastHub |
+|--|--|--|
+| Middleware | **BRAK** — brak sprawdzania czy subscription aktywna | `SubscriptionChecker` middleware |
+| Grace period | **BRAK** | 7 dni po past_due |
+| Exempt paths | — | auth, health, billing (zawsze dostępne) |
+| Response | — | 402 Payment Required |
+
+**Werdykt**: **FastHub wygrywa absolutnie** — AutoFlow nie blokuje dostępu bez subskrypcji!
+
+### 2.3 Limit calculation
+
+| Cecha | AutoFlow | FastHub |
+|--|--|--|
+| billing_mode check | ✅ Sprawdza "fixed" vs "modular" | ❌ Zawsze dodaje addony (BUG!) |
+| Unknown resource | ⚠️ Zwraca 999999 (allow) | ✅ Zwraca 0 (deny) |
+| SQL efficiency | N+1 (helper function) | Single SUM query |
+
+**Werdykt**: **Mieszany** — AutoFlow poprawnie obsługuje billing_mode, FastHub ma buga. Ale FastHub bezpieczniejszy przy unknown resource (fail-closed).
+
+### 2.4 Usage tracking
+
+Modele **identyczne** (te same 6 metryk: executions, ai_operations, processes, integrations, storage, webhooks).
+
+| Cecha | AutoFlow | FastHub |
+|--|--|--|
+| Commit strategy | `await db.commit()` | `await db.flush()` |
+| Return value | Zwraca UsageRecord | Zwraca None |
+| DRY | Helper `get_usage()` | Inline |
+
+**Werdykt**: **AutoFlow lepszy** — commit() bezpieczniejszy (flush() może zgubić dane przy crash), zwraca obiekt.
+
+### 2.5 Stripe webhook handling
+
+| Cecha | AutoFlow | FastHub |
+|--|--|--|
+| Implementacja | 200+ linii inline w service | Deleguje do `StripeWebhookHandler` class |
+| Extensibility | Hardcoded 4 event types | Pluggable hooks (`on_checkout_completed = my_hook`) |
+| Deduplication | ✅ `stripe_event_id` check | ✅ (w handler) |
+
+**Werdykt**: **FastHub wygrywa** — pluggable, extensible, OOP.
+
+### 2.6 Payment Gateway architecture
+
+| | AutoFlow | FastHub |
+|--|--|--|
+| Bramki | Stripe only (direct calls) | 5 bramek via `PaymentGateway` ABC |
+| Registry | ❌ | `PaymentGatewayRegistry` (auto-register z env) |
+| Tokenization | ❌ | `SavedPaymentMethod` (tokenized cards) |
+| Charge saved card | ❌ | `charge_saved_method()` |
+
+**Werdykt**: **FastHub wygrywa absolutnie**.
+
+### 2.7 Funkcje których AutoFlow NIE MA
+
+| Feature | Co robi | Dlaczego ważne |
+|---------|---------|----------------|
+| **RecurringManager** | Cron do odnowień dla polskich bramek (PayU/Tpay/P24 nie mają native subs) | Bez tego polskie bramki = jednorazowe płatności |
+| **RestrictScope** | Granularne blokowanie (`no_create`, `no_publish`, `view_only`, `full_block`) | Dunning: dzień 10 → blokuj tworzenie, dzień 20 → read-only |
+| **Dunning paths** | Konfigurowalne sekwencje odzyskiwania (email→SMS→block→downgrade) | 12 action types, konfigurowalny per plan |
+| **Kupony** | Kod rabatowy (%, fixed, per-plan, max uses, expiry) | Marketing/sprzedaż |
+| **SavedPaymentMethod** | Tokenized cards per organizacja | Auto-renewal bez interakcji usera |
+| **Payment model** | Historia płatności z gateway_payment_id | Audyt finansowy |
+| **Admin billing API** | 21 endpointów do zarządzania planami/addonami | Konfiguracja bez kodu |
+
+### BILLING PODSUMOWANIE
+
+| Feature | AutoFlow | FastHub | Kto lepszy |
+|---------|:--------:|:-------:|:----------:|
+| BillingPlan model | ✅ | ✅ | Remis |
+| Subscription FK integrity | ❌ string | ✅ UUID FK | **FastHub** |
+| Multi-gateway (5 bramek) | ❌ | ✅ | **FastHub** |
+| Subscription enforcement | ❌ | ✅ | **FastHub** |
+| Saved cards / tokenization | ❌ | ✅ | **FastHub** |
+| Offline renewal (RecurringMgr) | ❌ | ✅ | **FastHub** |
+| Dunning paths | ❌ | ✅ | **FastHub** |
+| RestrictScope | ❌ | ✅ | **FastHub** |
+| Kupony | ❌ | ✅ | **FastHub** |
+| Admin billing API | ❌ | ✅ | **FastHub** |
+| billing_mode logic | ✅ | ❌ BUG | **AutoFlow** |
+| Usage commit safety | ✅ | ❌ | **AutoFlow** |
+| Webhook extensibility | ❌ | ✅ | **FastHub** |
+
+**Wynik Billing: FastHub 11 : 2 AutoFlow**
 
 ---
 
-## 5. PORÓWNANIE TECHNOLOGII
+## 3. USER / ORGANIZATION / MEMBER
 
-| Aspekt | AutoFlow | FastHub | Uwagi |
-|--------|----------|---------|-------|
-| Python | 3.11 | 3.11 | Identyczne |
-| FastAPI | 0.109 | 0.109 | Identyczne |
-| SQLAlchemy | 2.0.25 async | 2.0.25 async | Identyczne |
-| Alembic | 1.13 | 1.13 | Identyczne |
-| Redis | 5.0.1 | 5.0.1 | Identyczne |
-| JWT lib | python-jose | PyJWT | **FastHub lepszy** (python-jose deprecated) |
-| Frontend | React 18, JSX, Tailwind | React 19, TypeScript, Tailwind 4 | **FastHub lepszy** (TS + nowsze wersje) |
-| State mgmt | Context API | Zustand 5 | **FastHub lepszy** |
-| Testy | pytest 7.4 | pytest 7.4 | Identyczne |
-| HTTP client | httpx 0.26 | httpx 0.26 + requests | Identyczne |
+### 3.1 User model
+
+| Pole | AutoFlow | FastHub | Uwagi |
+|------|:--------:|:-------:|-------|
+| PK | Integer | UUID | FastHub bezpieczniejszy |
+| email | ✅ | ✅ | Oba unique, indexed |
+| name/full_name | ✅ | ✅ | |
+| company | ✅ | ❌ (na Organization) | FastHub lepiej — firma to org, nie user |
+| password_hash | ✅ | ✅ hashed_password | |
+| tenant_id | ✅ string | ❌ (via Member) | FastHub lepiej — relacyjnie |
+| is_active | ✅ | ✅ | |
+| is_demo | ✅ | ❌ | AutoFlow specyficzne |
+| plan | ✅ "free"/"pro" | ❌ (via Subscription) | FastHub lepiej — osobny model |
+| preferences JSON | ✅ | ❌ (osobne pola) | FastHub lepiej — typed fields |
+| phone | ❌ | ✅ | |
+| position | ❌ | ✅ | |
+| language | ❌ | ✅ | |
+| timezone | ❌ | ✅ | |
+| avatar_url | ❌ | ✅ | |
+| google_id | ❌ | ✅ | Social login |
+| github_id | ❌ | ✅ | Social login |
+| microsoft_id | ❌ | ✅ | Social login |
+| totp_secret | ❌ | ✅ (encrypted) | 2FA |
+| totp_enabled | ❌ | ✅ | |
+| backup_codes | ❌ | ✅ (encrypted) | |
+| is_superadmin | ❌ | ✅ | Platform admin |
+| is_email_verified | ❌ | ✅ | |
+| magic_link_token | ❌ | ✅ | |
+
+**Werdykt**: **FastHub wygrywa zdecydowanie** — bogatszy profil, OAuth, 2FA, proper structure.
+
+### 3.2 Organization model
+
+| Pole | AutoFlow | FastHub |
+|------|:--------:|:-------:|
+| PK | Integer | UUID |
+| slug | ✅ | ✅ |
+| name | ✅ | ✅ |
+| nip | ✅ | ✅ |
+| regon | ❌ | ✅ |
+| krs | ❌ | ✅ |
+| legal_form | ❌ | ✅ |
+| billing address | ❌ | ✅ (street, city, postal, country) |
+| website | ❌ | ✅ |
+| logo_url | ❌ | ✅ |
+| stripe_customer_id | ❌ | ✅ |
+| restrict_scope JSONB | ❌ | ✅ |
+| rodo_inspector | ❌ | ✅ (name + email) |
+| settings JSON | ✅ | ❌ (typed fields) |
+
+**Werdykt**: **FastHub wygrywa** — kompletne dane firmy, billing address, restrict_scope, RODO.
+
+### 3.3 Member / Role
+
+| Cecha | AutoFlow | FastHub |
+|--|--|--|
+| PK | Integer | UUID |
+| Role type | String (`"system_admin"`) | Enum (`MemberRole.OWNER`) |
+| Role values | system_admin, process_admin, department_manager, employee | OWNER, ADMIN, EDITOR, VIEWER |
+| Permissions override | JSON column na member | Via RBAC (4 tabele) |
+| Custom roles | ❌ | ✅ per-organization |
+| Department field | ✅ | ❌ |
+| Job title | ✅ | ❌ |
+
+**Werdykt**: **Mieszany** — FastHub ma lepszy RBAC (database-driven, custom roles), ale AutoFlow ma przydatne pola domenowe (department, job_title) i role specyficzne dla automatyzacji (process_admin, department_manager).
 
 ---
 
-## 6. ANALIZA JAKOŚCI KODU
+## 4. RBAC / PERMISSIONS
 
-| Aspekt | AutoFlow | FastHub | Ocena |
-|--------|----------|---------|-------|
-| Architektura | Clean (API→Service→Executor→Model) | Clean (API→Service→Core→Model) | Oba dobre |
-| Async | Pełne async I/O | Pełne async I/O | Identyczne |
-| Type hints | Python (dobre) | Python + TypeScript (pełne) | FastHub lepszy |
-| Error handling | Dobre (graceful degradation) | Bardzo dobre (custom exceptions, audit) | FastHub lepszy |
-| Logging | Podstawowe | structlog (JSON prod, colored dev) | FastHub lepszy |
-| Testy | ~80 (e2e głównie) | 645+ (unit + integration + e2e) | FastHub DUŻO lepszy |
-| Security | Dobre (po audycie) | Bardzo dobre (6 narzędzi security) | FastHub lepszy |
-| Documentation | Docstrings | Docstrings + 3 pliki .md + AI docs | FastHub lepszy |
-| Performance | Brak optymalizacji (N+1 queries) | Redis cache, pool, batch | FastHub lepszy |
-| Technical debt | Scheduler (asyncio loop), brak ARQ | Minimalne | AutoFlow więcej debt |
+| Cecha | AutoFlow | FastHub |
+|--|--|--|
+| Architektura | Hardcoded dict w Python | 4 tabele DB (Permission, Role, RolePermission, UserRole) |
+| Custom roles | ❌ | ✅ per-organization |
+| Admin-editable | ❌ (wymaga zmian kodu) | ✅ (endpoints + seeding) |
+| Owner bypass | ❌ (system_admin ma listę) | ✅ (`"*"` = all permissions) |
+| Permission strings | `"processes.create"`, `"integrations.manage"` | `"team.view_members"`, `"billing.change_plan"` |
+| Seeding | Brak | `seed_permissions()` + `seed_organization_roles()` at startup |
+
+**Werdykt**: **FastHub wygrywa** — enterprise RBAC, database-driven, edytowalny przez admina.
 
 ---
 
-## 7. PODSUMOWANIE — CO MIGRACJA DAJE
+## 5. NOTIFIKACJE
 
-### AutoFlow zyska z fasthub_core:
-1. **Auth**: 2FA, social login, sessions, magic links, JTI blacklist
-2. **RBAC**: Enterprise permissions (4 tabele, custom roles per-org)
-3. **Billing**: 5 bramek, dunning, kupony, payment methods, restrict scope, invoices
-4. **Notifications**: Preferences, MessageLog, SendGrid tracking
-5. **Audit**: Before/after snapshots, sensitive filter, IP+user-agent
-6. **GDPR**: Export, anonymization, deletion
-7. **Storage**: File uploads (S3/Local)
-8. **Invitations**: Token-based team invites
-9. **Security**: SSRF protection, SafeId/Slug/Filename validators
-10. **Email**: Templates, SendGrid, SMTP, tracking
-11. **CLI**: seed, create-admin, check, shell
+| Cecha | AutoFlow | FastHub |
+|--|--|--|
+| Model | user_id, tenant_id, title, message, severity, category, channel | user_id, org_id, type, title, message, link, triggered_by |
+| Preferences per-user | ❌ | ✅ NotificationPreference (inapp, email per type) |
+| Forced types | ❌ | ✅ security_alert, impersonation (nie da się wyłączyć) |
+| Bulk send | ❌ | ✅ `send_to_many()` |
+| Email transport | ❌ | ✅ SendGrid + SMTP factory |
+| MessageLog | ❌ | ✅ tracking delivery |
+| Severity field | ✅ (info/success/warning/error) | ❌ (type-based) |
+| Resource link | ✅ (resource_type + resource_id) | ✅ (link URL) |
 
-### AutoFlow zachowa własne:
-1. Workflow Execution Engine (core domain)
-2. Connector Registry (62+ providers)
-3. Process Templates + Scheduler
-4. Full-Text Search
-5. AI Result Cache
-6. Tagging System
-7. WebSocket Real-Time
-8. OAuth Integration Flow (for connectors — osobny od social login!)
-9. Frontend (React 18 — osobny od FastHub frontend)
-
-### Kolizje do rozwiązania:
-1. **Role**: AutoFlow ma role domenowe (process_admin, department_manager) — trzeba zmapować na FastHub RBAC
-2. **Tenant ID**: String slug → UUID FK
-3. **PK typ**: Integer → UUID
-4. **JWT format**: Stare tokeny (bez JTI) → nowe (z JTI)
-5. **Billing**: AutoFlow ma własny billing (kopiowany) — zastąpić fasthub_core
-6. **Notification model**: Różne schematy — migracja danych
-7. **Audit log**: Różne schematy — migracja danych
+**Werdykt**: **FastHub wygrywa** — preferences, forced types, email integration, MessageLog.
 
 ---
 
-## 8. METRYKI PORÓWNAWCZE
+## 6. AUDIT LOG
 
-| Metryka | AutoFlow | FastHub | Stosunek |
-|---------|----------|---------|----------|
-| Modele DB | 23 | 29 | 0.79x |
-| Endpointy | ~145 | ~80 | 1.8x (AF ma więcej bo domain-heavy) |
-| Testy | ~80 | 645+ | 0.12x (AF potrzebuje więcej testów) |
-| Migracje Alembic | 8 | 18 | 0.44x |
-| Payment gateways | 1 (Stripe partial) | 5 (pełne) | 0.2x |
-| Integrations/Connectors | 62+ providers | 0 (nie dotyczy) | Unikalny AF |
-| Security tools | 0 (thin wrappers) | 6 | FastHub dostarcza |
-| Email templates | 0 | 8 | FastHub dostarcza |
-| Frontend components | ~20 JSX | ~40 TSX | FastHub bogatszy |
+| Cecha | AutoFlow | FastHub |
+|--|--|--|
+| Before/after snapshots | ❌ | ✅ `changes_before`, `changes_after` (JSON) |
+| Auto-summary | ❌ | ✅ "Zmieniono plan: pro → enterprise" |
+| Impersonation | ❌ | ✅ `impersonated_by` field |
+| User-Agent | ❌ | ✅ |
+| IP address | ✅ | ✅ |
+| Actor format | `"user:email"`, `"ai:model"`, `"system"` | user_id + user_email (denormalized) |
+| Sensitive filter | ❌ | ✅ password, token, secret auto-masked |
+| Retention policy | ❌ | ✅ `cleanup_old_logs()` (default 90 days) |
+| Stats | ❌ | ✅ `get_stats()` |
+| Process/execution ref | ✅ | ❌ (generic) |
+
+**Werdykt**: **FastHub wygrywa zdecydowanie** — snapshots, impersonation, retention, auto-summary. AutoFlow ma przydatne process_id/execution_id refs (domenowe).
+
+---
+
+## 7. ENCRYPTION / SECURITY
+
+| Cecha | AutoFlow | FastHub |
+|--|--|--|
+| Status | **Thin wrapper** — deleguje do fasthub_core | Pełna implementacja |
+| Algorytm | Fernet AES-128 (via fasthub_core) | Fernet AES-128 |
+| Key rotation | ✅ (via fasthub_core) | ✅ |
+| Masking | ✅ (via fasthub_core) | ✅ |
+| SSRF protection | ❌ (basic po audycie) | ✅ SafeHttpClient (private IP block, redirect validation) |
+| Input validators | ❌ | ✅ SafeId, SafeSlug, SafeFilename |
+| Path traversal | ❌ | ✅ `safe_path()` |
+| SQL injection | SQLAlchemy ORM | SQLAlchemy ORM + query validator |
+
+**Werdykt**: **FastHub wygrywa** — AutoFlow deleguje, ale nie korzysta z SafeHttpClient i validators.
+
+---
+
+## 8. MULTI-TENANCY
+
+| Cecha | AutoFlow | FastHub |
+|--|--|--|
+| Tenant identifier | `tenant_id` = org.slug (string) | `organization_id` = UUID FK |
+| Type safety | ❌ string (typo = data leak) | ✅ UUID (compile-time check) |
+| Enforcement | Manual WHERE w każdym query | ContextVar middleware + `tenant_query()` helper |
+| Multi-org per user | ✅ via OrganizationMember | ✅ via Member |
+| Header | X-User-Id (dev), JWT (prod) | X-Organization-Id |
+
+**Werdykt**: **FastHub wygrywa** — UUID FK = relacyjna integralność, middleware enforcement.
+
+---
+
+## 9. MIDDLEWARE
+
+| Cecha | AutoFlow | FastHub |
+|--|--|--|
+| Security headers | Re-export z fasthub_core | HSTS, X-Frame, CSP, Referrer-Policy, Permissions-Policy |
+| Request logging | Brak (w FastHub middleware) | Structured (method, path, status, duration, IP, User-Agent) |
+| Rate limiting | ✅ In-memory (100/min, OAuth 20/min) | Brak w core (domain-specific) |
+| Billing enforcement | ✅ `require_limit()` dependency | Brak (billing to domain) |
+
+**Werdykt**: **Mieszany** — FastHub ma lepsze headers i logging, AutoFlow ma rate limiting i billing enforcement (domenowe).
+
+---
+
+## 10. ARCHITEKTURA BAZY DANYCH — kluczowe różnice
+
+> **To jest najważniejsza sekcja tego dokumentu.** Różnice w architekturze DB to "poważna zmiana" — nie prosty swap modeli.
+
+### 10.1 Składnia SQLAlchemy
+
+| | AutoFlow | FastHub |
+|--|---------|---------|
+| **Wersja** | **2.0** — `Mapped[]` + `mapped_column()` | **1.x** — `Column()` + `declarative_base()` |
+| **Type hints** | Natywne (Python typing) | Brak (runtime inference) |
+| **IDE support** | Pełny autocomplete, mypy | Ograniczony |
+| **Przyszłość** | Oficjalny styl SQLAlchemy 2.x | Legacy, będzie deprecated |
+
+**Werdykt**: **AutoFlow wygrywa** — FastHub używa przestarzałej składni.
+
+### 10.2 CHECK constraints na poziomie DB
+
+| | AutoFlow | FastHub |
+|--|---------|---------|
+| **Ilość** | **9** (na 5 modelach) | **1** (tylko w migracji, nie w modelu) |
+| **Pokrycie** | role, status, severity, channel, run_mode, source, interval | role member (w Alembic) |
+| **Enforcement** | DB-level (nie da się ominąć) | Brak — tylko Python-level walidacja |
+
+**Werdykt**: **AutoFlow wygrywa zdecydowanie** — integralność danych na poziomie bazy.
+
+### 10.3 Denormalizacja strategiczna
+
+| | AutoFlow | FastHub |
+|--|---------|---------|
+| **Wzorce** | **7** udokumentowanych | **0** |
+| **Przykłady** | `last_run_at`, `total_executions`, `successful_executions`, `failed_executions`, `consecutive_failures`, `trigger_type`, `usage_count`, `resource_name` | — |
+| **Cel** | Dashboard bez JOIN-ów, circuit-breaker bez scan | — |
+
+**Werdykt**: **AutoFlow wygrywa** — przemyślana optymalizacja dla realnych use-cases.
+
+### 10.4 Cross-database support
+
+| | AutoFlow | FastHub |
+|--|---------|---------|
+| **Dev DB** | **SQLite** (zero setup, zero Docker) | PostgreSQL (wymaga Docker lub cloud) |
+| **Prod DB** | PostgreSQL (asyncpg) | PostgreSQL (asyncpg) |
+| **Typy** | Portable: String, JSON, Integer, Text | PG-specific: UUID, JSONB, ARRAY, SQLEnum |
+| **Migracje** | `render_as_batch=True` (SQLite + PG) | Tylko PostgreSQL |
+| **Default URL** | `sqlite+aiosqlite:///./autoflow.db` | Brak (wymaga DATABASE_URL) |
+
+**Werdykt**: **AutoFlow wygrywa** — dev bez Docker, testy lokalne natychmiast.
+
+### 10.5 Polimorfizm
+
+| | AutoFlow | FastHub |
+|--|---------|---------|
+| **Wzorce** | **3** generic FK (ResourceTag, AuditEntry, Notification) | **1** (FileUpload.entity_type) |
+| **Zastosowanie** | Tagowanie dowolnego zasobu, audit dowolnego obiektu | Tylko storage |
+| **Elastyczność** | Nowe resource_type bez zmiany schematu | Ograniczone |
+
+**Werdykt**: **AutoFlow wygrywa** — elastyczny system tagowania i audytu.
+
+### 10.6 Connection pooling
+
+| | AutoFlow | FastHub |
+|--|---------|---------|
+| **Config** | **Brak** — domyślne (pool_size=5) | **Production-grade**: pool_size=20, max_overflow=10, pool_recycle=3600, pool_pre_ping=True |
+| **Max połączeń** | 15 (5+10 default) | **30** (20+10) |
+| **Health check** | Brak | pool_pre_ping (sprawdza przed użyciem) |
+| **Recykling** | Brak (-1) | Co 1h (zapobiega stale connections) |
+
+**Werdykt**: **FastHub wygrywa zdecydowanie** — production-ready pooling.
+
+### 10.7 Primary Keys i Multi-tenancy
+
+| | AutoFlow | FastHub |
+|--|---------|---------|
+| **PK typ** | Integer (sekwencyjne) | UUID (losowe) |
+| **Bezpieczeństwo PK** | Zgadywalne (id=1, id=2...) | Nie do zgadnięcia |
+| **Tenant model** | `tenant_id` = string (org.slug) | `organization_id` = UUID FK |
+| **FK integrity** | Brak FK do organizations | Proper FK constraint |
+| **Type safety** | String (literówka = data leak) | UUID (compile-time check) |
+
+**Werdykt**: **FastHub wygrywa** — UUID PK + FK integrity = bezpieczeństwo.
+
+### 10.8 Kolumny JSON
+
+| | AutoFlow | FastHub |
+|--|---------|---------|
+| **Ilość** | **18** kolumn JSON | **12** (10 JSON + 1 JSONB + 1 ARRAY) |
+| **Typ** | Portable `JSON` (działa na SQLite i PG) | Mix: JSON + PG-specific JSONB i ARRAY |
+| **Indeksowalność** | Brak GIN (JSON nie wspiera) | JSONB wspiera GIN indexes |
+| **Elastyczność** | Więcej flexible schema | Mniej, ale wydajniejsze query |
+
+**Werdykt**: **Mieszany** — AutoFlow ma więcej elastyczności, FastHub lepszą wydajność query na JSONB.
+
+### 10.9 Skala modeli
+
+| | AutoFlow | FastHub |
+|--|---------|---------|
+| **Tabele** | 20 | 32 |
+| **Boilerplate** | ~10 (user, org, member, billing, audit, notifications) | ~27 (+ RBAC, GDPR, sessions, invitations, dunning, coupons, payments, webhooks) |
+| **Domain** | ~10 (process, execution, integration, resource, template, tag, AI cache, settings) | ~5 (tylko billing-specific) |
+
+**Werdykt**: **FastHub wygrywa** w ilości boilerplate features.
+
+---
+
+## 11. PODSUMOWANIE GLOBALNE
+
+### Scorecard — ZBALANSOWANY
+
+| Obszar | AutoFlow | FastHub | Wygrywa |
+|--------|:--------:|:-------:|:-------:|
+| **Auth (feature-level)** | 3 | 11 | FastHub |
+| **Billing (feature-level)** | 2 | 11 | FastHub |
+| **User/Org models** | 1 | 4 | FastHub |
+| **RBAC** | 1 | 3 | FastHub |
+| **Notifications** | 1 | 4 | FastHub |
+| **Audit** | 1 | 5 | FastHub |
+| **Security tools** | 0 | 4 | FastHub |
+| **Multi-tenancy (enforcement)** | 0 | 3 | FastHub |
+| **Middleware** | 2 | 2 | Remis |
+| **Składnia SQLAlchemy** | 3 | 0 | **AutoFlow** |
+| **CHECK constraints** | 3 | 0 | **AutoFlow** |
+| **Denormalizacja** | 3 | 0 | **AutoFlow** |
+| **Cross-DB / dev experience** | 3 | 0 | **AutoFlow** |
+| **Polimorfizm** | 2 | 0 | **AutoFlow** |
+| **Connection pooling** | 0 | 3 | FastHub |
+| **JSON elastyczność** | 2 | 1 | **AutoFlow** |
+| **PK / FK bezpieczeństwo** | 0 | 3 | FastHub |
+| **RAZEM** | **27** | **54** | **FastHub** |
+
+### Kluczowy wniosek
+
+**FastHub wygrywa w FEATURE-ach** (auth, billing, RBAC — bo to boilerplate z 29 briefami rozwoju).
+
+**AutoFlow wygrywa w ARCHITEKTURZE BAZY DANYCH** (nowoczesna składnia, constraints, denormalizacja, przenośność, polimorfizm).
+
+**Migracja to "poważna zmiana"** bo wymaga:
+1. **Integer → UUID PK** we WSZYSTKICH 20 tabelach + FK
+2. **String tenant_id → UUID FK** — zmiana modelu multi-tenancy
+3. **SQLAlchemy 2.0 → 1.x** — DEGRADACJA składni (chyba że fasthub_core zostanie zaktualizowany)
+4. **9 CHECK constraints** — do zachowania (FastHub ich nie ma)
+5. **7 wzorców denormalizacji** — muszą przetrwać migrację
+6. **Cross-DB support** — zostanie UTRACONA (FastHub wymaga PostgreSQL)
+7. **3 wzorce polimorficzne** — muszą współgrać z UUID PK
+8. **18 kolumn JSON** — migracja danych
+
+### Rekomendacja
+
+Zamiast "AutoFlow adoptuje FastHub modele", rozważyć **hybrydowe podejście**:
+- **Z FastHub wziąć**: auth features (2FA, sessions, blacklist), billing features (5 bramek, dunning, kupony), RBAC (4 tabele), UUID PK, FK integrity, connection pooling
+- **Z AutoFlow zachować**: SQLAlchemy 2.0 składnię, CHECK constraints, denormalizację, polimorfizm, member metadata
+- **Rozwiązać**: cross-DB support (albo wymóc PostgreSQL, albo zaktualizować fasthub_core)
+
+### Krytyczne problemy AutoFlow (do naprawienia)
+
+1. **Token confusion bug** — refresh token działa jako access token
+2. **Brak logout** — tokeny nie mogą być unieważnione (brak JTI)
+3. **Brak walidacji siły hasła** — akceptuje `"a1"`
+4. **Brak email verification** — fake rejestracje
+5. **Brak subscription enforcement** — dostęp bez płatności
+6. **String tenant_id** — brak FK integrity, ryzyko data leak
+7. **Integer PK** — guessable, sequential
+8. **Brak connection pooling** — domyślne 5 połączeń
+
+### Co AutoFlow robi lepiej niż FastHub
+
+1. **SQLAlchemy 2.0 składnia** — nowoczesna, typed, IDE-friendly (FastHub ma legacy 1.x)
+2. **9 CHECK constraints** — integralność danych na DB-level (FastHub ma 1)
+3. **7 wzorców denormalizacji** — dashboard bez JOIN-ów (FastHub ma 0)
+4. **Cross-DB support** — dev na SQLite bez Docker (FastHub wymaga PostgreSQL)
+5. **render_as_batch migracje** — działają na SQLite i PG (FastHub tylko PG)
+6. **3 wzorce polimorficzne** — elastyczne tagowanie i audit (FastHub ma 1)
+7. **Fine-grained permissions** — `require_permission("processes.create")`
+8. **Dev-friendly fallbacks** — demo user, X-User-Id, PERMISSIONS_ENABLED
+9. **billing_mode logic** — poprawnie ignoruje addony w trybie "fixed" (FastHub ma buga)
+10. **Member metadata** — job_title, department, permissions JSON override
+11. **18 kolumn JSON** — elastyczny schemat
+12. **Rate limiting out-of-box** — per-endpoint z sensownymi defaultami
+
+### Co AutoFlow zyska z migracji do fasthub_core
+
+| Feature | Wartość biznesowa |
+|---------|-------------------|
+| 2FA/TOTP + backup codes | Compliance, bezpieczeństwo |
+| Social login (Google/GitHub/MS) | Łatwiejsza rejestracja |
+| Session tracking | Bezpieczeństwo (widać loginy) |
+| Magic links | UX (passwordless) |
+| Token blacklist (logout) | Podstawa bezpieczeństwa |
+| 5 bramek płatniczych | Polski rynek (PayU, Tpay, P24) |
+| Dunning + RestrictScope | Odzyskiwanie płatności |
+| Kupony | Marketing |
+| Saved cards | Auto-renewal |
+| RBAC (4 tabele, custom roles) | Enterprise customers |
+| Notification preferences | UX (kontrola usera) |
+| Audit snapshots | Compliance, debugging |
+| GDPR (export, anonymize, delete) | Prawo EU |
+| File storage (S3/Local) | Upload plików |
+| Invitations (token-based) | Team onboarding |
+| Email templates (Jinja2) | Professional communication |
+| Connection pooling (production) | Stabilność pod obciążeniem |
+| UUID PK | Bezpieczeństwo API |
