@@ -39,14 +39,14 @@
 - **Audyt bezpieczeństwa**: DONE (3 CRITICAL, 10 HIGH, 18 MEDIUM — all fixed)
 - **Demo**: https://fasthub-lz4x.onrender.com
 
-### AutoFlow (Automatyzacja procesów) — AKTYWNY
+### AutoFlow (Automatyzacja procesów) — MIGRACJA DONE
 - **Repo**: https://github.com/Piotr-KZ/autoflow
 - **Lokalizacja**: `C:/Projekty internetowe/autoflow`
-- **Branch aktywny**: `feature/fasthub-core-integration` (+ main)
-- **Stack**: Python/FastAPI, React/Vite, SQLAlchemy + Alembic, Redis
-- **Status**: Audyt bezpieczeństwa DONE, Plan migracji ZATWIERDZONY
+- **Branch aktywny**: `main`
+- **Stack**: Python/FastAPI, React/Vite, SQLAlchemy 2.0 + Alembic, Redis
+- **Status**: Migracja fasthub_core DONE (8 faz, merged do main)
 - **Audyt bezpieczeństwa** (2026-04-02): 6 commitów na main — all fixed
-- **Kluczowa zależność**: używa fasthub_core (thin wrapper pattern z Brief 12)
+- **Kluczowa zależność**: używa fasthub_core (thin wrapper + compat layer)
 
 ### WebCreator (Kreator stron) — Brief 30 DONE
 - **Repo**: https://github.com/Piotr-KZ/website-creator
@@ -66,35 +66,22 @@
 
 ---
 
-## Aktywne zadanie: Migracja AutoFlow → modele FastHub
+## Ukończone zadanie: Migracja AutoFlow → fasthub_core (2026-04-03)
 
-### Plan (plik: `~/.claude/plans/zazzy-gathering-cocoa.md`)
+**Podejście hybrydowe** (addytywne kolumny + aliasy + dual-read, BEZ PK swap):
 
-**Problem**: AutoFlow 23 tabel z Integer PK + tenant_id (string). FastHub 29 modeli z UUID PK + org_id (UUID FK). Duplikacja User/Org/Member/Billing/Auth.
+| Faza | Opis | Status |
+|------|------|--------|
+| 0 | Warstwa abstrakcji (`app/compat/`) | **DONE** |
+| 1 | FastHub auth functions | **DONE** |
+| 2 | Kolumny UUID obok Integer PK | **DONE** |
+| 3 | Dual-write UUID (API zwraca UUID) | **DONE** |
+| 4 | Tenant migration (org_uuid) | **DONE** |
+| 5 | User/Org/Member compat (aliasy + kolumny) | **DONE** |
+| 6 | Billing/notif/audit compat | **DONE** |
+| 7 | UUID na WSZYSTKICH + API UUID-aware | **DONE** |
 
-**Cel**: AutoFlow używa fasthub_core modeli (auth, users, billing, notifications, audit, RBAC, GDPR, storage). Domain tables (processes, executions, integrations) zostają ale z UUID PK i org FK.
-
-**Pełny plan**: `~/.claude/plans/zazzy-gathering-cocoa.md`
-
-| Faza | Opis | Ryzyko | DB zmiana | Status |
-|------|------|--------|-----------|--------|
-| 0 | Warstwa abstrakcji (`app/compat/`) | ZERO | NIE | **NOT STARTED** |
-| 1 | FastHub auth functions | NISKI | NIE | NOT STARTED |
-| 2 | Kolumny UUID obok Integer PK (addytywne) | NISKI | ADD COLUMN | NOT STARTED |
-| 3 | Dual-write UUID (API zwraca UUID) | NISKI | NIE | NOT STARTED |
-| 4 | Tenant migration (tenant_id → org_uuid) | SREDNI | DATA MIGRATION | NOT STARTED |
-| 5 | Swap User/Org/Member → fasthub_core | WYSOKI | RENAME+CREATE | NOT STARTED |
-| 6 | Swap billing/notif/audit → fasthub_core | SREDNI | RENAME+CREATE | NOT STARTED |
-| 7 | PK swap domain tables + cleanup | NISKI | DROP legacy | NOT STARTED |
-
-**Łącznie**: ~130 zmian w plikach, ~2500 linii, 8 migracji Alembic
-
-### Zasady bezpieczeństwa:
-- Każda faza = osobny branch + PR
-- Backup bazy PRZED każdą fazą z migracją
-- Legacy tables (_legacy) zachowane do Fazy 7
-- Nigdy dwie fazy ryzykowne (4-6) w jednej sesji
-- CI green PRZED merge
+**Wynik**: 71 plików, 8 migracji Alembic, 207 testów, merged do main
 
 ---
 
