@@ -70,27 +70,31 @@
 
 ### Plan (plik: `~/.claude/plans/zazzy-gathering-cocoa.md`)
 
-**Problem**: AutoFlow ma własne modele User/Organization z Integer ID zamiast UUID z FastHub. Duplikacja kodu auth, brak współdzielenia boilerplate.
+**Problem**: AutoFlow 23 tabel z Integer PK + tenant_id (string). FastHub 29 modeli z UUID PK + org_id (UUID FK). Duplikacja User/Org/Member/Billing/Auth.
 
-**Cel**: AutoFlow korzysta z fasthub_core.auth + fasthub_core.users.models.
+**Cel**: AutoFlow używa fasthub_core modeli (auth, users, billing, notifications, audit, RBAC, GDPR, storage). Domain tables (processes, executions, integrations) zostają ale z UUID PK i org FK.
 
-| Faza | Opis | Ryzyko | Status |
-|------|------|--------|--------|
-| 0 | Warstwa abstrakcji (`app/compat/`) | ZERO | **NOT STARTED** |
-| 1 | FastHub auth functions | NISKI | NOT STARTED |
-| 2 | Kolumny UUID obok Integer ID | NISKI | NOT STARTED |
-| 3 | tenant_id string → org UUID | SREDNI | NOT STARTED |
-| 4 | Wyrownanie rol + podmiana modeli | WYSOKI | NOT STARTED |
-| 5 | Cleanup (usunięcie legacy) | NISKI | NOT STARTED |
+**Pełny plan**: `~/.claude/plans/zazzy-gathering-cocoa.md`
 
-**Łącznie**: ~80 zmian w plikach, ~1935 linii, 5 migracji Alembic
+| Faza | Opis | Ryzyko | DB zmiana | Status |
+|------|------|--------|-----------|--------|
+| 0 | Warstwa abstrakcji (`app/compat/`) | ZERO | NIE | **NOT STARTED** |
+| 1 | FastHub auth functions | NISKI | NIE | NOT STARTED |
+| 2 | Kolumny UUID obok Integer PK (addytywne) | NISKI | ADD COLUMN | NOT STARTED |
+| 3 | Dual-write UUID (API zwraca UUID) | NISKI | NIE | NOT STARTED |
+| 4 | Tenant migration (tenant_id → org_uuid) | SREDNI | DATA MIGRATION | NOT STARTED |
+| 5 | Swap User/Org/Member → fasthub_core | WYSOKI | RENAME+CREATE | NOT STARTED |
+| 6 | Swap billing/notif/audit → fasthub_core | SREDNI | RENAME+CREATE | NOT STARTED |
+| 7 | PK swap domain tables + cleanup | NISKI | DROP legacy | NOT STARTED |
 
-### Zasady wykonania:
-- Każda faza = osobny commit + push
-- Po każdej fazie: pełny test suite
-- Fazy 0-1 bezpieczne (bez zmian DB)
-- Fazy 2-4 ostrożnie — po jednej na sesję
-- Faza 5 dopiero po potwierdzeniu produkcyjnym
+**Łącznie**: ~130 zmian w plikach, ~2500 linii, 8 migracji Alembic
+
+### Zasady bezpieczeństwa:
+- Każda faza = osobny branch + PR
+- Backup bazy PRZED każdą fazą z migracją
+- Legacy tables (_legacy) zachowane do Fazy 7
+- Nigdy dwie fazy ryzykowne (4-6) w jednej sesji
+- CI green PRZED merge
 
 ---
 
@@ -114,6 +118,11 @@
 ### 2026-03-13: WebCreator Brief 30 COMPLETE
 
 ---
+
+## Dokumenty referencyjne
+- **ANALIZA_POROWNAWCZA.md** — pełne porównanie AutoFlow vs FastHub (moduł po module, 8 sekcji)
+- **Plan migracji**: `~/.claude/plans/zazzy-gathering-cocoa.md` (8 faz)
+- Oba pliki w KAŻDYM repo ekosystemu
 
 ## Środowisko
 - **OS**: Windows 10 Pro
