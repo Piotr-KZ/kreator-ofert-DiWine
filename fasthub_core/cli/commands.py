@@ -225,12 +225,12 @@ def show_config(
     secrets: bool = typer.Option(False, "--secrets", help="Pokaz sekrety (uwaga!)"),
 ):
     """
-    Pokaż aktualną konfigurację FastHub.
+    Pokaż aktualną konfigurację WebCreator.
     """
     from fasthub_core.config import get_settings
     settings = get_settings()
 
-    typer.echo("Konfiguracja FastHub:\n")
+    typer.echo("Konfiguracja WebCreator:\n")
 
     def _mask(value):
         if not value or secrets:
@@ -264,14 +264,14 @@ def show_config(
 @app.command()
 def shell():
     """
-    Interaktywna konsola z załadowanymi modelami FastHub.
+    Interaktywna konsola z załadowanymi modelami WebCreator.
 
     Dostępne obiekty:
         User, Organization, Member — modele
         BillingPlan, Subscription — modele billing
         select — SQLAlchemy select
     """
-    typer.echo("FastHub Shell\n")
+    typer.echo("WebCreator Shell\n")
     typer.echo("   Dostepne: User, Organization, Member, BillingPlan, Subscription")
     typer.echo("   Tip: uzyj 'await db.execute(select(User).limit(5))'\n")
 

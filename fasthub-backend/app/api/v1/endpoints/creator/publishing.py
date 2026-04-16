@@ -70,7 +70,7 @@ async def publish_project(
 
     return {
         "subdomain": site.subdomain,
-        "url": f"https://{site.custom_domain or site.subdomain}.fasthub.site",
+        "url": f"https://{site.custom_domain or site.subdomain}.webcreator.site",
         "status": "published",
         "published_at": site.published_at.isoformat() if site.published_at else None,
     }
@@ -109,7 +109,7 @@ async def republish_project(
 
     return {
         "subdomain": site.subdomain,
-        "url": f"https://{site.custom_domain or site.subdomain}.fasthub.site",
+        "url": f"https://{site.custom_domain or site.subdomain}.webcreator.site",
         "status": "republished",
         "published_at": site.published_at.isoformat() if site.published_at else None,
     }

@@ -51,7 +51,7 @@ class KSeFXMLBuilder:
         payment_deadline: Optional[str] = None,
         bank_account: Optional[str] = None,
         notes: Optional[str] = None,
-        system_info: str = "FastHub",
+        system_info: str = "WebCreator",
     ) -> Dict[str, Any]:
         """
         Generuj XML FA(3).

@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     """Application settings"""
 
     # Application
-    APP_NAME: str = "FastHub"
+    APP_NAME: str = "WebCreator"
     APP_VERSION: str = "1.0.0"
     API_V1_STR: str = "/api/v1"
     DEBUG: bool = False
@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     # SendGrid (optional)
     SENDGRID_API_KEY: Optional[str] = None
     SENDGRID_FROM_EMAIL: str = "noreply@example.com"
-    SENDGRID_FROM_NAME: str = "FastHub"
+    SENDGRID_FROM_NAME: str = "WebCreator"
 
     # Frontend URL for email links
     FRONTEND_URL: str = "http://localhost:3000"
@@ -98,7 +98,7 @@ class Settings(BaseSettings):
     SMTP_USERNAME: Optional[str] = None
     SMTP_PASSWORD: Optional[str] = None
     SMTP_USE_TLS: bool = True
-    SMTP_FROM_EMAIL: str = "noreply@fasthub.app"
+    SMTP_FROM_EMAIL: str = "noreply@webcreator.app"
 
     # Sentry (monitoring)
     SENTRY_DSN: Optional[str] = None
@@ -110,7 +110,7 @@ class Settings(BaseSettings):
     EMAIL_TEMPLATE_DIR: Optional[str] = None  # app override folder for templates
     EMAIL_BRAND_COLOR: str = "#4F46E5"
     EMAIL_BRAND_LOGO_URL: str = ""
-    EMAIL_COMPANY_NAME: str = "FastHub"
+    EMAIL_COMPANY_NAME: str = "WebCreator"
     EMAIL_COMPANY_ADDRESS: str = ""
 
     # Invitations
@@ -170,7 +170,7 @@ class Settings(BaseSettings):
     GUS_API_KEY: Optional[str] = None  # Brak = sandbox mode (do testów)
 
     # 2FA (Brief 26)
-    TOTP_ISSUER_NAME: str = "FastHub"
+    TOTP_ISSUER_NAME: str = "WebCreator"
     TOTP_TEMP_TOKEN_EXPIRE_MINUTES: int = 5
 
     # Sessions (Brief 26)

@@ -1,12 +1,12 @@
 export const APP_CONFIG = {
   // Branding
-  name: "FastHub",
-  shortName: "FH",
-  tagline: "SaaS Boilerplate",
+  name: "WebCreator",
+  shortName: "WC",
+  tagline: "Kreator Stron WWW",
 
   // Logo
   logo: {
-    icon: "FH",
+    icon: "WC",
     gradient: "from-indigo-500 to-purple-600",
   },
 

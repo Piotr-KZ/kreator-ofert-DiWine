@@ -69,7 +69,7 @@ async def upload_material(
         # Replace unsafe chars
         safe_filename = re.sub(r'[^a-zA-Z0-9._-]', '_', safe_filename)[:255]
 
-    # Upload to FastHub Storage (S3/local)
+    # Upload to WebCreator Storage (S3/local)
     try:
         from fasthub_core.storage import upload_file
         file_url = await upload_file(file, folder=f"projects/{project_id}/materials")

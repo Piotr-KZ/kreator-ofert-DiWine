@@ -1,5 +1,5 @@
 """
-FastHub - Universal SaaS Boilerplate
+WebCreator - Website Creator SaaS
 Main FastAPI application entry point
 """
 
@@ -51,8 +51,8 @@ app = FastAPI(
     docs_url=f"{settings.API_V1_STR}/docs",  # Always enabled
     redoc_url=f"{settings.API_V1_STR}/redoc",  # Always enabled
     contact={
-        "name": "FastHub Support",
-        "email": "support@fasthub.com",
+        "name": "WebCreator Support",
+        "email": "support@webcreator.com",
     },
     license_info={
         "name": "MIT",
@@ -128,7 +128,7 @@ async def root_health_check():
     """
     return {
         "status": "healthy",
-        "service": "FastHub",
+        "service": "WebCreator",
         "version": settings.APP_VERSION,
         "timestamp": time.time(),
     }
@@ -141,7 +141,7 @@ async def health_check():
     """
     return {
         "status": "healthy",
-        "service": "FastHub",
+        "service": "WebCreator",
         "version": settings.APP_VERSION,
         "timestamp": time.time(),
     }
@@ -153,7 +153,7 @@ async def startup_event():
     """
     Actions to perform on application startup
     """
-    logger.info("🚀 FastHub Backend started")
+    logger.info("🚀 WebCreator Backend started")
     logger.info(f"📍 API Documentation: http://localhost:8000{settings.API_V1_STR}/docs")
     logger.info(f"🔧 CORS Origins: {origins}")
     logger.info(f"🐛 Debug Mode: {settings.DEBUG}")
@@ -213,7 +213,7 @@ async def shutdown_event():
     """
     Actions to perform on application shutdown
     """
-    logger.info("👋 FastHub Backend shutting down")
+    logger.info("👋 WebCreator Backend shutting down")
 
     # Shutdown Playwright browser if running
     try:

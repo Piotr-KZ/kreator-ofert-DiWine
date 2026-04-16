@@ -21,7 +21,7 @@ class TOTPService:
 
     BACKUP_CODE_COUNT = 10
     BACKUP_CODE_LENGTH = 8
-    ISSUER_NAME = "FastHub"
+    ISSUER_NAME = "WebCreator"
 
     def __init__(self, issuer_name: str = None):
         if issuer_name:

@@ -104,7 +104,7 @@ class NotificationService:
         if prefs["email"] and email:
             success = await self.email_transport.send(
                 to=email,
-                subject=f"[FastHub] {title}",
+                subject=f"[WebCreator] {title}",
                 body=message,
             )
             result["email"] = success

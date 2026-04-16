@@ -1,1 +1,1 @@
-"""FastHub application package"""
+"""WebCreator application package"""

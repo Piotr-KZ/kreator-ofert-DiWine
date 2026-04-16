@@ -310,7 +310,7 @@ class DunningService:
 
         return await self.create_path(
             name="Standardowa",
-            description="Domyslna sciezka windykacyjna FastHub",
+            description="Domyslna sciezka windykacyjna WebCreator",
             steps=DEFAULT_DUNNING_STEPS,
             is_default=True,
         )

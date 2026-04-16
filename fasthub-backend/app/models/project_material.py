@@ -16,7 +16,7 @@ class ProjectMaterial(BaseModel):
 
     type = Column(String(20), nullable=False)  # logo, photo, document, presentation, link, inspiration
 
-    # File (in FastHub Storage)
+    # File (in WebCreator Storage)
     file_url = Column(String(500))
     original_filename = Column(String(255))
     file_size = Column(Integer)  # bytes

@@ -44,8 +44,9 @@
 - **Lokalizacja**: `C:/Projekty internetowe/autoflow`
 - **Branch aktywny**: `main`
 - **Stack**: Python/FastAPI, React/Vite, SQLAlchemy 2.0 + Alembic, Redis
-- **Status**: Migracja fasthub_core DONE (8 faz, merged do main)
+- **Status**: Migracja fasthub_core DONE + billing gateway abstraction DONE
 - **Audyt bezpieczeństwa** (2026-04-02): 6 commitów na main — all fixed
+- **Billing**: multi-gateway (Stripe/PayU/Tpay/P24/PayPal) via fasthub_core PaymentGatewayRegistry
 - **Kluczowa zależność**: używa fasthub_core (thin wrapper + compat layer)
 
 ### WebCreator (Kreator stron) — Brief 30 DONE
@@ -86,6 +87,15 @@
 ---
 
 ## Ukończone zadania (log)
+
+### 2026-04-04: Billing Gateway Abstraction
+- Multi-gateway: Stripe, PayU, Tpay, P24, PayPal via fasthub_core PaymentGatewayRegistry
+- Nowe kolumny: gateway_price_ids, gateway_id, gateway_event_id (+ migracja Alembic z backfillem)
+- payment_gateway.py — lazy singleton wrapper
+- Billing service: checkout, addon checkout, universal webhook handler
+- API: payment-methods, checkout/addon, webhooks/{gw_id}
+- Admin: gateway_price_ids w CRUD, active_gateways w config
+- 396 testów passed, 0 regresji
 
 ### 2026-04-02: Audyt bezpieczeństwa AutoFlow
 - 6 commitów na main

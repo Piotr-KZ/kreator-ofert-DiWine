@@ -100,7 +100,7 @@ async def setup_2fa(
 
     from fasthub_core.auth.totp import TOTPService
 
-    totp = TOTPService(issuer_name=getattr(settings, "TOTP_ISSUER_NAME", "FastHub"))
+    totp = TOTPService(issuer_name=getattr(settings, "TOTP_ISSUER_NAME", "WebCreator"))
     secret = totp.generate_secret()
     uri = totp.generate_provisioning_uri(secret, current_user.email)
     qr_code = totp.generate_qr_code_base64(uri)

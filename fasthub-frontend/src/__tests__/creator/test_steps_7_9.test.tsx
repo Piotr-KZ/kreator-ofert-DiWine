@@ -119,7 +119,7 @@ describe("Step7Config", () => {
     fireEvent.click(screen.getByText("Hosting"));
     await waitFor(() => {
       expect(screen.getByText("Typ domeny")).toBeTruthy();
-      expect(screen.getByText("Subdomena FastHub")).toBeTruthy();
+      expect(screen.getByText("Subdomena WebCreator")).toBeTruthy();
       expect(screen.getByText("Własna domena")).toBeTruthy();
     });
   });
@@ -283,7 +283,7 @@ describe("Step9Publish", () => {
 
     expect(screen.getByText("Publikacja")).toBeTruthy();
     expect(screen.getByText("Test Project")).toBeTruthy();
-    expect(screen.getByText("test-site.fasthub.site")).toBeTruthy();
+    expect(screen.getByText("test-site.webcreator.site")).toBeTruthy();
   });
 
   it("shows deploy method in summary", async () => {
@@ -296,7 +296,7 @@ describe("Step9Publish", () => {
     const { default: Step9Publish } = await import("@/pages/creator/Step9Publish");
     renderWithRouter(<Step9Publish />, "/creator/test-id/step/9");
 
-    expect(screen.getByText("Automatycznie (FastHub)")).toBeTruthy();
+    expect(screen.getByText("Automatycznie (WebCreator)")).toBeTruthy();
   });
 
   it("shows Opublikuj button for auto deploy", async () => {
@@ -342,7 +342,7 @@ describe("Step9Publish", () => {
   it("shows success screen after publish", async () => {
     vi.spyOn(useCreatorStore.getState(), "publishProject").mockResolvedValue({
       subdomain: "test-site",
-      url: "https://test-site.fasthub.site",
+      url: "https://test-site.webcreator.site",
       status: "published",
       published_at: "2026-03-14T12:00:00",
     });
@@ -366,7 +366,7 @@ describe("Step9Publish", () => {
   it("shows share buttons on success", async () => {
     vi.spyOn(useCreatorStore.getState(), "publishProject").mockResolvedValue({
       subdomain: "test-site",
-      url: "https://test-site.fasthub.site",
+      url: "https://test-site.webcreator.site",
       status: "published",
     });
 

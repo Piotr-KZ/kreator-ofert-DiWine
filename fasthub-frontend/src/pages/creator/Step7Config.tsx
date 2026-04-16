@@ -294,7 +294,7 @@ export default function Step7Config() {
                   <input type="radio" name="domain_type" value="subdomain"
                     checked={(local.hosting?.domain_type || "subdomain") === "subdomain"}
                     onChange={() => updateHosting("domain_type", "subdomain")} />
-                  Subdomena FastHub
+                  Subdomena WebCreator
                 </label>
                 <label className="flex items-center gap-2 text-sm">
                   <input type="radio" name="domain_type" value="custom"
@@ -317,7 +317,7 @@ export default function Step7Config() {
                 <div className="flex items-center gap-1">
                   <input type="text" name="subdomain" className={inputClass} placeholder="mojafirma"
                     value={local.hosting?.subdomain || ""} onChange={(e) => updateHosting("subdomain", e.target.value)} />
-                  <span className="text-sm text-gray-500 whitespace-nowrap">.fasthub.site</span>
+                  <span className="text-sm text-gray-500 whitespace-nowrap">.webcreator.site</span>
                 </div>
               </div>
             )}

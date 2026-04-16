@@ -61,14 +61,14 @@ class TemplateEngine:
             from fasthub_core.config import get_settings
             s = get_settings()
             return {
-                "app_name": getattr(s, "EMAIL_COMPANY_NAME", "FastHub"),
+                "app_name": getattr(s, "EMAIL_COMPANY_NAME", "WebCreator"),
                 "brand_color": getattr(s, "EMAIL_BRAND_COLOR", "#4F46E5"),
                 "logo_url": getattr(s, "EMAIL_BRAND_LOGO_URL", ""),
                 "company_address": getattr(s, "EMAIL_COMPANY_ADDRESS", ""),
             }
         except Exception:
             return {
-                "app_name": "FastHub",
+                "app_name": "WebCreator",
                 "brand_color": "#4F46E5",
                 "logo_url": "",
                 "company_address": "",

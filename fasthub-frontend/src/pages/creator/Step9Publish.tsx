@@ -18,7 +18,7 @@ export default function Step9Publish() {
   const hosting = config.hosting;
   const domain = hosting?.domain_type === "custom"
     ? hosting.custom_domain
-    : `${hosting?.subdomain || "moja-strona"}.fasthub.site`;
+    : `${hosting?.subdomain || "moja-strona"}.webcreator.site`;
   const deployMethod = hosting?.deploy_method || "auto";
 
   const handlePublish = async () => {
@@ -123,7 +123,7 @@ export default function Step9Publish() {
         <div className="flex justify-between text-sm">
           <span className="text-gray-500">Metoda wdrożenia</span>
           <span className="font-medium">
-            {deployMethod === "auto" ? "Automatycznie (FastHub)" : deployMethod === "ftp" ? "FTP" : "Pobierz ZIP"}
+            {deployMethod === "auto" ? "Automatycznie (WebCreator)" : deployMethod === "ftp" ? "FTP" : "Pobierz ZIP"}
           </span>
         </div>
       </div>

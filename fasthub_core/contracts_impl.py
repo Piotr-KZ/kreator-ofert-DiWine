@@ -362,7 +362,7 @@ class FastHubNotification(NotificationContract):
         from fasthub_core.notifications.email_transport import create_email_transport
         transport = create_email_transport()
         body = variables.get("body", template)
-        subject = variables.get("subject", f"[FastHub] {template}")
+        subject = variables.get("subject", f"[WebCreator] {template}")
         await transport.send(to=to_email, subject=subject, body=body)
 
 
