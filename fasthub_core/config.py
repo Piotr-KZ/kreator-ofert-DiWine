@@ -55,14 +55,14 @@ class Settings(BaseSettings):
     SENDGRID_FROM_NAME: str = "WebCreator"
 
     # Frontend URL for email links
-    FRONTEND_URL: str = "http://localhost:3000"
+    FRONTEND_URL: str = "http://localhost:3001"
 
     # Redis cache (optional)
     REDIS_URL: Optional[str] = None
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_DB: int = 0
-    REDIS_KEY_PREFIX: str = "fasthub"  # Prefix for all Redis keys (override per app)
+    REDIS_KEY_PREFIX: str = "webcreator"  # Prefix for all Redis keys (override per app)
 
     # Celery (optional)
     CELERY_BROKER_URL: Optional[str] = "redis://localhost:6379/0"
@@ -84,7 +84,7 @@ class Settings(BaseSettings):
     MICROSOFT_REDIRECT_URI: Optional[str] = None
 
     # Backend URL (for OAuth callbacks)
-    BACKEND_URL: str = "http://localhost:8000"
+    BACKEND_URL: str = "http://localhost:8001"
 
     # Outlook IMAP
     OUTLOOK_EMAIL: Optional[str] = None

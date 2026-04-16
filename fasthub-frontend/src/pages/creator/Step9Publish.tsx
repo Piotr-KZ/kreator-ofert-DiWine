@@ -82,7 +82,7 @@ export default function Step9Publish() {
         {/* Next steps */}
         <div className="flex justify-center gap-3">
           <button
-            onClick={() => navigate("/dashboard")}
+            onClick={() => navigate("/panel")}
             className="px-6 py-2.5 text-sm border border-gray-200 rounded-lg hover:bg-gray-50"
           >
             Panel zarządzania

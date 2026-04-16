@@ -61,3 +61,7 @@ coverage/
 
 # Alembic
 alembic/versions/*.pyc
+
+# Secrets
+API-key.txt
+*.key

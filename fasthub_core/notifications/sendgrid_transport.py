@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 class SendGridTransport(EmailTransport):
     """Send emails via SendGrid API v3 (httpx)."""
 
-    def __init__(self, api_key: str, from_email: str = "noreply@fasthub.app"):
+    def __init__(self, api_key: str, from_email: str = "noreply@webcreator.app"):
         self.api_key = api_key
         self.from_email = from_email
 

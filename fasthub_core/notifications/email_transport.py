@@ -40,7 +40,7 @@ class SMTPTransport(EmailTransport):
         username: str,
         password: str,
         use_tls: bool = True,
-        from_email: str = "noreply@fasthub.app",
+        from_email: str = "noreply@webcreator.app",
     ):
         self.host = host
         self.port = port
@@ -87,7 +87,7 @@ class ConsoleTransport(EmailTransport):
             f"\n{'='*60}\n"
             f"EMAIL (console mode)\n"
             f"To: {to}\n"
-            f"From: {from_email or 'noreply@fasthub.app'}\n"
+            f"From: {from_email or 'noreply@webcreator.app'}\n"
             f"Subject: {subject}\n"
             f"{'-'*60}\n"
             f"{body}\n"
@@ -114,7 +114,7 @@ def create_email_transport() -> EmailTransport:
                 from fasthub_core.notifications.sendgrid_transport import SendGridTransport
                 return SendGridTransport(
                     api_key=api_key,
-                    from_email=getattr(settings, "SENDGRID_FROM_EMAIL", "noreply@fasthub.app"),
+                    from_email=getattr(settings, "SENDGRID_FROM_EMAIL", "noreply@webcreator.app"),
                 )
 
         if backend == "smtp" or (backend is None and getattr(settings, "SMTP_HOST", None)):
@@ -124,7 +124,7 @@ def create_email_transport() -> EmailTransport:
                 username=getattr(settings, "SMTP_USERNAME", ""),
                 password=getattr(settings, "SMTP_PASSWORD", ""),
                 use_tls=getattr(settings, "SMTP_USE_TLS", True),
-                from_email=getattr(settings, "SMTP_FROM_EMAIL", "noreply@fasthub.app"),
+                from_email=getattr(settings, "SMTP_FROM_EMAIL", "noreply@webcreator.app"),
             )
 
         # Auto-detect: if SendGrid key present but no explicit backend
@@ -134,7 +134,7 @@ def create_email_transport() -> EmailTransport:
                 from fasthub_core.notifications.sendgrid_transport import SendGridTransport
                 return SendGridTransport(
                     api_key=api_key,
-                    from_email=getattr(settings, "SENDGRID_FROM_EMAIL", "noreply@fasthub.app"),
+                    from_email=getattr(settings, "SENDGRID_FROM_EMAIL", "noreply@webcreator.app"),
                 )
     except Exception:
         pass

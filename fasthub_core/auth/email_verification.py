@@ -19,7 +19,7 @@ from typing import Optional
 class EmailVerificationService:
     """Serwis weryfikacji emaila"""
 
-    def __init__(self, db=None, secret_key: str = "default", base_url: str = "http://localhost:3000"):
+    def __init__(self, db=None, secret_key: str = "default", base_url: str = "http://localhost:3001"):
         self.db = db
         self.secret_key = secret_key
         self.base_url = base_url

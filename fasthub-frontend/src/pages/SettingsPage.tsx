@@ -101,8 +101,11 @@ export default function SettingsPage() {
   const changePassword = async () => {
     setSecError('');
     setSecMsg('');
-    if (newPassword !== confirmPassword) { setSecError('Passwords do not match'); return; }
-    if (newPassword.length < 8) { setSecError('Password must be at least 8 characters'); return; }
+    if (newPassword !== confirmPassword) { setSecError('Hasla nie sa identyczne'); return; }
+    if (newPassword.length < 8) { setSecError('Haslo musi miec min. 8 znakow'); return; }
+    if (!/[A-Z]/.test(newPassword)) { setSecError('Haslo musi zawierac wielka litere'); return; }
+    if (!/[a-z]/.test(newPassword)) { setSecError('Haslo musi zawierac mala litere'); return; }
+    if (!/\d/.test(newPassword)) { setSecError('Haslo musi zawierac cyfre'); return; }
     setSecLoading(true);
     try {
       await authApi.changePassword(currentPassword, newPassword);

@@ -88,7 +88,7 @@ export const sendChatMessage = async (
   onDone: () => void,
 ) => {
   const token =
-    localStorage.getItem("fasthub_token") || sessionStorage.getItem("fasthub_token");
+    localStorage.getItem("access_token") || sessionStorage.getItem("access_token");
   const orgId = localStorage.getItem("current_organization_id");
 
   const response = await fetch(
@@ -177,7 +177,7 @@ export const generateSite = async (
   onProgress: (data: GenerateProgress) => void,
 ) => {
   const token =
-    localStorage.getItem("fasthub_token") || sessionStorage.getItem("fasthub_token");
+    localStorage.getItem("access_token") || sessionStorage.getItem("access_token");
   const orgId = localStorage.getItem("current_organization_id");
 
   const response = await fetch(

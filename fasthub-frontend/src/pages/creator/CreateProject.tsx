@@ -46,7 +46,7 @@ export default function CreateProject() {
         />
 
         <div className="flex gap-3 mt-6">
-          <Btn variant="ghost" onClick={() => navigate("/dashboard")}>
+          <Btn variant="ghost" onClick={() => navigate("/panel")}>
             Anuluj
           </Btn>
           <Btn onClick={handleCreate} loading={loading} className="flex-1">

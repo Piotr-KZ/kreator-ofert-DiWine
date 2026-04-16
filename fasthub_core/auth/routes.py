@@ -58,7 +58,7 @@ async def verify_email(
     service = EmailVerificationService(
         db=db,
         secret_key=settings.SECRET_KEY,
-        base_url=getattr(settings, 'FRONTEND_URL', 'http://localhost:3000'),
+        base_url=getattr(settings, 'FRONTEND_URL', 'http://localhost:3001'),
     )
     result = await service.verify_email(token)
 
@@ -85,7 +85,7 @@ async def resend_verification(
     service = EmailVerificationService(
         db=db,
         secret_key=settings.SECRET_KEY,
-        base_url=getattr(settings, 'FRONTEND_URL', 'http://localhost:3000'),
+        base_url=getattr(settings, 'FRONTEND_URL', 'http://localhost:3001'),
     )
     url = await service.resend_verification(email)
 

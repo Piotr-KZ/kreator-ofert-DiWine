@@ -39,12 +39,18 @@ async def get_current_user(
     # Check if token is blacklisted (async via fasthub_core)
     from fasthub_core.auth.blacklist import is_token_blacklisted
 
-    if await is_token_blacklisted(token):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token has been revoked",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+    try:
+        if await is_token_blacklisted(token):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        # Redis unavailable — skip blacklist check (dev/no-Redis env)
+        pass
 
     # Decode token
     payload = decode_access_token(token)

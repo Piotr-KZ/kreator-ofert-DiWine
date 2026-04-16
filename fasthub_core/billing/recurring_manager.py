@@ -140,7 +140,7 @@ class RecurringManager:
             return None
 
         settings = get_settings()
-        frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:3000")
+        frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:3001")
 
         registry = get_payment_registry()
         result = await registry.create_payment(

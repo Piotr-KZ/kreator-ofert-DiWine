@@ -17,7 +17,7 @@ export default function OnboardingPage() {
     setError(null);
     try {
       await organizationsApi.create({ name: orgName });
-      navigate('/dashboard');
+      navigate('/panel');
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to create organization');
     } finally {
@@ -32,8 +32,8 @@ export default function OnboardingPage() {
           <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${APP_CONFIG.logo.gradient} flex items-center justify-center mx-auto mb-3`}>
             <span className="text-white font-extrabold text-lg">{APP_CONFIG.logo.icon}</span>
           </div>
-          <h1 className="text-xl font-bold text-gray-900">Welcome to {APP_CONFIG.name}!</h1>
-          <p className="text-sm text-gray-500 mt-1">Let's set up your organization to get started</p>
+          <h1 className="text-xl font-bold text-gray-900">Witaj w {APP_CONFIG.name}!</h1>
+          <p className="text-sm text-gray-500 mt-1">Utworz organizacje, zeby zaczac</p>
         </div>
 
         {error && (
@@ -43,16 +43,16 @@ export default function OnboardingPage() {
         )}
 
         <form onSubmit={onSubmit} className="space-y-4">
-          <Fld label="Organization Name" placeholder="Acme Inc." value={orgName} onChange={setOrgName} />
-          <Btn type="submit" loading={loading} className="w-full">Complete Setup</Btn>
+          <Fld label="Nazwa organizacji" placeholder="Moja firma" value={orgName} onChange={setOrgName} />
+          <Btn type="submit" loading={loading} className="w-full">Utworz</Btn>
         </form>
 
         <div className="text-center mt-4">
-          <button onClick={() => navigate('/dashboard')} className="text-sm text-gray-400 hover:text-gray-600">
-            Skip for now
+          <button onClick={() => navigate('/panel')} className="text-sm text-gray-400 hover:text-gray-600">
+            Pomin na razie
           </button>
         </div>
-        <p className="text-xs text-gray-400 text-center mt-4">You can update these details later in Settings</p>
+        <p className="text-xs text-gray-400 text-center mt-4">Mozesz to zmienic pozniej w ustawieniach</p>
       </div>
     </div>
   );

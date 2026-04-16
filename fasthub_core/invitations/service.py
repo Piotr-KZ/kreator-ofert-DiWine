@@ -158,7 +158,7 @@ class InvitationService:
         try:
             from fasthub_core.config import get_settings
             settings = get_settings()
-            frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:3000")
+            frontend_url = getattr(settings, "FRONTEND_URL", "http://localhost:3001")
 
             from fasthub_core.email.send import send_templated_email
             await send_templated_email(

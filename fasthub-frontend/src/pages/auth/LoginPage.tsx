@@ -15,9 +15,9 @@ export default function LoginPage() {
 
   const validate = () => {
     const errors: Record<string, string> = {};
-    if (!email) errors.email = 'Please enter your email';
-    else if (!/\S+@\S+\.\S+/.test(email)) errors.email = 'Please enter a valid email';
-    if (!password) errors.password = 'Please enter your password';
+    if (!email) errors.email = 'Podaj adres email';
+    else if (!/\S+@\S+\.\S+/.test(email)) errors.email = 'Podaj poprawny adres email';
+    if (!password) errors.password = 'Podaj haslo';
     setFormErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -29,7 +29,7 @@ export default function LoginPage() {
     clearError();
     try {
       await login(email, password, rememberMe);
-      navigate('/dashboard');
+      navigate('/panel');
     } catch {
       // error handled by store
     } finally {
@@ -48,12 +48,12 @@ export default function LoginPage() {
             <span className="text-white font-extrabold text-lg">{APP_CONFIG.logo.icon}</span>
           </div>
           <h1 className="text-xl font-bold text-gray-900">{APP_CONFIG.name}</h1>
-          <p className="text-sm text-gray-500 mt-1">Sign in to your account</p>
+          <p className="text-sm text-gray-500 mt-1">Zaloguj sie do swojego konta</p>
         </div>
 
         {error && (
           <div className="bg-red-50 border border-red-200 rounded-xl p-3 mb-4 flex items-center justify-between">
-            <p className="text-sm text-red-700">{typeof error === 'string' ? error : 'Login failed. Please try again.'}</p>
+            <p className="text-sm text-red-700">{typeof error === 'string' ? error : 'Logowanie nie powiodlo sie.'}</p>
             <button onClick={clearError} className="text-red-400 hover:text-red-600 ml-2 flex-shrink-0">
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
@@ -61,8 +61,8 @@ export default function LoginPage() {
         )}
 
         <form onSubmit={onSubmit} className="space-y-4">
-          <Fld label="Email" type="email" placeholder="you@example.com" value={email} onChange={setEmail} error={formErrors.email} />
-          <Fld label="Password" type="password" placeholder="Password" value={password} onChange={setPassword} error={formErrors.password} />
+          <Fld label="Email" type="email" placeholder="jan@example.com" value={email} onChange={setEmail} error={formErrors.email} />
+          <Fld label="Haslo" type="password" placeholder="Haslo" value={password} onChange={setPassword} error={formErrors.password} />
 
           <div className="flex items-center justify-between">
             <label className="flex items-center gap-2 cursor-pointer">
@@ -72,22 +72,22 @@ export default function LoginPage() {
                 onChange={(e) => setRememberMe(e.target.checked)}
                 className="w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
               />
-              <span className="text-sm text-gray-600">Remember me</span>
+              <span className="text-sm text-gray-600">Zapamietaj mnie</span>
             </label>
             <Link to="/forgot-password" className="text-sm text-indigo-600 hover:text-indigo-700">
-              Forgot password?
+              Nie pamietasz hasla?
             </Link>
           </div>
 
           <Btn type="submit" loading={loading} className="w-full">
-            Sign In
+            Zaloguj sie
           </Btn>
         </form>
 
         <div className="mt-6 text-center border-t border-gray-200 pt-4">
           <p className="text-sm text-gray-500">
-            Don't have an account?{' '}
-            <Link to="/register" className="text-indigo-600 hover:text-indigo-700 font-medium">Sign up</Link>
+            Nie masz konta?{' '}
+            <Link to="/register" className="text-indigo-600 hover:text-indigo-700 font-medium">Zarejestruj sie</Link>
           </p>
         </div>
       </div>

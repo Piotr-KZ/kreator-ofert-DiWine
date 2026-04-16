@@ -32,5 +32,5 @@ jobs:
           cd fasthub-frontend
           npm run build
         env:
-          VITE_API_URL: http://localhost:8000
-          VITE_APP_NAME: FastHub
+          VITE_API_URL: http://localhost:8001/api/v1
+          VITE_APP_NAME: WebCreator

@@ -14,7 +14,6 @@ import DashboardPage from './pages/DashboardPage';
 import UsersPage from './pages/UsersPage';
 import TeamPage from './pages/TeamPage';
 import BillingPage from './pages/BillingPage';
-import SettingsPage from './pages/SettingsPage';
 import AccountPage from './pages/AccountPage';
 
 // SuperAdmin pages
@@ -127,10 +126,6 @@ export const router = createBrowserRouter([
         element: <DashboardPage />,
       },
       {
-        path: '/dashboard',
-        element: <DashboardPage />,
-      },
-      {
         path: '/users',
         element: <UsersPage />,
       },
@@ -141,10 +136,6 @@ export const router = createBrowserRouter([
       {
         path: '/billing',
         element: <BillingPage />,
-      },
-      {
-        path: '/settings',
-        element: <SettingsPage />,
       },
       {
         path: '/account',

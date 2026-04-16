@@ -154,7 +154,7 @@ async def startup_event():
     Actions to perform on application startup
     """
     logger.info("🚀 WebCreator Backend started")
-    logger.info(f"📍 API Documentation: http://localhost:8000{settings.API_V1_STR}/docs")
+    logger.info(f"📍 API Documentation: http://localhost:8001{settings.API_V1_STR}/docs")
     logger.info(f"🔧 CORS Origins: {origins}")
     logger.info(f"🐛 Debug Mode: {settings.DEBUG}")
     
