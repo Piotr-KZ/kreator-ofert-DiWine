@@ -1,6 +1,14 @@
 """
 System prompts for all AI operations in WebCreator.
+
+Prompt caching strategy (from Axonet):
+- Static prompt parts (instructions, rules) → cache_control: ephemeral
+- Dynamic parts (project context) → no cache
+- Use build_prompt() for cached prompts, PROMPTS dict for raw strings.
 """
+
+# ─── RAW PROMPTS ───
+# Used by engine.py for building cached blocks.
 
 PROMPTS = {
     # ─── ETAP 4: WALIDACJA SPÓJNOŚCI ───
@@ -191,3 +199,78 @@ Odpowiedz JSON:
     ]
 }""",
 }
+
+
+# ─── PROMPT CACHING (from Axonet) ───
+
+def build_cached_prompt(prompt_key: str, dynamic_context: str = "") -> list[dict]:
+    """Build system prompt as list of blocks with cache_control.
+
+    Block 1 (STATIC): prompt instructions → cache_control: ephemeral
+    Block 2 (DYNAMIC): project context → no cache
+
+    This saves ~90% on repeated calls with same instructions.
+    """
+    static_text = PROMPTS.get(prompt_key, "")
+    if not static_text:
+        raise ValueError(f"Unknown prompt key: {prompt_key}")
+
+    blocks = [
+        {
+            "type": "text",
+            "text": static_text,
+            "cache_control": {"type": "ephemeral"},
+        },
+    ]
+
+    if dynamic_context:
+        blocks.append({
+            "type": "text",
+            "text": dynamic_context,
+        })
+
+    return blocks
+
+
+def build_chat_prompt(context_type: str, project_context: str) -> list[dict]:
+    """Build cached chat prompt with project context inserted.
+
+    Chat prompts have {project_context} placeholder — we split them
+    into static instruction + dynamic context for caching.
+    """
+    prompt_key = f"chat_{context_type}"
+    raw = PROMPTS.get(prompt_key, "")
+    if not raw:
+        raise ValueError(f"Unknown chat context: {context_type}")
+
+    # Split at {project_context} placeholder
+    if "{project_context}" in raw:
+        parts = raw.split("{project_context}")
+        static_part = parts[0].rstrip()
+        suffix = parts[1].lstrip() if len(parts) > 1 else ""
+
+        blocks = [
+            {
+                "type": "text",
+                "text": static_part,
+                "cache_control": {"type": "ephemeral"},
+            },
+            {
+                "type": "text",
+                "text": project_context + ("\n" + suffix if suffix else ""),
+            },
+        ]
+    else:
+        blocks = [
+            {
+                "type": "text",
+                "text": raw,
+                "cache_control": {"type": "ephemeral"},
+            },
+            {
+                "type": "text",
+                "text": project_context,
+            },
+        ]
+
+    return blocks

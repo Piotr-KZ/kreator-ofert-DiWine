@@ -86,6 +86,7 @@ export const sendChatMessage = async (
   message: string,
   onChunk: (text: string) => void,
   onDone: () => void,
+  onError?: (error: string) => void,
 ) => {
   const token =
     localStorage.getItem("access_token") || sessionStorage.getItem("access_token");
@@ -105,7 +106,16 @@ export const sendChatMessage = async (
   );
 
   if (!response.ok || !response.body) {
-    throw new Error("Chat request failed");
+    // Try to extract error detail from response
+    try {
+      const errorData = await response.json();
+      const errorMsg = errorData.detail || "Błąd połączenia z AI";
+      onError?.(errorMsg);
+    } catch {
+      onError?.("Błąd połączenia z AI. Spróbuj ponownie.");
+    }
+    onDone();
+    return;
   }
 
   const reader = response.body.getReader();
@@ -129,7 +139,11 @@ export const sendChatMessage = async (
         }
         try {
           const parsed = JSON.parse(data);
-          if (parsed.text) onChunk(parsed.text);
+          if (parsed.error) {
+            onError?.(parsed.error);
+          } else if (parsed.text) {
+            onChunk(parsed.text);
+          }
         } catch {
           // skip malformed
         }

@@ -1,5 +1,7 @@
 """
 Creator: AI Engine endpoints — validation, generation, chat (SSE), vision, legal, readiness.
+
+Enhanced with user-friendly error handling (from Axonet).
 """
 
 import json
@@ -20,11 +22,15 @@ from app.models.block_template import BlockTemplate
 from app.models.organization import Organization
 from app.models.project import Project
 from app.models.user import User
+from app.services.ai.claude_client import get_user_error
 from app.services.ai.engine import AIEngine
 from app.services.ai.vision import AIVisionService
 from app.services.creator.renderer import PageRenderer
 
 router = APIRouter()
+
+import logging
+logger = logging.getLogger(__name__)
 
 
 # ─── Schemas ───
@@ -36,6 +42,29 @@ class ChatMessage(BaseModel):
 
 class GenerateInstruction(BaseModel):
     instruction: str | None = None
+
+
+# ─── Error handler ───
+
+def _handle_ai_error(e: Exception) -> HTTPException:
+    """Convert AI RuntimeError to HTTPException with user-friendly message."""
+    error_code = str(e)
+    user_message = get_user_error(error_code)
+    logger.error(f"AI endpoint error: {error_code}")
+
+    # Map error codes to HTTP status codes
+    if "RATE_LIMIT" in error_code:
+        http_status = status.HTTP_429_TOO_MANY_REQUESTS
+    elif "AUTH" in error_code or "NO_KEY" in error_code:
+        http_status = status.HTTP_503_SERVICE_UNAVAILABLE
+    elif "INSUFFICIENT_CREDITS" in error_code:
+        http_status = status.HTTP_503_SERVICE_UNAVAILABLE
+    elif "OVERLOADED" in error_code:
+        http_status = status.HTTP_503_SERVICE_UNAVAILABLE
+    else:
+        http_status = status.HTTP_502_BAD_GATEWAY
+
+    return HTTPException(status_code=http_status, detail=user_message)
 
 
 # ─── Helpers ───
@@ -91,7 +120,10 @@ async def validate_project(
     """Stage 4: AI validates project consistency."""
     project = await _get_project_with_data(project_id, org.id, db)
     engine = AIEngine(db)
-    items = await engine.validate_project(project)
+    try:
+        items = await engine.validate_project(project)
+    except RuntimeError as e:
+        raise _handle_ai_error(e)
     return {"items": items}
 
 
@@ -105,7 +137,10 @@ async def generate_structure(
     """Stage 5: AI generates page structure (list of sections with content)."""
     project = await _get_project_with_data(project_id, org.id, db)
     engine = AIEngine(db)
-    sections = await engine.generate_structure(project)
+    try:
+        sections = await engine.generate_structure(project)
+    except RuntimeError as e:
+        raise _handle_ai_error(e)
     return {"sections": sections}
 
 
@@ -129,12 +164,17 @@ async def chat_with_ai(
     engine = AIEngine(db)
 
     async def stream_generator():
-        async for chunk in engine.chat_stream(
-            project, data.context, data.message, conversation
-        ):
-            yield f"data: {json.dumps({'text': chunk})}\n\n"
-        yield "data: [DONE]\n\n"
-        await db.flush()
+        try:
+            async for chunk in engine.chat_stream(
+                project, data.context, data.message, conversation
+            ):
+                yield f"data: {json.dumps({'text': chunk})}\n\n"
+            yield "data: [DONE]\n\n"
+            await db.flush()
+        except RuntimeError as e:
+            error_msg = get_user_error(str(e))
+            yield f"data: {json.dumps({'error': error_msg})}\n\n"
+            yield "data: [DONE]\n\n"
 
     return StreamingResponse(stream_generator(), media_type="text/event-stream")
 
@@ -149,7 +189,10 @@ async def visual_review(
     """Stage 6: 'AI Preview' button — AI reviews the page visually."""
     project = await _get_project_with_data(project_id, org.id, db)
     vision = AIVisionService(db)
-    review = await vision.visual_review(project)
+    try:
+        review = await vision.visual_review(project)
+    except RuntimeError as e:
+        raise _handle_ai_error(e)
     return review
 
 
@@ -168,7 +211,10 @@ async def generate_legal(
         )
     project = await _get_project_with_data(project_id, org.id, db)
     engine = AIEngine(db)
-    html = await engine.generate_legal(project, doc_type)
+    try:
+        html = await engine.generate_legal(project, doc_type)
+    except RuntimeError as e:
+        raise _handle_ai_error(e)
     return {"html": html, "doc_type": doc_type}
 
 
@@ -182,7 +228,10 @@ async def check_readiness(
     """Stage 8: AI checks publishing readiness."""
     project = await _get_project_with_data(project_id, org.id, db)
     engine = AIEngine(db)
-    checks = await engine.check_readiness(project)
+    try:
+        checks = await engine.check_readiness(project)
+    except RuntimeError as e:
+        raise _handle_ai_error(e)
 
     # Save in project
     project.check_json = {
@@ -204,7 +253,10 @@ async def suggest_seo(
     """Stage 7: AI suggests SEO metadata."""
     project = await _get_project_with_data(project_id, org.id, db)
     engine = AIEngine(db)
-    suggestions = await engine.suggest_seo(project)
+    try:
+        suggestions = await engine.suggest_seo(project)
+    except RuntimeError as e:
+        raise _handle_ai_error(e)
     return suggestions
 
 
@@ -226,6 +278,10 @@ async def generate_site(
 
         try:
             sections_data = await engine.generate_structure(project)
+        except RuntimeError as e:
+            error_msg = get_user_error(str(e))
+            yield f"data: {json.dumps({'status': 'error', 'message': error_msg})}\n\n"
+            return
         except Exception as e:
             yield f"data: {json.dumps({'status': 'error', 'message': str(e)})}\n\n"
             return
@@ -304,7 +360,10 @@ async def generate_section_content_with_instruction(
         )
 
     engine = AIEngine(db)
-    slots = await engine.generate_section_content(project, section, block)
+    try:
+        slots = await engine.generate_section_content(project, section, block)
+    except RuntimeError as e:
+        raise _handle_ai_error(e)
     section.slots_json = slots
     await db.commit()
 

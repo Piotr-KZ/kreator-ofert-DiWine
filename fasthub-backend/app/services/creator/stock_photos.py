@@ -5,7 +5,7 @@ Brief 34: image search for block slots.
 
 import httpx
 
-from fasthub_core.config import settings
+from app.core.config import settings
 
 
 class StockPhotoService:

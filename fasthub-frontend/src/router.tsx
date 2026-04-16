@@ -1,4 +1,4 @@
-import { createBrowserRouter } from 'react-router-dom';
+import { createBrowserRouter, Navigate } from 'react-router-dom';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
 import AppShell from './components/layout/AppShell';
 
@@ -10,7 +10,6 @@ import ResetPasswordPage from './pages/auth/ResetPasswordPage';
 
 // Main pages
 import OnboardingPage from './pages/OnboardingPage';
-import DashboardPage from './pages/DashboardPage';
 import UsersPage from './pages/UsersPage';
 import TeamPage from './pages/TeamPage';
 import BillingPage from './pages/BillingPage';
@@ -112,19 +111,24 @@ export const router = createBrowserRouter([
     ],
   },
 
-  // Protected routes
+  // Redirects — stare ścieżki → /panel
   {
     path: '/',
+    element: <Navigate to="/panel" replace />,
+  },
+  {
+    path: '/dashboard',
+    element: <Navigate to="/panel" replace />,
+  },
+
+  // Protected routes (AppShell layout)
+  {
     element: (
       <ProtectedRoute>
         <AppShell />
       </ProtectedRoute>
     ),
     children: [
-      {
-        path: '/',
-        element: <DashboardPage />,
-      },
       {
         path: '/users',
         element: <UsersPage />,

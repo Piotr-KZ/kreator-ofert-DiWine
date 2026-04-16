@@ -16,6 +16,7 @@ export default function Step4Validation() {
     chatMessages,
     isValidating,
     isChatting,
+    aiError,
     runValidation,
     sendChatMessage,
   } = useCreatorStore();
@@ -63,6 +64,13 @@ export default function Step4Validation() {
   const analysisPanel = (
     <div className="space-y-4">
       <h2 className="text-lg font-semibold text-gray-800">Analiza spójności</h2>
+
+      {aiError && (
+        <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-sm text-red-700 mb-4">
+          <p className="font-medium">Błąd AI</p>
+          <p>{aiError}</p>
+        </div>
+      )}
 
       {isValidating ? (
         <div className="flex items-center gap-3 text-gray-500 py-8">

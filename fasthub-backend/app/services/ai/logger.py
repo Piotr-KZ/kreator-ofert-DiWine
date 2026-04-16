@@ -1,5 +1,6 @@
 """
 AI call logging — saves every Claude API call to ai_generation_logs.
+Uses cache-aware cost estimation (from Axonet).
 """
 
 import logging
@@ -7,6 +8,7 @@ import logging
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.ai_conversation import AIGenerationLog
+from app.services.ai.claude_client import estimate_cost
 
 logger = logging.getLogger(__name__)
 
@@ -20,8 +22,16 @@ async def log_ai_call(
     iterations: int = 1,
 ):
     """Log an AI call to ai_generation_logs."""
+    cache_read = getattr(response, "cache_read_tokens", 0) or 0
+    cache_creation = getattr(response, "cache_creation_tokens", 0) or 0
+
     cost = estimate_cost(
-        response.model, response.tokens_in, response.tokens_out, screenshots_count
+        response.model,
+        response.tokens_in,
+        response.tokens_out,
+        cache_read=cache_read,
+        cache_creation=cache_creation,
+        images=screenshots_count,
     )
 
     log = AIGenerationLog(
@@ -39,22 +49,3 @@ async def log_ai_call(
     )
     db.add(log)
     await db.flush()
-
-
-def estimate_cost(
-    model: str, tokens_in: int, tokens_out: int, images: int = 0
-) -> float:
-    """Estimate API call cost in USD."""
-    PRICES = {
-        "claude-haiku-4-5-20251001": {"in": 1.0, "out": 5.0},
-        "claude-sonnet-4-20250514": {"in": 3.0, "out": 15.0},
-    }
-    prices = PRICES.get(model, {"in": 3.0, "out": 15.0})
-
-    cost = (tokens_in * prices["in"] + tokens_out * prices["out"]) / 1_000_000
-
-    # Images: ~1600 tokens per image (Sonnet vision pricing)
-    if images:
-        cost += images * 1600 * prices["in"] / 1_000_000
-
-    return round(cost, 6)

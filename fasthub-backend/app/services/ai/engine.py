@@ -1,6 +1,8 @@
 """
 AI Engine — main AI facade for WebCreator.
 Orchestrates Claude API calls for validation, generation, chat, legal docs, and readiness checks.
+
+Enhanced with: prompt caching, model selector, better error handling (from Axonet).
 """
 
 import json
@@ -16,7 +18,8 @@ from app.models.block_template import BlockTemplate
 from app.models.project import Project
 from app.services.ai.claude_client import ClaudeClient
 from app.services.ai.logger import log_ai_call
-from app.services.ai.prompts import PROMPTS
+from app.services.ai.model_selector import get_model_tier
+from app.services.ai.prompts import PROMPTS, build_cached_prompt, build_chat_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -38,11 +41,15 @@ class AIEngine:
         Returns list of validation items with status ok/warning/error.
         """
         context = self._build_project_context(project)
+        system = build_cached_prompt(
+            "validate_consistency",
+            f"Przeanalizuj ten projekt:\n\n{context}",
+        )
 
         response = await self.claude.complete_json(
-            system=PROMPTS["validate_consistency"],
+            system=system,
             user_message=f"Przeanalizuj ten projekt:\n\n{context}",
-            model_tier="smart",
+            model_tier=get_model_tier("validate_consistency"),
         )
 
         await log_ai_call(self.db, project, "validate", response)
@@ -66,11 +73,14 @@ class AIEngine:
         """
         context = self._build_project_context(project)
         available_blocks = await self._get_available_blocks_summary()
+        user_msg = f"Kontekst projektu:\n{context}\n\nDostępne klocki:\n{available_blocks}"
+
+        system = build_cached_prompt("generate_structure")
 
         response = await self.claude.complete_json(
-            system=PROMPTS["generate_structure"],
-            user_message=f"Kontekst projektu:\n{context}\n\nDostępne klocki:\n{available_blocks}",
-            model_tier="smart",
+            system=system,
+            user_message=user_msg,
+            model_tier=get_model_tier("generate_structure"),
         )
 
         await log_ai_call(self.db, project, "generate_structure", response)
@@ -84,29 +94,23 @@ class AIEngine:
     async def generate_section_content(
         self, project: Project, section, block_template
     ) -> dict:
-        """AI fills section slots with content.
-
-        Args:
-            section: ProjectSection (block_code, variant)
-            block_template: BlockTemplate (slots_definition)
-
-        Returns:
-            dict: filled slots {"title": "...", "description": "...", ...}
-        """
+        """AI fills section slots with content."""
         context = self._build_project_context(project)
         slots_schema = json.dumps(
             block_template.slots_definition, ensure_ascii=False
         )
 
+        system = build_cached_prompt("generate_section_content")
+
         response = await self.claude.complete_json(
-            system=PROMPTS["generate_section_content"],
+            system=system,
             user_message=f"""Kontekst projektu:\n{context}
 
 Sekcja: {block_template.name} (kod: {section.block_code}, wariant: {section.variant})
 Opis klocka: {block_template.description}
 
 Wypełnij te sloty:\n{slots_schema}""",
-            model_tier="smart",
+            model_tier=get_model_tier("generate_section_content"),
         )
 
         await log_ai_call(self.db, project, "generate_content", response)
@@ -124,23 +128,16 @@ Wypełnij te sloty:\n{slots_schema}""",
         message: str,
         conversation: AIConversation,
     ) -> AsyncIterator[str]:
-        """Chat with AI in project context — streaming.
-
-        Args:
-            context_type: "validation" | "structure" | "editing" | "config"
-            message: new user message
-            conversation: existing conversation (history)
-        """
+        """Chat with AI in project context — streaming."""
         project_context = self._build_project_context(project)
-        system = PROMPTS[f"chat_{context_type}"].format(
-            project_context=project_context
-        )
+        system = build_chat_prompt(context_type, project_context)
 
         history = conversation.messages_json or []
 
         full_response = []
         async for chunk in self.claude.chat(
-            system, history, message, model_tier="fast"
+            system, history, message,
+            model_tier=get_model_tier(f"chat_{context_type}"),
         ):
             full_response.append(chunk)
             yield chunk
@@ -160,20 +157,16 @@ Wypełnij te sloty:\n{slots_schema}""",
     # ═══════════════════════════════════════
 
     async def generate_legal(self, project: Project, doc_type: str) -> str:
-        """AI generates a legal document tailored to the company.
-
-        Args:
-            doc_type: "privacy_policy" | "terms" | "rodo_clause" | "cookie_info"
-
-        Returns:
-            HTML document
-        """
+        """AI generates a legal document tailored to the company."""
         context = self._build_project_context(project)
+        prompt_key = f"generate_{doc_type}"
+
+        system = build_cached_prompt(prompt_key)
 
         response = await self.claude.complete(
-            system=PROMPTS[f"generate_{doc_type}"],
+            system=system,
             user_message=f"Dane firmy:\n{context}",
-            model_tier="smart",
+            model_tier=get_model_tier(prompt_key),
         )
 
         await log_ai_call(self.db, project, f"generate_legal_{doc_type}", response)
@@ -188,10 +181,12 @@ Wypełnij te sloty:\n{slots_schema}""",
         """AI checks if the site is ready for publishing."""
         context = self._build_full_project_state(project)
 
+        system = build_cached_prompt("check_readiness")
+
         response = await self.claude.complete_json(
-            system=PROMPTS["check_readiness"],
+            system=system,
             user_message=f"Sprawdź gotowość:\n{context}",
-            model_tier="smart",
+            model_tier=get_model_tier("check_readiness"),
         )
 
         await log_ai_call(self.db, project, "check_readiness", response)
@@ -206,10 +201,12 @@ Wypełnij te sloty:\n{slots_schema}""",
         """AI suggests SEO metadata based on project brief and content."""
         context = self._build_full_project_state(project)
 
+        system = build_cached_prompt("suggest_seo")
+
         response = await self.claude.complete_json(
-            system=PROMPTS["suggest_seo"],
+            system=system,
             user_message=f"Zaproponuj SEO dla tego projektu:\n\n{context}",
-            model_tier="fast",
+            model_tier=get_model_tier("suggest_seo"),
         )
 
         await log_ai_call(self.db, project, "suggest_seo", response)

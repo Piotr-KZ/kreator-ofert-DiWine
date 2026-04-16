@@ -92,6 +92,7 @@ interface CreatorState {
   isGenerating: boolean;
   generateProgress: GenerateProgress | null;
   activeSection: string | null;
+  aiError: string | null;
 
   // Actions
   loadProject: (projectId: string) => Promise<void>;
@@ -149,6 +150,7 @@ export const useCreatorStore = create<CreatorState>((set, get) => ({
   isGenerating: false,
   generateProgress: null,
   activeSection: null,
+  aiError: null,
 
   loadProject: async (projectId: string) => {
     set({ isLoading: true });
@@ -249,13 +251,14 @@ export const useCreatorStore = create<CreatorState>((set, get) => ({
   runValidation: async () => {
     const { project } = get();
     if (!project) return;
-    set({ isValidating: true });
+    set({ isValidating: true, aiError: null });
     try {
       const { data } = await api.runValidation(project.id);
       set({ validationItems: data.items, isValidating: false });
-    } catch (e) {
-      console.error("Failed to run validation:", e);
-      set({ isValidating: false });
+    } catch (e: any) {
+      const errorMsg = e?.response?.data?.detail || "Błąd AI — spróbuj ponownie.";
+      console.error("Failed to run validation:", errorMsg);
+      set({ isValidating: false, aiError: errorMsg });
     }
   },
 
@@ -268,6 +271,7 @@ export const useCreatorStore = create<CreatorState>((set, get) => ({
     set({
       chatMessages: [...chatMessages, userMsg, assistantMsg],
       isChatting: true,
+      aiError: null,
     });
 
     try {
@@ -288,10 +292,21 @@ export const useCreatorStore = create<CreatorState>((set, get) => ({
         () => {
           set({ isChatting: false });
         },
+        (errorMsg) => {
+          // Show error as assistant message
+          set((s) => {
+            const msgs = [...s.chatMessages];
+            const last = msgs[msgs.length - 1];
+            if (last?.role === "assistant") {
+              msgs[msgs.length - 1] = { ...last, content: `⚠️ ${errorMsg}` };
+            }
+            return { chatMessages: msgs, aiError: errorMsg, isChatting: false };
+          });
+        },
       );
     } catch (e) {
       console.error("Chat error:", e);
-      set({ isChatting: false });
+      set({ isChatting: false, aiError: "Błąd połączenia z AI." });
     }
   },
 
@@ -519,5 +534,6 @@ export const useCreatorStore = create<CreatorState>((set, get) => ({
       isGenerating: false,
       generateProgress: null,
       activeSection: null,
+      aiError: null,
     }),
 }));
