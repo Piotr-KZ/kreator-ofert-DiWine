@@ -6,7 +6,7 @@ from datetime import datetime
 from typing import Optional
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
 # ============================================================================
@@ -25,7 +25,7 @@ class ProjectUpdate(BaseModel):
 
     name: Optional[str] = Field(None, min_length=1, max_length=255)
     status: Optional[str] = None
-    current_step: Optional[int] = None
+    current_step: Optional[int] = Field(None, ge=1, le=9)
     brief_json: Optional[dict] = None
     style_json: Optional[dict] = None
     config_json: Optional[dict] = None
@@ -73,20 +73,20 @@ class ProjectListItem(BaseModel):
 # ============================================================================
 
 class BriefData(BaseModel):
-    site_type: Optional[str] = None
-    company_name: Optional[str] = None
-    industry: Optional[str] = None
-    description: Optional[str] = None
-    target_audience: Optional[str] = None
-    b2b_b2c: Optional[str] = None
+    site_type: Optional[str] = Field(None, max_length=100)
+    company_name: Optional[str] = Field(None, max_length=255)
+    industry: Optional[str] = Field(None, max_length=255)
+    description: Optional[str] = Field(None, max_length=5000)
+    target_audience: Optional[str] = Field(None, max_length=2000)
+    b2b_b2c: Optional[str] = Field(None, max_length=10)
     usp: Optional[list[str]] = None
-    brand_positioning: Optional[str] = None
-    communication_style: Optional[str] = None
-    site_goal: Optional[str] = None
+    brand_positioning: Optional[str] = Field(None, max_length=2000)
+    communication_style: Optional[str] = Field(None, max_length=100)
+    site_goal: Optional[str] = Field(None, max_length=2000)
     desired_impressions: Optional[dict] = None
     pages: Optional[list[str]] = None
     content_sections: Optional[list[str]] = None
-    custom_wishes: Optional[str] = None
+    custom_wishes: Optional[str] = Field(None, max_length=5000)
 
 
 # ============================================================================
@@ -94,15 +94,16 @@ class BriefData(BaseModel):
 # ============================================================================
 
 class StyleData(BaseModel):
-    palette_preset: Optional[str] = None
-    color_primary: Optional[str] = None
-    color_secondary: Optional[str] = None
-    color_accent: Optional[str] = None
-    heading_font: Optional[str] = None
-    body_font: Optional[str] = None
+    palette_preset: Optional[str] = Field(None, max_length=50)
+    color_primary: Optional[str] = Field(None, max_length=7, pattern=r'^#[0-9a-fA-F]{6}$')
+    color_secondary: Optional[str] = Field(None, max_length=7, pattern=r'^#[0-9a-fA-F]{6}$')
+    color_accent: Optional[str] = Field(None, max_length=7, pattern=r'^#[0-9a-fA-F]{6}$')
+    heading_font: Optional[str] = Field(None, max_length=100)
+    body_font: Optional[str] = Field(None, max_length=100)
     font_sizes: Optional[dict] = None
     section_themes: Optional[dict] = None
-    border_radius: Optional[str] = None
+    section_theme: Optional[str] = Field(None, max_length=50)
+    border_radius: Optional[str] = Field(None, max_length=20)
 
 
 # ============================================================================
@@ -193,11 +194,17 @@ class ReorderData(BaseModel):
 # ============================================================================
 
 class FormsConfig(BaseModel):
-    contact_email: Optional[str] = None
-    thank_you_message: Optional[str] = None
+    contact_email: Optional[EmailStr] = None
+    thank_you_message: Optional[str] = Field(None, max_length=2000)
     thank_you_url: Optional[str] = None
     send_email_notification: bool = True
     fields: Optional[list[dict]] = None
+    # CRM integration — webhook for native CRM sync
+    crm_webhook_url: Optional[str] = None
+    crm_enabled: bool = False
+    # Email marketing — newsletter signup
+    newsletter_enabled: bool = False
+    newsletter_provider: Optional[str] = None  # mailchimp, mailerlite, convertkit, native
 
 
 class SocialConfig(BaseModel):
@@ -227,6 +234,7 @@ class SeoConfig(BaseModel):
     og_description: Optional[str] = None
     og_image: Optional[str] = None
     canonical_url: Optional[str] = None
+    language: Optional[str] = Field("pl", max_length=5, pattern=r'^[a-z]{2}(-[A-Z]{2})?$')
     tracking: Optional[TrackingConfig] = None
 
 
@@ -254,11 +262,18 @@ class LegalConfig(BaseModel):
 
 
 class FtpConfig(BaseModel):
-    host: Optional[str] = None
-    port: int = 21
-    username: Optional[str] = None
-    password: Optional[str] = None
-    path: Optional[str] = None
+    host: Optional[str] = Field(None, max_length=255)
+    port: int = Field(21, ge=1, le=65535)
+    username: Optional[str] = Field(None, max_length=255)
+    password: Optional[str] = Field(None, max_length=500)
+    path: Optional[str] = Field(None, max_length=500)
+
+    @field_validator("path")
+    @classmethod
+    def validate_ftp_path(cls, v: str | None) -> str | None:
+        if v and ".." in v:
+            raise ValueError("Path must not contain '..'")
+        return v
 
 
 class HostingConfig(BaseModel):
@@ -432,3 +447,35 @@ class ProjectStatsResponse(BaseModel):
 class FormSubmissionUpdate(BaseModel):
     read: Optional[bool] = None
     status: Optional[str] = None  # new, read, answered
+
+
+# ============================================================================
+# AI Visibility (Brief 41)
+# ============================================================================
+
+
+class AIVisibilityLink(BaseModel):
+    name: str
+    url: str
+
+
+class AIVisibilityCategoryItem(BaseModel):
+    name: str
+    description: Optional[str] = None
+    period: Optional[str] = None       # doświadczenie zawodowe
+    school: Optional[str] = None       # wykształcenie
+    title: Optional[str] = None        # wykształcenie — tytuł/kierunek
+
+
+class AIVisibilityPerson(BaseModel):
+    name: str
+    title: Optional[str] = None
+    categories: Optional[dict[str, list[AIVisibilityCategoryItem]]] = None
+
+
+class AIVisibilityData(BaseModel):
+    description: Optional[str] = None
+    social_profiles: Optional[list[AIVisibilityLink]] = None
+    websites: Optional[list[AIVisibilityLink]] = None
+    categories: Optional[dict[str, list[AIVisibilityCategoryItem]]] = None
+    people: Optional[list[AIVisibilityPerson]] = None

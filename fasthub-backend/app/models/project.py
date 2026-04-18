@@ -31,6 +31,7 @@ class Project(BaseModel):
     validation_json = Column(JSONB)
     config_json = Column(JSONB)
     check_json = Column(JSONB)
+    ai_visibility = Column(JSONB, default={})
 
     # Publishing
     domain = Column(String(255))
@@ -38,7 +39,7 @@ class Project(BaseModel):
     published_at = Column(DateTime)
 
     # Relations
-    organization = relationship("Organization", back_populates="projects")
+    organization = relationship("Organization", backref="projects")
     creator = relationship("User")
     sections = relationship(
         "ProjectSection",

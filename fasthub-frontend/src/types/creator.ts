@@ -223,6 +223,7 @@ export interface SeoConfig {
   og_description?: string;
   og_image?: string;
   canonical_url?: string;
+  language?: string;
   tracking?: TrackingConfig;
 }
 
@@ -258,6 +259,35 @@ export interface ConfigData {
   seo?: SeoConfig;
   legal?: LegalConfig;
   hosting?: HostingConfig;
+}
+
+// ─── AI Visibility (Brief 41) ───
+
+export interface AIVisibilityLink {
+  name: string;
+  url: string;
+}
+
+export interface AIVisibilityCategoryItem {
+  name: string;
+  description?: string;
+  period?: string;   // doświadczenie zawodowe
+  school?: string;   // wykształcenie
+  title?: string;    // wykształcenie — tytuł/kierunek
+}
+
+export interface AIVisibilityPerson {
+  name: string;
+  title?: string;
+  categories?: Record<string, AIVisibilityCategoryItem[]>;
+}
+
+export interface AIVisibilityData {
+  description?: string;
+  social_profiles?: AIVisibilityLink[];
+  websites?: AIVisibilityLink[];
+  categories?: Record<string, AIVisibilityCategoryItem[]>;
+  people?: AIVisibilityPerson[];
 }
 
 // ─── Readiness (Step 8) ───

@@ -1,18 +1,20 @@
 /**
- * Step7Config — 5-tab config page (Formularze / Social / SEO / Prawo / Hosting).
- * Brief 35: step 7.
+ * Step7Config — 6-tab config page (Formularze / Social / SEO / Widoczność AI / Prawo / Hosting).
+ * Brief 35: step 7. Brief 41: AI Visibility tab.
  */
 
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useCreatorStore } from "@/store/creatorStore";
 import * as api from "@/api/creator";
-import type { ConfigData, LegalSource, CookieBanner } from "@/types/creator";
+import type { ConfigData, LegalSource, CookieBanner, AIVisibilityData } from "@/types/creator";
+import AIVisibilityTab from "@/components/creator/AIVisibilityTab";
 
 const TABS = [
   { id: "forms", label: "Formularze" },
   { id: "social", label: "Social" },
   { id: "seo", label: "SEO" },
+  { id: "ai-visibility", label: "Widoczność AI" },
   { id: "legal", label: "Prawo" },
   { id: "hosting", label: "Hosting" },
 ] as const;
@@ -24,25 +26,48 @@ export default function Step7Config() {
   const navigate = useNavigate();
   const { config, saveConfig, loadConfig, isSaving, project } = useCreatorStore();
 
-  const [activeTab, setActiveTab] = useState<TabId>("forms");
+  const [searchParams] = useSearchParams();
+  const tabParam = searchParams.get("tab") as TabId | null;
+  const [activeTab, setActiveTab] = useState<TabId>(
+    tabParam && TABS.some((t) => t.id === tabParam) ? tabParam : "forms"
+  );
   const [local, setLocal] = useState<ConfigData>({});
+  const [aiVisibility, setAiVisibility] = useState<AIVisibilityData>({});
   const [isSuggestingSeo, setIsSuggestingSeo] = useState(false);
+  const [ftpTestResult, setFtpTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [isFtpTesting, setIsFtpTesting] = useState(false);
 
   useEffect(() => {
     loadConfig();
+    if (projectId) {
+      api.getAiVisibility(projectId).then(({ data }) => {
+        setAiVisibility(data.ai_visibility || {});
+      }).catch(() => {});
+    }
   }, []);
 
   useEffect(() => {
     setLocal(config);
   }, [config]);
 
+  const saveAiVis = async () => {
+    if (!projectId) return;
+    try {
+      await api.saveAiVisibility(projectId, aiVisibility);
+    } catch (e) {
+      console.error("Failed to save AI visibility:", e);
+    }
+  };
+
   const handleTabChange = async (tab: TabId) => {
     await saveConfig(local);
+    if (activeTab === "ai-visibility") await saveAiVis();
     setActiveTab(tab);
   };
 
   const handleNext = async () => {
     await saveConfig(local);
+    await saveAiVis();
     navigate(`/creator/${projectId}/step/8`);
   };
 
@@ -89,6 +114,32 @@ export default function Step7Config() {
   const updateHosting = (key: string, value: unknown) =>
     setLocal((p) => ({ ...p, hosting: { ...p.hosting, domain_type: p.hosting?.domain_type ?? "subdomain", deploy_method: p.hosting?.deploy_method ?? "auto", [key]: value } }));
 
+  const updateFtp = (key: string, value: unknown) =>
+    setLocal((p) => ({
+      ...p,
+      hosting: {
+        ...p.hosting,
+        domain_type: p.hosting?.domain_type ?? "subdomain",
+        deploy_method: p.hosting?.deploy_method ?? "auto",
+        ftp: { ...p.hosting?.ftp, [key]: value },
+      },
+    }));
+
+  const handleTestFtp = async () => {
+    if (!projectId) return;
+    setIsFtpTesting(true);
+    setFtpTestResult(null);
+    try {
+      await saveConfig(local);
+      const { data } = await api.testFtp(projectId);
+      setFtpTestResult(data);
+    } catch (e: any) {
+      setFtpTestResult({ ok: false, message: e?.response?.data?.detail || "Błąd testu FTP" });
+    } finally {
+      setIsFtpTesting(false);
+    }
+  };
+
   const inputClass = "w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500";
   const labelClass = "block text-sm font-medium text-gray-700 mb-1";
 
@@ -133,6 +184,40 @@ export default function Step7Config() {
                 onChange={(e) => updateForms("send_email_notification", e.target.checked)} />
               <label htmlFor="email_notif" className="text-sm text-gray-700">Wysyłaj powiadomienia e-mail o nowych zgłoszeniach</label>
             </div>
+
+            {/* CRM Integration */}
+            <div className="pt-4 border-t">
+              <h3 className="text-md font-semibold mb-3">Integracja CRM</h3>
+              <div className="flex items-center gap-2 mb-2">
+                <input type="checkbox" id="crm_enabled" checked={local.forms?.crm_enabled || false}
+                  onChange={(e) => updateForms("crm_enabled", e.target.checked)} />
+                <label htmlFor="crm_enabled" className="text-sm text-gray-700">Wysyłaj leady do CRM (webhook)</label>
+              </div>
+              {local.forms?.crm_enabled && (
+                <div>
+                  <label className={labelClass}>Webhook URL (HTTPS)</label>
+                  <input type="url" className={inputClass} placeholder="https://twoj-crm.pl/api/webhook/leads"
+                    value={local.forms?.crm_webhook_url || ""}
+                    onChange={(e) => updateForms("crm_webhook_url", e.target.value)} />
+                  <p className="text-xs text-gray-400 mt-1">Każde nowe zgłoszenie z formularza zostanie wysłane jako JSON POST na ten adres.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Newsletter */}
+            <div className="pt-4 border-t">
+              <h3 className="text-md font-semibold mb-3">Newsletter</h3>
+              <div className="flex items-center gap-2 mb-2">
+                <input type="checkbox" id="newsletter_enabled" checked={local.forms?.newsletter_enabled || false}
+                  onChange={(e) => updateForms("newsletter_enabled", e.target.checked)} />
+                <label htmlFor="newsletter_enabled" className="text-sm text-gray-700">Dodaj formularz zapisu do newslettera na stronie</label>
+              </div>
+              {local.forms?.newsletter_enabled && (
+                <p className="text-xs text-gray-500 ml-6">
+                  Formularz zapisu pojawi się na dole strony. Adresy e-mail trafiają do zgłoszeń formularza i mogą być przekazywane do CRM.
+                </p>
+              )}
+            </div>
           </div>
 
         <div className="space-y-4" style={{ display: activeTab === "social" ? "block" : "none" }}>
@@ -175,6 +260,40 @@ export default function Step7Config() {
                 value={local.seo?.og_description || ""} onChange={(e) => updateSeo("og_description", e.target.value)} />
             </div>
 
+            <div>
+              <label className={labelClass}>Język strony</label>
+              <select className={inputClass}
+                value={local.seo?.language || "pl"}
+                onChange={(e) => updateSeo("language", e.target.value)}>
+                <option value="pl">Polski (pl)</option>
+                <option value="en">English (en)</option>
+                <option value="de">Deutsch (de)</option>
+                <option value="fr">Français (fr)</option>
+                <option value="es">Español (es)</option>
+                <option value="uk">Українська (uk)</option>
+                <option value="cs">Čeština (cs)</option>
+              </select>
+            </div>
+
+            {/* SERP Preview */}
+            {(local.seo?.meta_title || local.seo?.meta_description) && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <p className="text-xs text-gray-500 mb-2 font-medium">Podgląd w Google (SERP)</p>
+                <div className="font-sans">
+                  <p className="text-[#1a0dab] text-lg leading-tight hover:underline cursor-default truncate">
+                    {local.seo?.meta_title || project?.name || "Tytuł strony"}
+                  </p>
+                  <p className="text-[#006621] text-sm mt-0.5 truncate">
+                    {local.hosting?.custom_domain
+                      || (local.hosting?.subdomain ? `${local.hosting.subdomain}.webcreator.site` : "twoja-strona.webcreator.site")}
+                  </p>
+                  <p className="text-[#545454] text-sm mt-0.5 line-clamp-2">
+                    {local.seo?.meta_description || "Opis strony pojawi się tutaj..."}
+                  </p>
+                </div>
+              </div>
+            )}
+
             <h3 className="text-md font-semibold pt-4 border-t">Tracking</h3>
             {([
               ["ga4_id", "Google Analytics 4 (G-XXXXXX)"],
@@ -200,6 +319,10 @@ export default function Step7Config() {
               <textarea name="custom_body" className={`${inputClass} font-mono text-xs`} rows={3}
                 value={local.seo?.tracking?.custom_body || ""} onChange={(e) => updateTracking("custom_body", e.target.value)} />
             </div>
+          </div>
+
+        <div style={{ display: activeTab === "ai-visibility" ? "block" : "none" }}>
+            <AIVisibilityTab data={aiVisibility} onChange={setAiVisibility} />
           </div>
 
         <div className="space-y-6" style={{ display: activeTab === "legal" ? "block" : "none" }}>
@@ -335,6 +458,51 @@ export default function Step7Config() {
                 ))}
               </div>
             </div>
+
+            {/* FTP credentials form */}
+            {local.hosting?.deploy_method === "ftp" && (
+              <div className="space-y-3 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h3 className="text-sm font-semibold text-gray-700">Dane serwera FTP</h3>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className={labelClass}>Host</label>
+                    <input type="text" className={inputClass} placeholder="ftp.mojadomena.pl"
+                      value={local.hosting?.ftp?.host || ""} onChange={(e) => updateFtp("host", e.target.value)} />
+                  </div>
+                  <div>
+                    <label className={labelClass}>Port</label>
+                    <input type="number" className={inputClass} placeholder="21"
+                      value={local.hosting?.ftp?.port || 21} onChange={(e) => updateFtp("port", parseInt(e.target.value) || 21)} />
+                  </div>
+                </div>
+                <div>
+                  <label className={labelClass}>Nazwa użytkownika</label>
+                  <input type="text" className={inputClass} placeholder="user@mojadomena.pl"
+                    value={local.hosting?.ftp?.username || ""} onChange={(e) => updateFtp("username", e.target.value)} />
+                </div>
+                <div>
+                  <label className={labelClass}>Hasło</label>
+                  <input type="password" className={inputClass} placeholder="••••••••"
+                    value={local.hosting?.ftp?.password || ""} onChange={(e) => updateFtp("password", e.target.value)} />
+                </div>
+                <div>
+                  <label className={labelClass}>Katalog docelowy</label>
+                  <input type="text" className={inputClass} placeholder="/public_html"
+                    value={local.hosting?.ftp?.path || ""} onChange={(e) => updateFtp("path", e.target.value)} />
+                </div>
+                <div className="flex items-center gap-3">
+                  <button onClick={handleTestFtp} disabled={isFtpTesting || !local.hosting?.ftp?.host}
+                    className="px-4 py-2 text-sm bg-gray-800 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50">
+                    {isFtpTesting ? "Testuję..." : "Testuj połączenie"}
+                  </button>
+                  {ftpTestResult && (
+                    <span className={`text-sm ${ftpTestResult.ok ? "text-green-600" : "text-red-600"}`}>
+                      {ftpTestResult.message}
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
       </div>
 

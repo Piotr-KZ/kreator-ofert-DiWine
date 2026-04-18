@@ -36,8 +36,16 @@ export const getProject = (projectId: string) =>
 export const updateProject = (projectId: string, data: Partial<Project>) =>
   apiClient.patch<Project>(`/projects/${projectId}`, data);
 
-export const listProjects = () =>
-  apiClient.get<Project[]>("/projects");
+export const listProjects = (search?: string, status?: string) =>
+  apiClient.get<Project[]>("/projects", {
+    params: { ...(status ? { status_filter: status } : {}), ...(search ? { search } : {}) },
+  });
+
+export const deleteProject = (projectId: string) =>
+  apiClient.delete(`/projects/${projectId}`);
+
+export const duplicateProject = (projectId: string) =>
+  apiClient.post<Project>(`/projects/${projectId}/duplicate`);
 
 // ─── Brief (Step 1) ───
 
@@ -113,6 +121,79 @@ export const sendChatMessage = async (
       onError?.(errorMsg);
     } catch {
       onError?.("Błąd połączenia z AI. Spróbuj ponownie.");
+    }
+    onDone();
+    return;
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (line.startsWith("data: ")) {
+        const data = line.slice(6).trim();
+        if (data === "[DONE]") {
+          onDone();
+          return;
+        }
+        try {
+          const parsed = JSON.parse(data);
+          if (parsed.error) {
+            onError?.(parsed.error);
+          } else if (parsed.text) {
+            onChunk(parsed.text);
+          }
+        } catch {
+          // skip malformed
+        }
+      }
+    }
+  }
+  onDone();
+};
+
+// ─── Creator Chat (floating widget) ───
+
+export const sendCreatorChat = async (
+  projectId: string,
+  step: number,
+  message: string,
+  onChunk: (text: string) => void,
+  onDone: () => void,
+  onError?: (error: string) => void,
+) => {
+  const token =
+    localStorage.getItem("access_token") || sessionStorage.getItem("access_token");
+  const orgId = localStorage.getItem("current_organization_id");
+
+  const response = await fetch(
+    `${apiClient.defaults.baseURL}/projects/${projectId}/ai/chat-creator`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(orgId ? { "X-Organization-Id": orgId } : {}),
+      },
+      body: JSON.stringify({ step, message }),
+    },
+  );
+
+  if (!response.ok || !response.body) {
+    try {
+      const errorData = await response.json();
+      onError?.(errorData.detail || "Blad polaczenia z AI");
+    } catch {
+      onError?.("Blad polaczenia z AI. Sprobuj ponownie.");
     }
     onDone();
     return;
@@ -261,6 +342,45 @@ export const downloadStockPhoto = (
 ) =>
   apiClient.post<{ file_url: string }>(`/projects/${projectId}/stock-photos/download`, data);
 
+// ─── Preview ───
+
+export const openPreview = async (projectId: string) => {
+  const token =
+    localStorage.getItem("access_token") || sessionStorage.getItem("access_token");
+  const orgId = localStorage.getItem("current_organization_id");
+
+  const response = await fetch(
+    `${apiClient.defaults.baseURL}/projects/${projectId}/preview`,
+    {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(orgId ? { "X-Organization-Id": orgId } : {}),
+      },
+    },
+  );
+
+  if (!response.ok) throw new Error("Preview failed");
+
+  const html = await response.text();
+  const blob = new Blob([html], { type: "text/html" });
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+};
+
+// ─── AI Visibility (Brief 41) ───
+
+export const saveAiVisibility = (projectId: string, data: import("@/types/creator").AIVisibilityData) =>
+  apiClient.put<{ ai_visibility: import("@/types/creator").AIVisibilityData }>(
+    `/projects/${projectId}/ai-visibility`,
+    data,
+  );
+
+export const getAiVisibility = (projectId: string) =>
+  apiClient.get<{ ai_visibility: import("@/types/creator").AIVisibilityData }>(
+    `/projects/${projectId}/ai-visibility`,
+  );
+
 // ─── Config (Step 7) ───
 
 export const saveConfig = (projectId: string, data: Partial<ConfigData>) =>
@@ -273,6 +393,19 @@ export const suggestSeo = (projectId: string) =>
   apiClient.post<{ meta_title: string; meta_description: string; og_title: string; og_description: string }>(
     `/projects/${projectId}/ai/suggest-seo`,
   );
+
+export const suggestAltTexts = (projectId: string) =>
+  apiClient.post<{ alt_texts: Record<string, string> }>(
+    `/projects/${projectId}/ai/suggest-alt-texts`,
+  );
+
+// ─── FTP ───
+
+export const testFtp = (projectId: string) =>
+  apiClient.post<{ ok: boolean; message: string }>(`/projects/${projectId}/test-ftp`);
+
+export const publishFtp = (projectId: string) =>
+  apiClient.post<{ ok: boolean; message: string; uploaded: string[] }>(`/projects/${projectId}/publish-ftp`);
 
 // ─── Publishing (Steps 8-9) ───
 
@@ -291,6 +424,23 @@ export const republishProject = (projectId: string) =>
 export const exportZip = (projectId: string) =>
   apiClient.get<Blob>(`/projects/${projectId}/export-zip`, { responseType: "blob" });
 
+// ─── Domain & SSL ───
+
+export const getDomainStatus = (projectId: string) =>
+  apiClient.get<{
+    published: boolean;
+    subdomain: string | null;
+    custom_domain: string | null;
+    ssl_status: string | null;
+    url?: string;
+    dns_instructions?: { type: string; name: string; value: string; instructions: string } | null;
+  }>(`/projects/${projectId}/domain-status`);
+
+export const verifyDomain = (projectId: string) =>
+  apiClient.post<{ verified: boolean; ssl_status: string; message: string }>(
+    `/projects/${projectId}/verify-domain`,
+  );
+
 // ─── Form Submissions ───
 
 export const listFormSubmissions = (projectId: string) =>
@@ -298,6 +448,21 @@ export const listFormSubmissions = (projectId: string) =>
 
 export const markSubmissionRead = (projectId: string, submissionId: string, read: boolean) =>
   apiClient.patch(`/projects/${projectId}/form-submissions/${submissionId}`, { read });
+
+// ─── Version History (Snapshots) ───
+
+export const createSnapshot = (projectId: string, label?: string) =>
+  apiClient.post(`/projects/${projectId}/snapshots`, label ? { label } : {});
+
+export const listSnapshots = (projectId: string) =>
+  apiClient.get<Array<{ id: string; label: string; snapshot_type: string; created_at: string }>>(
+    `/projects/${projectId}/snapshots`,
+  );
+
+export const restoreSnapshot = (projectId: string, snapshotId: string) =>
+  apiClient.post<{ status: string; label: string }>(
+    `/projects/${projectId}/snapshots/${snapshotId}/restore`,
+  );
 
 // ─── Dashboard (Brief 36) ───
 

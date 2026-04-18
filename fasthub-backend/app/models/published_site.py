@@ -31,6 +31,8 @@ class PublishedSite(BaseModel):
     tracking_json = Column(JSONB)
     legal_json = Column(JSONB)
     forms_json = Column(JSONB)
+    llms_txt = Column(Text, nullable=True)
+    openapi_json = Column(JSONB, nullable=True)
 
     # Status
     is_active = Column(Boolean, default=True)
@@ -39,7 +41,7 @@ class PublishedSite(BaseModel):
 
     # Relations
     project = relationship("Project")
-    organization = relationship("Organization", back_populates="published_sites")
+    organization = relationship("Organization", backref="published_sites")
     form_submissions = relationship("FormSubmission", backref="site", cascade="all, delete-orphan")
     integrations = relationship("SiteIntegration", backref="site", cascade="all, delete-orphan")
 
