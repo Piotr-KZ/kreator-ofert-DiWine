@@ -14,7 +14,7 @@ import { FONT_PAIRS, PALETTE_PRESETS, SECTION_THEMES } from "@/types/creator";
 export default function Step3Style() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
-  const { style, setStyle, saveStyle } = useCreatorStore();
+  const { style, setStyle, saveStyle, siteTypeConfig } = useCreatorStore();
 
   // Auto-save style every 2s
   useAutoSave(style, saveStyle, 2000);
@@ -42,9 +42,41 @@ export default function Step3Style() {
         </p>
       </div>
 
+      {/* Brief 42: Rekomendowane presety per typ strony */}
+      {siteTypeConfig && siteTypeConfig.style_presets.length > 0 && (
+        <section className="space-y-4">
+          <h2 className="text-lg font-semibold text-gray-800">
+            Rekomendowane dla: {siteTypeConfig.label}
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {siteTypeConfig.style_presets.map((p) => (
+              <Tile
+                key={p.id}
+                on={style.palette_preset === p.id}
+                onClick={() =>
+                  setStyle({
+                    palette_preset: p.id,
+                    color_primary: p.colors[0],
+                    color_secondary: p.colors[1],
+                    color_accent: p.colors[2],
+                  })
+                }
+              >
+                <div className="flex gap-1.5 mb-2">
+                  {p.colors.map((c, i) => (
+                    <div key={i} className="w-8 h-8 rounded-lg border border-gray-200" style={{ backgroundColor: c }} />
+                  ))}
+                </div>
+                <div className="font-medium text-sm">{p.label}</div>
+              </Tile>
+            ))}
+          </div>
+        </section>
+      )}
+
       {/* Paleta kolorów */}
       <section className="space-y-4">
-        <h2 className="text-lg font-semibold text-gray-800">Paleta kolorów</h2>
+        <h2 className="text-lg font-semibold text-gray-800">Więcej palet</h2>
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
           {PALETTE_PRESETS.map((p) => (
             <Tile
@@ -144,15 +176,21 @@ export default function Step3Style() {
         </div>
       </section>
 
-      {/* Przycisk DALEJ */}
-      <div className="pt-4 pb-8">
+      {/* Nawigacja */}
+      <div className="pt-4 pb-8 flex gap-3">
+        <button
+          onClick={() => navigate(`/creator/${projectId}/step/2`)}
+          className="px-6 py-3 text-sm border border-gray-200 rounded-xl hover:bg-gray-50"
+        >
+          ← Wstecz
+        </button>
         <Btn
           disabled={!canProceed}
           onClick={() => {
             saveStyle();
             navigate(`/creator/${projectId}/step/4`);
           }}
-          className="w-full py-3"
+          className="flex-1 py-3"
         >
           Dalej — AI sprawdzi spójność →
         </Btn>
@@ -189,7 +227,7 @@ function ColorPicker({
           type="text"
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="flex-1 px-3 py-2 border-2 border-gray-200 rounded-lg text-sm font-mono"
+          className="flex-1 px-3 py-2 border-2 border-gray-200 rounded-lg text-sm font-mono bg-white"
           maxLength={7}
         />
       </div>

@@ -73,20 +73,8 @@ class ProjectListItem(BaseModel):
 # ============================================================================
 
 class BriefData(BaseModel):
-    site_type: Optional[str] = Field(None, max_length=100)
-    company_name: Optional[str] = Field(None, max_length=255)
-    industry: Optional[str] = Field(None, max_length=255)
-    description: Optional[str] = Field(None, max_length=5000)
-    target_audience: Optional[str] = Field(None, max_length=2000)
-    b2b_b2c: Optional[str] = Field(None, max_length=10)
-    usp: Optional[list[str]] = None
-    brand_positioning: Optional[str] = Field(None, max_length=2000)
-    communication_style: Optional[str] = Field(None, max_length=100)
-    site_goal: Optional[str] = Field(None, max_length=2000)
-    desired_impressions: Optional[dict] = None
-    pages: Optional[list[str]] = None
-    content_sections: Optional[list[str]] = None
-    custom_wishes: Optional[str] = Field(None, max_length=5000)
+    """Accept all frontend fields as-is (camelCase) and store in brief_json JSONB."""
+    model_config = ConfigDict(extra="allow")
 
 
 # ============================================================================
@@ -304,8 +292,15 @@ class CheckItem(BaseModel):
     fix_tab: Optional[str] = None
 
 
+class SkippedCheckItem(BaseModel):
+    key: str
+    status: str = "skip"
+    message: str
+
+
 class ReadinessResponse(BaseModel):
     checks: list[CheckItem]
+    skipped: list[SkippedCheckItem] = Field(default_factory=list)
     can_publish: bool
     score: int
 
@@ -452,6 +447,40 @@ class FormSubmissionUpdate(BaseModel):
 # ============================================================================
 # AI Visibility (Brief 41)
 # ============================================================================
+
+
+# ============================================================================
+# Site Type Config (Brief 42)
+# ============================================================================
+
+
+class StylePreset(BaseModel):
+    id: str
+    label: str
+    colors: list[str]
+
+
+class SiteTypeConfigResponse(BaseModel):
+    site_type: str
+    label: str
+    category: str
+    recommended_blocks: list[str]
+    min_sections: int
+    max_sections: int
+    allowed_block_categories: list[str]
+    prompt_hints: dict[str, str]
+    readiness_skip_checks: list[str]
+    readiness_modify_checks: dict[str, dict]
+    config_defaults: dict
+    style_presets: list[StylePreset]
+    brief_sections: list[str]
+    brief_content: list[str]
+
+
+class SiteTypeListItem(BaseModel):
+    site_type: str
+    label: str
+    category: str
 
 
 class AIVisibilityLink(BaseModel):

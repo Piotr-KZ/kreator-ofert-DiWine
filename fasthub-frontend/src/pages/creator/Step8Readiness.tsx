@@ -36,7 +36,7 @@ export default function Step8Readiness() {
 
   const handleFix = (fixTab?: string) => {
     if (fixTab) {
-      navigate(`/creator/${projectId}/step/7`);
+      navigate(`/creator/${projectId}/step/7?tab=${fixTab}`);
     }
   };
 
@@ -96,6 +96,25 @@ export default function Step8Readiness() {
           })
         )}
       </div>
+
+      {/* Brief 42: Skipped checks per site type */}
+      {result?.skipped && result.skipped.length > 0 && (
+        <details className="mt-4 bg-gray-50 rounded-xl border border-gray-200">
+          <summary className="px-4 py-3 text-sm text-gray-500 cursor-pointer hover:text-gray-700">
+            {result.skipped.length} sprawdzeń pominięto (nieistotne dla tego typu strony)
+          </summary>
+          <div className="divide-y divide-gray-100">
+            {result.skipped.map((s) => (
+              <div key={s.key} className="flex items-center gap-3 px-4 py-3">
+                <span className="w-6 h-6 rounded-full bg-gray-100 text-gray-400 flex items-center justify-center text-xs font-bold flex-shrink-0">
+                  —
+                </span>
+                <p className="text-sm text-gray-500">{s.message}</p>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
 
       {/* Actions */}
       <div className="flex justify-between mt-6">

@@ -15,28 +15,42 @@ class ReadinessChecker:
     """Run pre-publish checks on a project."""
 
     def check(self, project: Project) -> dict:
-        """Run all checks. Returns {checks, can_publish, score}."""
-        checks = []
+        """Run all checks. Returns {checks, skipped, can_publish, score}."""
+        from app.services.creator.site_type_config import get_site_type_config
 
-        checks.extend(self._content_checks(project))
-        checks.extend(self._tech_checks(project))
-        checks.extend(self._legal_checks(project))
-        checks.extend(self._seo_checks(project))
-        checks.extend(self._accessibility_checks(project))
-        checks.extend(self._ai_visibility_checks(project))
+        type_config = get_site_type_config(project.site_type)
+        skip_keys = set(type_config.readiness_skip_checks)
+        modify_rules = type_config.readiness_modify_checks
+
+        all_checks = []
+        all_checks.extend(self._content_checks(project, modify_rules))
+        all_checks.extend(self._tech_checks(project))
+        all_checks.extend(self._legal_checks(project))
+        all_checks.extend(self._seo_checks(project))
+        all_checks.extend(self._accessibility_checks(project))
+        all_checks.extend(self._ai_visibility_checks(project))
+
+        # Filter out skipped checks
+        checks = [c for c in all_checks if c["key"] not in skip_keys]
+        skipped = [
+            {"key": c["key"], "status": "skip",
+             "message": f"Pominieto - nieistotne dla typu: {type_config.label}"}
+            for c in all_checks if c["key"] in skip_keys
+        ]
 
         has_error = any(c["status"] == "error" for c in checks)
         passed = sum(1 for c in checks if c["status"] == "pass")
 
         return {
             "checks": checks,
+            "skipped": skipped,
             "can_publish": not has_error,
             "score": passed,
         }
 
     # ─── Content (4 checks) ───
 
-    def _content_checks(self, project: Project) -> list[dict]:
+    def _content_checks(self, project: Project, modify_rules: dict | None = None) -> list[dict]:
         checks = []
         sections = project.sections if project.sections else []
 
@@ -97,17 +111,39 @@ class ReadinessChecker:
                 "message": "Opisy ALT obrazów OK",
             })
 
-        # 4. cta_present
-        has_cta = any(
-            s.slots_json and (s.slots_json.get("cta_text") or s.slots_json.get("button_text"))
-            for s in sections if s.is_visible
+        # 4. cta_present (with per-type modify rules for LP)
+        cta_rule = (modify_rules or {}).get("cta_present", {})
+        min_cta = cta_rule.get("min_cta_count", 1)
+
+        cta_count = sum(
+            1 for s in sections
+            if s.is_visible and s.slots_json
+            and (s.slots_json.get("cta_text") or s.slots_json.get("button_text"))
         )
-        checks.append({
-            "key": "cta_present",
-            "status": "pass" if has_cta else "warn",
-            "message": "CTA (wezwanie do działania) obecne" if has_cta else "Brak przycisku CTA na stronie",
-            "suggestion": None if has_cta else "Dodaj przycisk CTA w sekcji Hero lub kontaktowej",
-        })
+
+        if min_cta > 1:
+            # LP mode — require multiple CTAs
+            if cta_count >= min_cta:
+                checks.append({
+                    "key": "cta_present",
+                    "status": "pass",
+                    "message": f"CTA obecne ({cta_count}x) — OK dla landing page",
+                })
+            else:
+                checks.append({
+                    "key": "cta_present",
+                    "status": "warn",
+                    "message": cta_rule.get("fail_message", f"Wymagane minimum {min_cta} CTA"),
+                    "suggestion": "Dodaj więcej sekcji CTA (np. Hero + sekcja końcowa)",
+                })
+        else:
+            # Standard mode — single CTA check
+            checks.append({
+                "key": "cta_present",
+                "status": "pass" if cta_count > 0 else "warn",
+                "message": "CTA (wezwanie do działania) obecne" if cta_count > 0 else "Brak przycisku CTA na stronie",
+                "suggestion": None if cta_count > 0 else "Dodaj przycisk CTA w sekcji Hero lub kontaktowej",
+            })
 
         return checks
 

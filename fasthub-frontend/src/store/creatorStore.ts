@@ -15,6 +15,7 @@ import type {
   ProjectSection,
   PublishResult,
   ReadinessResult,
+  SiteTypeConfig,
   StyleData,
   ValidationItem,
 } from "@/types/creator";
@@ -42,9 +43,9 @@ const EMPTY_BRIEF: BriefData = {
   usp: "",
   whyChooseUs: "",
   strengths: [],
-  brandPos: "",
-  writingStyle: "",
-  mainGoal: "",
+  brandPos: [],
+  writingStyle: [],
+  mainGoal: [],
   siteContent: [],
   impressionCustom: "",
   impThink: [],
@@ -94,7 +95,16 @@ interface CreatorState {
   activeSection: string | null;
   aiError: string | null;
 
+  // Site type config (Brief 42)
+  siteTypeConfig: SiteTypeConfig | null;
+
+  // Creator chat widget state
+  isChatOpen: boolean;
+  creatorChatMessages: ChatMessage[];
+  isCreatorChatting: boolean;
+
   // Actions
+  loadSiteTypeConfig: (siteType: string) => Promise<void>;
   loadProject: (projectId: string) => Promise<void>;
   setBrief: (data: Partial<BriefData>) => void;
   setStyle: (data: Partial<StyleData>) => void;
@@ -125,6 +135,10 @@ interface CreatorState {
   regenerateSection: (sectionId: string, instruction?: string) => Promise<void>;
   loadRenderedPage: () => Promise<void>;
   setActiveSection: (sectionId: string | null) => void;
+
+  // Creator chat widget actions
+  toggleChat: () => void;
+  sendCreatorMessage: (message: string) => Promise<void>;
 }
 
 export const useCreatorStore = create<CreatorState>((set, get) => ({
@@ -139,6 +153,7 @@ export const useCreatorStore = create<CreatorState>((set, get) => ({
   renderedCss: "",
   config: {},
   readinessChecks: [],
+  siteTypeConfig: null,
   isPublishing: false,
   publishResult: null,
   isLoading: false,
@@ -151,6 +166,18 @@ export const useCreatorStore = create<CreatorState>((set, get) => ({
   generateProgress: null,
   activeSection: null,
   aiError: null,
+  isChatOpen: false,
+  creatorChatMessages: [],
+  isCreatorChatting: false,
+
+  loadSiteTypeConfig: async (siteType: string) => {
+    try {
+      const { data } = await api.getSiteTypeConfig(siteType);
+      set({ siteTypeConfig: data });
+    } catch (e) {
+      console.error("Failed to load site type config:", e);
+    }
+  },
 
   loadProject: async (projectId: string) => {
     set({ isLoading: true });
@@ -167,6 +194,12 @@ export const useCreatorStore = create<CreatorState>((set, get) => ({
         currentStep: project.current_step || 1,
         isLoading: false,
       });
+
+      // Load site type config (Brief 42)
+      const siteType = project.brief_json?.siteType || project.site_type;
+      if (siteType) {
+        get().loadSiteTypeConfig(siteType);
+      }
 
       // Load sections if beyond step 4
       if ((project.current_step || 1) >= 5) {
@@ -512,6 +545,57 @@ export const useCreatorStore = create<CreatorState>((set, get) => ({
 
   setActiveSection: (sectionId) => set({ activeSection: sectionId }),
 
+  // ─── Creator chat widget ───
+
+  toggleChat: () => set((s) => ({ isChatOpen: !s.isChatOpen })),
+
+  sendCreatorMessage: async (message) => {
+    const { project, currentStep, creatorChatMessages } = get();
+    if (!project) return;
+
+    const userMsg: ChatMessage = { role: "user", content: message };
+    const assistantMsg: ChatMessage = { role: "assistant", content: "" };
+    set({
+      creatorChatMessages: [...creatorChatMessages, userMsg, assistantMsg],
+      isCreatorChatting: true,
+      aiError: null,
+    });
+
+    try {
+      await api.sendCreatorChat(
+        project.id,
+        currentStep,
+        message,
+        (text) => {
+          set((s) => {
+            const msgs = [...s.creatorChatMessages];
+            const last = msgs[msgs.length - 1];
+            if (last?.role === "assistant") {
+              msgs[msgs.length - 1] = { ...last, content: last.content + text };
+            }
+            return { creatorChatMessages: msgs };
+          });
+        },
+        () => {
+          set({ isCreatorChatting: false });
+        },
+        (errorMsg) => {
+          set((s) => {
+            const msgs = [...s.creatorChatMessages];
+            const last = msgs[msgs.length - 1];
+            if (last?.role === "assistant") {
+              msgs[msgs.length - 1] = { ...last, content: `⚠️ ${errorMsg}` };
+            }
+            return { creatorChatMessages: msgs, aiError: errorMsg, isCreatorChatting: false };
+          });
+        },
+      );
+    } catch (e) {
+      console.error("Creator chat error:", e);
+      set({ isCreatorChatting: false, aiError: "Błąd połączenia z AI." });
+    }
+  },
+
   reset: () =>
     set({
       project: null,
@@ -535,5 +619,8 @@ export const useCreatorStore = create<CreatorState>((set, get) => ({
       generateProgress: null,
       activeSection: null,
       aiError: null,
+      isChatOpen: false,
+      creatorChatMessages: [],
+      isCreatorChatting: false,
     }),
 }));

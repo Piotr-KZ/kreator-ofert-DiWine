@@ -40,15 +40,19 @@ class AIEngine:
 
         Returns list of validation items with status ok/warning/error.
         """
+        from app.services.creator.site_type_config import get_prompt_hint
+
         context = self._build_project_context(project)
-        system = build_cached_prompt(
-            "validate_consistency",
-            f"Przeanalizuj ten projekt:\n\n{context}",
-        )
+        hint = get_prompt_hint(project.site_type, "validate_consistency")
+        user_msg = f"Przeanalizuj ten projekt:\n\n{context}"
+        if hint:
+            user_msg += f"\n\nWskazówki dla tego typu strony:\n{hint}"
+
+        system = build_cached_prompt("validate_consistency")
 
         response = await self.claude.complete_json(
             system=system,
-            user_message=f"Przeanalizuj ten projekt:\n\n{context}",
+            user_message=user_msg,
             model_tier=get_model_tier("validate_consistency"),
         )
 
@@ -71,9 +75,23 @@ class AIEngine:
 
         Returns list of sections with block_codes and slot data.
         """
+        from app.services.creator.site_type_config import get_site_type_config
+
         context = self._build_project_context(project)
         available_blocks = await self._get_available_blocks_summary()
-        user_msg = f"Kontekst projektu:\n{context}\n\nDostępne klocki:\n{available_blocks}"
+        type_config = get_site_type_config(project.site_type)
+
+        hint = type_config.prompt_hints.get("generate_structure", "")
+        recommended = ", ".join(type_config.recommended_blocks)
+
+        user_msg = (
+            f"Kontekst projektu:\n{context}\n\n"
+            f"Dostępne klocki:\n{available_blocks}\n\n"
+            f"Rekomendowane kategorie (w tej kolejności): {recommended}\n"
+            f"Min sekcji: {type_config.min_sections}, Max sekcji: {type_config.max_sections}"
+        )
+        if hint:
+            user_msg += f"\n\nWskazówki dla tego typu strony:\n{hint}"
 
         system = build_cached_prompt("generate_structure")
 
@@ -95,21 +113,28 @@ class AIEngine:
         self, project: Project, section, block_template
     ) -> dict:
         """AI fills section slots with content."""
+        from app.services.creator.site_type_config import get_prompt_hint
+
         context = self._build_project_context(project)
         slots_schema = json.dumps(
             block_template.slots_definition, ensure_ascii=False
         )
+        hint = get_prompt_hint(project.site_type, "generate_section_content")
 
         system = build_cached_prompt("generate_section_content")
 
+        user_msg = (
+            f"Kontekst projektu:\n{context}\n\n"
+            f"Sekcja: {block_template.name} (kod: {section.block_code}, wariant: {section.variant})\n"
+            f"Opis klocka: {block_template.description}\n\n"
+            f"Wypełnij te sloty:\n{slots_schema}"
+        )
+        if hint:
+            user_msg += f"\n\nWskazówki dla tego typu strony:\n{hint}"
+
         response = await self.claude.complete_json(
             system=system,
-            user_message=f"""Kontekst projektu:\n{context}
-
-Sekcja: {block_template.name} (kod: {section.block_code}, wariant: {section.variant})
-Opis klocka: {block_template.description}
-
-Wypełnij te sloty:\n{slots_schema}""",
+            user_message=user_msg,
             model_tier=get_model_tier("generate_section_content"),
         )
 
@@ -153,7 +178,64 @@ Wypełnij te sloty:\n{slots_schema}""",
         conversation.total_tokens_out += len(assistant_text) // 4
 
     # ═══════════════════════════════════════
-    # ETAP 7: GENEROWANIE DOKUMENTÓW PRAWNYCH
+    # CHAT KREATOR (widget na wszystkich krokach)
+    # ═══════════════════════════════════════
+
+    async def chat_creator_stream(
+        self,
+        project: Project,
+        current_step: int,
+        message: str,
+        conversation: AIConversation,
+    ) -> AsyncIterator[str]:
+        """Chat with AI in full project context - floating widget on all steps."""
+        project_context = self._build_full_project_state(project)
+
+        step_names = {
+            1: "Brief firmowy", 2: "Materialy", 3: "Styl wizualny",
+            4: "Walidacja AI", 5: "Struktura", 6: "Podglad",
+            7: "Konfiguracja", 8: "Sprawdzenie gotowosci", 9: "Publikacja",
+        }
+        step_label = step_names.get(current_step, f"Krok {current_step}")
+
+        raw = PROMPTS.get("chat_creator", "")
+        prompt_text = raw.replace("{current_step}", f"{current_step} ({step_label})")
+        parts = prompt_text.split("{project_context}")
+        static_part = parts[0].rstrip()
+        suffix = parts[1].lstrip() if len(parts) > 1 else ""
+
+        system = [
+            {
+                "type": "text",
+                "text": static_part,
+                "cache_control": {"type": "ephemeral"},
+            },
+            {
+                "type": "text",
+                "text": project_context + ("\n" + suffix if suffix else ""),
+            },
+        ]
+
+        history = conversation.messages_json or []
+
+        full_response = []
+        async for chunk in self.claude.chat(
+            system, history, message,
+            model_tier=get_model_tier("chat_creator"),
+        ):
+            full_response.append(chunk)
+            yield chunk
+
+        assistant_text = "".join(full_response)
+        conversation.messages_json = history + [
+            {"role": "user", "content": message},
+            {"role": "assistant", "content": assistant_text},
+        ]
+        conversation.total_tokens_in += len(message) // 4
+        conversation.total_tokens_out += len(assistant_text) // 4
+
+    # ═══════════════════════════════════════
+    # ETAP 7: GENEROWANIE DOKUMENTOW PRAWNYCH
     # ═══════════════════════════════════════
 
     async def generate_legal(self, project: Project, doc_type: str) -> str:
@@ -214,12 +296,57 @@ Wypełnij te sloty:\n{slots_schema}""",
         return response.data
 
     # ═══════════════════════════════════════
+    # AI ALT TEXTS (WCAG)
+    # ═══════════════════════════════════════
+
+    async def suggest_alt_texts(self, project: Project) -> dict:
+        """AI generates alt text suggestions for images missing alt descriptions."""
+        context = self._build_full_project_state(project)
+
+        # Collect images without alt
+        missing = []
+        for s in (project.sections or []):
+            if s.is_visible and s.slots_json:
+                for key, val in s.slots_json.items():
+                    if "image" in key.lower() and isinstance(val, str) and val:
+                        alt_key = f"{key}_alt"
+                        if not s.slots_json.get(alt_key):
+                            missing.append(
+                                f"- Sekcja {s.block_code} (poz. {s.position}), slot '{key}', "
+                                f"tytuł sekcji: '{s.slots_json.get('title', 'brak')}'"
+                            )
+
+        if not missing:
+            return {"alt_texts": {}}
+
+        system = build_cached_prompt("suggest_alt_texts")
+        user_msg = (
+            f"Kontekst projektu:\n{context}\n\n"
+            f"Obrazy bez alt text:\n" + "\n".join(missing)
+        )
+
+        response = await self.claude.complete_json(
+            system=system,
+            user_message=user_msg,
+            model_tier=get_model_tier("suggest_alt_texts"),
+        )
+
+        await log_ai_call(self.db, project, "suggest_alt_texts", response)
+        return response.data
+
+    # ═══════════════════════════════════════
     # HELPERS
     # ═══════════════════════════════════════
 
     def _build_project_context(self, project: Project) -> str:
         """Build project context for AI (brief + style + materials)."""
+        from app.services.creator.site_type_config import get_site_type_config
+
         parts = []
+
+        # Site type info (Brief 42)
+        type_config = get_site_type_config(project.site_type)
+        parts.append(f"TYP STRONY: {type_config.label} ({project.site_type or 'firmowa'})")
 
         if project.brief_json:
             parts.append(

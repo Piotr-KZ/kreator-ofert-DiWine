@@ -3,9 +3,10 @@
  * Brief 34: type + media + layout → POST /blocks/match → pick block → add section.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import * as api from "@/api/creator";
 import type { BlockCategory, BlockTemplate } from "@/types/creator";
+import { useCreatorStore } from "@/store/creatorStore";
 
 interface AddSectionModalProps {
   open: boolean;
@@ -28,6 +29,18 @@ export default function AddSectionModal({ open, onClose, onSelect }: AddSectionM
   const [selectedMedia, setSelectedMedia] = useState("");
   const [blocks, setBlocks] = useState<BlockTemplate[]>([]);
   const [loading, setLoading] = useState(false);
+  const { siteTypeConfig } = useCreatorStore();
+
+  // Brief 42: allowed categories for this site type
+  const allowedCats = useMemo(
+    () => new Set(siteTypeConfig?.allowed_block_categories || []),
+    [siteTypeConfig],
+  );
+
+  const filteredCategories = useMemo(
+    () => allowedCats.size > 0 ? categories.filter((c) => allowedCats.has(c.code)) : categories,
+    [categories, allowedCats],
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -46,6 +59,24 @@ export default function AddSectionModal({ open, onClose, onSelect }: AddSectionM
       .catch(() => setBlocks([]))
       .finally(() => setLoading(false));
   }, [open, selectedCategory, selectedMedia]);
+
+  // Filter blocks by allowed categories, then split into recommended + others
+  const visibleBlocks = useMemo(
+    () => allowedCats.size > 0 ? blocks.filter((b) => allowedCats.has(b.category_code)) : blocks,
+    [blocks, allowedCats],
+  );
+  const recommendedCodes = useMemo(
+    () => new Set(siteTypeConfig?.recommended_blocks || []),
+    [siteTypeConfig],
+  );
+  const recommendedBlocks = useMemo(
+    () => visibleBlocks.filter((b) => recommendedCodes.has(b.category_code)),
+    [visibleBlocks, recommendedCodes],
+  );
+  const otherBlocks = useMemo(
+    () => visibleBlocks.filter((b) => !recommendedCodes.has(b.category_code)),
+    [visibleBlocks, recommendedCodes],
+  );
 
   if (!open) return null;
 
@@ -79,7 +110,7 @@ export default function AddSectionModal({ open, onClose, onSelect }: AddSectionM
               >
                 Wszystkie
               </button>
-              {categories.map((cat) => (
+              {filteredCategories.map((cat) => (
                 <button
                   key={cat.code}
                   onClick={() => setSelectedCategory(cat.code)}
@@ -122,28 +153,66 @@ export default function AddSectionModal({ open, onClose, onSelect }: AddSectionM
               </svg>
               Szukam klockow...
             </div>
-          ) : blocks.length === 0 ? (
+          ) : visibleBlocks.length === 0 ? (
             <div className="text-center py-8 text-gray-400 text-sm">
               Brak pasujacych klockow. Zmien filtry.
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-              {blocks.map((block) => (
-                <button
-                  key={block.code}
-                  onClick={() => onSelect(block.code)}
-                  className="border-2 border-gray-200 rounded-xl p-3 text-left hover:border-indigo-400 hover:bg-indigo-50/50 transition-all group"
-                >
-                  <div className="text-xs font-mono text-gray-400 mb-1">{block.code}</div>
-                  <div className="text-sm font-medium text-gray-800 group-hover:text-indigo-700">{block.name}</div>
-                  <div className="text-xs text-gray-500 mt-1 line-clamp-2">{block.description}</div>
-                  <div className="flex gap-1 mt-2">
-                    <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 rounded text-gray-500">{block.media_type}</span>
-                    <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 rounded text-gray-500">{block.size}</span>
+            <>
+              {/* Brief 42: Recommended blocks first */}
+              {recommendedBlocks.length > 0 && !selectedCategory && (
+                <div className="mb-4">
+                  <label className="text-xs font-medium text-indigo-600 uppercase tracking-wider mb-1.5 block">
+                    Rekomendowane{siteTypeConfig ? ` dla ${siteTypeConfig.label}` : ""}
+                  </label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {recommendedBlocks.map((block) => (
+                      <button
+                        key={block.code}
+                        onClick={() => onSelect(block.code)}
+                        className="border-2 border-indigo-200 bg-indigo-50/30 rounded-xl p-3 text-left hover:border-indigo-400 hover:bg-indigo-50 transition-all group"
+                      >
+                        <div className="text-xs font-mono text-indigo-400 mb-1">{block.code}</div>
+                        <div className="text-sm font-medium text-gray-800 group-hover:text-indigo-700">{block.name}</div>
+                        <div className="text-xs text-gray-500 mt-1 line-clamp-2">{block.description}</div>
+                        <div className="flex gap-1 mt-2">
+                          <span className="text-[10px] px-1.5 py-0.5 bg-indigo-100 rounded text-indigo-500">{block.media_type}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 bg-indigo-100 rounded text-indigo-500">{block.size}</span>
+                        </div>
+                      </button>
+                    ))}
                   </div>
-                </button>
-              ))}
-            </div>
+                </div>
+              )}
+
+              {/* Other blocks */}
+              {(selectedCategory ? visibleBlocks : otherBlocks).length > 0 && (
+                <div>
+                  {recommendedBlocks.length > 0 && !selectedCategory && (
+                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wider mb-1.5 block">
+                      Pozostale
+                    </label>
+                  )}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {(selectedCategory ? visibleBlocks : otherBlocks).map((block) => (
+                      <button
+                        key={block.code}
+                        onClick={() => onSelect(block.code)}
+                        className="border-2 border-gray-200 rounded-xl p-3 text-left hover:border-indigo-400 hover:bg-indigo-50/50 transition-all group"
+                      >
+                        <div className="text-xs font-mono text-gray-400 mb-1">{block.code}</div>
+                        <div className="text-sm font-medium text-gray-800 group-hover:text-indigo-700">{block.name}</div>
+                        <div className="text-xs text-gray-500 mt-1 line-clamp-2">{block.description}</div>
+                        <div className="flex gap-1 mt-2">
+                          <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 rounded text-gray-500">{block.media_type}</span>
+                          <span className="text-[10px] px-1.5 py-0.5 bg-gray-100 rounded text-gray-500">{block.size}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

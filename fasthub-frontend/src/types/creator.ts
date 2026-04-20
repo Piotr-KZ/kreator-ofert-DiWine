@@ -38,13 +38,13 @@ export interface BriefData {
   strengths: string[];
 
   // Punkt 6
-  brandPos: string;
+  brandPos: string[];
 
   // Punkt 7
-  writingStyle: string;
+  writingStyle: string[];
 
   // Punkt 8
-  mainGoal: string;
+  mainGoal: string[];
   siteContent: string[];
 
   // Punkt 9
@@ -300,10 +300,42 @@ export interface CheckItem {
   fix_tab?: string;
 }
 
+export interface SkippedCheck {
+  key: string;
+  status: "skip";
+  message: string;
+}
+
 export interface ReadinessResult {
   checks: CheckItem[];
+  skipped: SkippedCheck[];
   can_publish: boolean;
   score: number;
+}
+
+// ─── Site Type Config (Brief 42) ───
+
+export interface StylePreset {
+  id: string;
+  label: string;
+  colors: string[];
+}
+
+export interface SiteTypeConfig {
+  site_type: string;
+  label: string;
+  category: string;
+  recommended_blocks: string[];
+  min_sections: number;
+  max_sections: number;
+  allowed_block_categories: string[];
+  prompt_hints: Record<string, string>;
+  readiness_skip_checks: string[];
+  readiness_modify_checks: Record<string, Record<string, unknown>>;
+  config_defaults: Record<string, unknown>;
+  style_presets: StylePreset[];
+  brief_sections: string[];
+  brief_content: string[];
 }
 
 // ─── Publishing (Step 9) ───
@@ -405,6 +437,9 @@ export const INDUSTRIES = [
 export const SITE_TYPES_FIRMA = [
   { id: "firmowa", label: "Strona firmowa", desc: "Pełna prezentacja firmy" },
   { id: "korporacyjna", label: "Korporacyjna", desc: "Duża firma, wiele działów" },
+  { id: "blog", label: "Blog firmowy", desc: "Artykuły, aktualności, wiedza" },
+  { id: "firmowa-blog", label: "Firmowa + Blog", desc: "Prezentacja firmy z sekcją blogową" },
+  { id: "korporacyjna-blog", label: "Korporacyjna + Blog", desc: "Korporacja z blogiem i bazą wiedzy" },
   { id: "lp-produkt", label: "LP produktowa", desc: "Jeden produkt, pełna prezentacja" },
   { id: "lp-usluga", label: "LP usługowa", desc: "Jedna usługa, konwersja" },
   { id: "lp-wydarzenie", label: "LP wydarzenie", desc: "Konferencja, targi, event" },

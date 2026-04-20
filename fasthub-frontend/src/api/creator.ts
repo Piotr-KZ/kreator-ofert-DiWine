@@ -253,8 +253,10 @@ export const reorderSections = (projectId: string, order: string[]) =>
 
 // ─── Blocks ───
 
-export const listBlocks = (category?: string) =>
-  apiClient.get<BlockTemplate[]>("/blocks", { params: category ? { category } : {} });
+export const listBlocks = (category?: string, siteType?: string) =>
+  apiClient.get<BlockTemplate[]>("/blocks", {
+    params: { ...(category ? { category } : {}), ...(siteType ? { site_type: siteType } : {}) },
+  });
 
 export const matchBlocks = (criteria: { category_code?: string; media_type?: string; layout_type?: string }) =>
   apiClient.post<BlockTemplate[]>("/blocks/match", criteria);
@@ -367,6 +369,16 @@ export const openPreview = async (projectId: string) => {
   window.open(url, "_blank");
   setTimeout(() => URL.revokeObjectURL(url), 5000);
 };
+
+// ─── Site Type Config (Brief 42) ───
+
+export const getSiteTypeConfig = (siteType: string) =>
+  apiClient.get<import("@/types/creator").SiteTypeConfig>(`/creator/site-type-config/${siteType}`);
+
+export const listSiteTypeConfigs = () =>
+  apiClient.get<Array<{ site_type: string; label: string; category: string }>>(
+    "/creator/site-type-config",
+  );
 
 // ─── AI Visibility (Brief 41) ───
 

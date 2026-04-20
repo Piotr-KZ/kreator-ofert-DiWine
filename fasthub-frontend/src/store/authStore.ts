@@ -121,12 +121,19 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       } else {
         set({ isLoading: false });
       }
-    } catch {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      sessionStorage.removeItem('access_token');
-      sessionStorage.removeItem('refresh_token');
-      set({ user: null, isAuthenticated: false, isLoading: false });
+    } catch (error: any) {
+      const status = error.response?.status;
+      if (status === 401 || status === 403) {
+        // Token invalid/expired — clear and redirect
+        localStorage.removeItem('access_token');
+        localStorage.removeItem('refresh_token');
+        sessionStorage.removeItem('access_token');
+        sessionStorage.removeItem('refresh_token');
+        set({ user: null, isAuthenticated: false, isLoading: false });
+      } else {
+        // Network error or server error — keep tokens, retry possible
+        set({ isLoading: false, error: 'Serwer niedostepny. Sprobuj odswiezyc strone.' });
+      }
     }
   },
 

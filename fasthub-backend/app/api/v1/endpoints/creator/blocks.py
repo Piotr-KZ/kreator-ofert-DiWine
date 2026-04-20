@@ -32,10 +32,19 @@ async def list_blocks(
     category: str | None = None,
     media_type: str | None = None,
     layout_type: str | None = None,
+    site_type: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """List block templates with optional filters."""
+    """List block templates with optional filters. site_type filters by allowed categories."""
     query = select(BlockTemplate).where(BlockTemplate.is_active == True)
+
+    # Brief 42: filter by site type's allowed categories
+    if site_type:
+        from app.services.creator.site_type_config import get_site_type_config
+        config = get_site_type_config(site_type)
+        if config.allowed_block_categories:
+            query = query.where(BlockTemplate.category_code.in_(config.allowed_block_categories))
+
     if category:
         query = query.where(BlockTemplate.category_code == category)
     if media_type:

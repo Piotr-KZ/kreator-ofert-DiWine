@@ -7,6 +7,7 @@ from fastapi import APIRouter
 
 from app.api.v1.endpoints import (
     admin,
+    admin_webcreator,
     api_tokens,
     auth,
     dunning,
@@ -36,6 +37,9 @@ from app.api.v1.endpoints.creator import materials as creator_materials
 from app.api.v1.endpoints.creator import projects as creator_projects
 from app.api.v1.endpoints.creator import sections as creator_sections
 from app.api.v1.endpoints.creator import styles as creator_styles
+from app.api.v1.endpoints.creator import tracking as creator_tracking
+from app.api.v1.endpoints.creator import google_integrations as creator_google
+from app.api.v1.endpoints.creator import site_type_config as creator_site_type_config
 from fasthub_core.billing.api import router as billing_router
 from fasthub_core.rbac import rbac_router
 
@@ -55,6 +59,7 @@ api_router.include_router(gus.router, prefix="", tags=["GUS"])
 api_router.include_router(two_factor.router, prefix="/auth", tags=["2FA"])
 api_router.include_router(sessions.router, prefix="/auth", tags=["Sessions"])
 api_router.include_router(dunning.router, prefix="/admin", tags=["Dunning"])
+api_router.include_router(admin_webcreator.router, prefix="/admin", tags=["Admin WebCreator"])
 api_router.include_router(payments.router, prefix="/billing", tags=["Payments"])
 api_router.include_router(webhook_config.router, prefix="", tags=["Webhooks"])
 api_router.include_router(health.router, prefix="", tags=["Health"])
@@ -78,3 +83,8 @@ api_router.include_router(creator_stock_photos.router, prefix="", tags=["Creator
 api_router.include_router(creator_stats.router, prefix="/projects", tags=["Creator: Stats"])
 api_router.include_router(creator_integrations.public_router, prefix="", tags=["Creator: Integrations"])
 api_router.include_router(creator_integrations.router, prefix="/projects", tags=["Creator: Integrations"])
+api_router.include_router(creator_tracking.public_router, prefix="", tags=["Creator: Tracking"])
+api_router.include_router(creator_tracking.router, prefix="/projects", tags=["Creator: Tracking"])
+api_router.include_router(creator_google.callback_router, prefix="", tags=["Creator: Google Integrations"])
+api_router.include_router(creator_google.router, prefix="/projects", tags=["Creator: Google Integrations"])
+api_router.include_router(creator_site_type_config.router, prefix="", tags=["Creator: Site Type Config"])
