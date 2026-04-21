@@ -1,8 +1,0 @@
-{% extends "base_layout.txt" %}
-{% block content %}
-Witaj, {{ user_name }}!
-
-Twoje konto w {{ org_name | default(app_name) }} zostalo utworzone.
-
-Przejdz do panelu: {{ dashboard_url }}
-{% endblock %}

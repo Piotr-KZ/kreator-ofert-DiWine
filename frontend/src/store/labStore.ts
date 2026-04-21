@@ -1,0 +1,250 @@
+/**
+ * Lab Creator Zustand store — single source of truth for 5-step flow.
+ */
+
+import { create } from "zustand";
+import * as api from "@/api/client";
+
+export interface Section {
+  id: string;
+  block_code: string;
+  position: number;
+  variant: string;
+  slots_json: Record<string, unknown> | null;
+  is_visible: boolean;
+}
+
+export interface VisualConceptSection {
+  block_code: string;
+  bg_type: string;
+  bg_value: string;
+  media_type: string;
+  photo_query: string | null;
+  separator_after: boolean;
+}
+
+export interface VisualConcept {
+  style: string;
+  bg_approach: string;
+  separator_type: string;
+  sections: VisualConceptSection[];
+}
+
+interface LabState {
+  // Project
+  projectId: string | null;
+  projectName: string;
+  siteType: string;
+
+  // Step 1: Brief + Style
+  brief: {
+    description: string;
+    target_audience: string;
+    usp: string;
+    tone: string;
+  };
+  style: {
+    primary_color: string;
+    secondary_color: string;
+  };
+
+  // Step 2: Structure
+  sections: Section[];
+
+  // Step 3: Visual Concept
+  visualConcept: VisualConcept | null;
+
+  // UI state
+  currentStep: number;
+  isLoading: boolean;
+  isGenerating: boolean;
+  error: string | null;
+
+  // Actions
+  createProject: (name: string, siteType: string) => Promise<string>;
+  loadProject: (id: string) => Promise<void>;
+  saveBrief: () => Promise<void>;
+
+  generateStructure: () => Promise<void>;
+  addSection: (blockCode: string) => Promise<void>;
+  removeSection: (sectionId: string) => Promise<void>;
+  reorderSections: (ids: string[]) => Promise<void>;
+  updateSection: (sectionId: string, data: Record<string, unknown>) => Promise<void>;
+
+  generateVisualConcept: () => Promise<void>;
+  saveVisualConcept: (vc: VisualConcept) => Promise<void>;
+
+  generateContent: () => Promise<void>;
+  regenerateSection: (sectionId: string, instruction?: string) => Promise<void>;
+
+  setStep: (step: number) => void;
+  setBrief: (field: string, value: string) => void;
+  setStyle: (field: string, value: string) => void;
+  setSiteType: (t: string) => void;
+  setError: (e: string | null) => void;
+}
+
+export const useLabStore = create<LabState>((set, get) => ({
+  projectId: null,
+  projectName: "",
+  siteType: "company_card",
+  brief: { description: "", target_audience: "", usp: "", tone: "profesjonalny" },
+  style: { primary_color: "#4F46E5", secondary_color: "#F59E0B" },
+  sections: [],
+  visualConcept: null,
+  currentStep: 1,
+  isLoading: false,
+  isGenerating: false,
+  error: null,
+
+  createProject: async (name, siteType) => {
+    const { data } = await api.createProject(name, siteType);
+    set({ projectId: data.id, projectName: name, siteType });
+    return data.id;
+  },
+
+  loadProject: async (id) => {
+    set({ isLoading: true });
+    try {
+      const { data } = await api.getProject(id);
+      set({
+        projectId: data.id,
+        projectName: data.name,
+        siteType: data.site_type || "company_card",
+        brief: data.brief_json || { description: "", target_audience: "", usp: "", tone: "profesjonalny" },
+        style: data.style_json || { primary_color: "#4F46E5", secondary_color: "#F59E0B" },
+        sections: data.sections || [],
+        visualConcept: data.visual_concept_json || null,
+        currentStep: data.current_step || 1,
+      });
+    } finally {
+      set({ isLoading: false });
+    }
+  },
+
+  saveBrief: async () => {
+    const { projectId, brief, style, siteType } = get();
+    if (!projectId) return;
+    await api.updateProject(projectId, {
+      brief_json: brief,
+      style_json: style,
+      site_type: siteType,
+    });
+  },
+
+  generateStructure: async () => {
+    const { projectId } = get();
+    if (!projectId) return;
+    set({ isGenerating: true, error: null });
+    try {
+      const { data } = await api.generateStructure(projectId);
+      // Reload project to get sections
+      await get().loadProject(projectId);
+      set({ currentStep: 2 });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Blad generowania struktury";
+      set({ error: msg });
+    } finally {
+      set({ isGenerating: false });
+    }
+  },
+
+  addSection: async (blockCode) => {
+    const { projectId, sections } = get();
+    if (!projectId) return;
+    await api.addSection(projectId, blockCode, sections.length);
+    await get().loadProject(projectId);
+  },
+
+  removeSection: async (sectionId) => {
+    const { projectId } = get();
+    if (!projectId) return;
+    await api.deleteSection(projectId, sectionId);
+    set({ sections: get().sections.filter((s) => s.id !== sectionId) });
+  },
+
+  reorderSections: async (ids) => {
+    const { projectId } = get();
+    if (!projectId) return;
+    await api.reorderSections(projectId, ids);
+    // Optimistic update
+    const sectionMap = new Map(get().sections.map((s) => [s.id, s]));
+    const reordered = ids.map((id, i) => {
+      const s = sectionMap.get(id)!;
+      return { ...s, position: i };
+    });
+    set({ sections: reordered });
+  },
+
+  updateSection: async (sectionId, data) => {
+    const { projectId } = get();
+    if (!projectId) return;
+    await api.updateSection(projectId, sectionId, data);
+    set({
+      sections: get().sections.map((s) =>
+        s.id === sectionId ? { ...s, ...data } : s,
+      ),
+    });
+  },
+
+  generateVisualConcept: async () => {
+    const { projectId } = get();
+    if (!projectId) return;
+    set({ isGenerating: true, error: null });
+    try {
+      const { data } = await api.generateVisualConcept(projectId);
+      set({ visualConcept: data, currentStep: 3 });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Blad generowania visual concept";
+      set({ error: msg });
+    } finally {
+      set({ isGenerating: false });
+    }
+  },
+
+  saveVisualConcept: async (vc) => {
+    const { projectId } = get();
+    if (!projectId) return;
+    await api.saveVisualConcept(projectId, vc as unknown as Record<string, unknown>);
+    set({ visualConcept: vc });
+  },
+
+  generateContent: async () => {
+    const { projectId } = get();
+    if (!projectId) return;
+    set({ isGenerating: true, error: null });
+    try {
+      const { data } = await api.generateContent(projectId);
+      // Reload to get updated sections with content
+      await get().loadProject(projectId);
+      set({ currentStep: 4 });
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Blad generowania tresci";
+      set({ error: msg });
+    } finally {
+      set({ isGenerating: false });
+    }
+  },
+
+  regenerateSection: async (sectionId, instruction) => {
+    const { projectId } = get();
+    if (!projectId) return;
+    set({ isGenerating: true });
+    try {
+      const { data } = await api.regenerateSection(projectId, sectionId, instruction);
+      set({
+        sections: get().sections.map((s) =>
+          s.id === sectionId ? { ...s, slots_json: data.slots_json } : s,
+        ),
+      });
+    } finally {
+      set({ isGenerating: false });
+    }
+  },
+
+  setStep: (step) => set({ currentStep: step }),
+  setBrief: (field, value) => set({ brief: { ...get().brief, [field]: value } }),
+  setStyle: (field, value) => set({ style: { ...get().style, [field]: value } }),
+  setSiteType: (t) => set({ siteType: t }),
+  setError: (e) => set({ error: e }),
+}));

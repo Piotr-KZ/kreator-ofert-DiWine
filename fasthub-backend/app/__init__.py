@@ -1,1 +1,0 @@
-"""WebCreator application package"""
