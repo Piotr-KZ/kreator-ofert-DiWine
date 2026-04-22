@@ -32,6 +32,35 @@ async def _get_project_full(project_id: str, db: AsyncSession) -> Project:
     return project
 
 
+@router.post("/projects/{project_id}/analyze-website")
+async def analyze_website(
+    project_id: str,
+    body: dict,
+    db: AsyncSession = Depends(get_db),
+):
+    """AI reads a website and extracts brief data."""
+    project = await _get_project_full(project_id, db)
+    url = body.get("url", "")
+    if not url:
+        raise HTTPException(status_code=400, detail="Brak URL")
+
+    engine = AIEngine(db)
+    result = await engine.analyze_website(url)
+    return result
+
+
+@router.post("/projects/{project_id}/validate-brief")
+async def validate_brief(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """AI validates brief and returns feedback."""
+    project = await _get_project_full(project_id, db)
+    engine = AIEngine(db)
+    items = await engine.validate_brief(project)
+    return {"items": items}
+
+
 @router.post("/projects/{project_id}/generate-structure")
 async def generate_structure(
     project_id: str,
@@ -45,9 +74,10 @@ async def generate_structure(
     if not sections_data:
         raise HTTPException(status_code=500, detail="AI nie wygenerowalo struktury")
 
-    # Clear existing sections
+    # Clear existing sections and visual concept (tied to structure)
     for s in project.sections:
         await db.delete(s)
+    project.visual_concept_json = None
     await db.flush()
 
     # Create new sections
@@ -67,7 +97,7 @@ async def generate_structure(
             "title": s_data.get("title", ""),
         })
 
-    project.current_step = max(project.current_step or 1, 2)
+    project.current_step = max(project.current_step or 1, 3)
     await db.flush()
 
     return {"sections": created}
@@ -89,7 +119,7 @@ async def generate_visual_concept(
         raise HTTPException(status_code=500, detail="AI nie wygenerowalo visual concept")
 
     project.visual_concept_json = vc
-    project.current_step = max(project.current_step or 1, 3)
+    project.current_step = max(project.current_step or 1, 5)
     await db.flush()
 
     return vc
@@ -183,7 +213,7 @@ async def chat(
     engine = AIEngine(db)
 
     async def event_stream():
-        async for chunk in engine.chat_stream(project, body.message):
+        async for chunk in engine.chat_stream(project, body.message, frontend_context=body.context, current_step=body.step):
             yield f"data: {json.dumps({'text': chunk})}\n\n"
         yield "data: [DONE]\n\n"
 

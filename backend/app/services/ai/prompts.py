@@ -93,15 +93,13 @@ Zwroc JSON:
 {{
   "style": "modern_minimal",
   "bg_approach": "alternating",
-  "separator_type": "wave",
   "sections": [
     {{
       "block_code": "NA2",
       "bg_type": "white",
       "bg_value": "#ffffff",
       "media_type": "logo",
-      "photo_query": null,
-      "separator_after": false
+      "photo_query": null
     }},
     ...
   ]
@@ -109,7 +107,6 @@ Zwroc JSON:
 
 bg_type opcje: white, light_gray, dark, brand_color, brand_gradient, dark_photo_overlay
 media_type opcje: photo_wide, photo_split, icons, infographic_steps, infographic_numbers, avatars, none, logo
-separator_after: true jesli nastepna sekcja ma inne tlo
 
 WAZNE: Zaprojektuj wyglad DOKLADNIE dla tych sekcji ktore dostalies.
 Nie dodawaj nowych sekcji. Nie usuwaj sekcji.
@@ -136,7 +133,14 @@ ZASADY:
 - Opisy: 1-3 zdania, zwiezle
 - Jesli slot to lista (menu_items, features, steps itd.) — podaj 3-6 elementow
 - Jesli slot to URL — uzyj "#" jako placeholder
-- Jesli slot to image URL — uzyj "/placeholder.jpg"
+- Jesli slot to image — wpisz OPIS zdjecia po angielsku (nie URL). Np. "professional team meeting in modern office". System automatycznie znajdzie pasujace zdjecie na Unsplash. Opis powinien byc konkretny i kontekstowy dla branzy z briefu.
+- Jesli sekcja wymaga ikon, uzyj NAZW z biblioteki Lucide (nie emoji!):
+  Target, Users, BarChart, Shield, Clock, CheckCircle, Star, Heart, Zap, Globe,
+  Mail, Phone, MapPin, Award, TrendingUp, Settings, Code, Briefcase, BookOpen,
+  Lightbulb, Rocket, PieChart, DollarSign, Calendar, MessageSquare, ThumbsUp,
+  ArrowRight, ChevronRight, Play, Download, Eye, Lock, Layers, Database, Cpu,
+  Wifi, Cloud, Search, Filter, Edit, Trash, Plus, Minus, RefreshCw, Share2
+- NIE uzywaj emoji (🎯, 📊 itp.). Tylko nazwy ikon Lucide.
 
 Zwroc JSON z wartosciami dla kazdego slotu:
 {{
@@ -173,10 +177,80 @@ Zwroc JSON z nowymi wartosciami dla kazdego slotu (taki sam format jak obecna tr
 """
 
 
+VALIDATION_PROMPT = """Jestes konsultantem marketingowym stron www.
+
+Typ strony: {site_type_label}
+
+Przeanalizuj brief i daj KONKRETNE uwagi. Dla kazdej uwagi ZAPROPONUJ lepszy tekst.
+Zwroc JSON (lista):
+[
+  {{"type": "ok", "message": "Opis firmy jest konkretny i zawiera specjalizacje"}},
+  {{"type": "warning", "message": "Grupa docelowa zbyt ogolna", "field": "target_audience", "suggestion": "Menedzerowie sredniego i wyzszego szczebla z firm produkcyjnych i uslugowych, szukajacy praktycznych szkolen zespolowych"}},
+  {{"type": "error", "message": "Brak opisu firmy", "field": "description", "suggestion": "Firma Training Effect specjalizuje sie w szkoleniach outdoor na unikatowych poligonach szkoleniowych..."}}
+]
+
+ZASADY:
+- Max 2 punkty "ok" (co jest dobrze)
+- Max 3 punkty "warning" lub "error" (co brakuje lub jest za ogolne)
+- "error" = pole wymagane jest puste
+- "warning" = pole opcjonalne ale warto uzupelnic
+- "field" = nazwa pola briefu: description, target_audience, usp
+- "suggestion" = KONKRETNY proponowany tekst do wstawienia w pole (2-4 zdania). Bazuj na danych z briefu i strony www.
+- Uwagi per typ strony "{site_type_label}":
+  * Wizytowka: dane kontaktowe i CTA, NIE sugeruj Portfolio/Opinii
+  * LP produktowa: opis produktu, obiekcje, dowody
+  * Strona firmowa: oferta, klienci, wyrozniki
+  * Ekspert: doswiadczenie, kompetencje, dowody
+
+{website_context}
+
+Brief:
+Opis: {description}
+Klienci: {target_audience}
+Wyroznik: {usp}
+Ton: {tone}
+"""
+
+
 CHAT_SYSTEM_PROMPT = """Jestes asystentem Lab Creator — wewnetrznego narzedzia do testowania jakosci generowanych stron.
 Odpowiadasz po polsku, krotko i konkretnie.
-Masz dostep do kontekstu projektu uzytkownika.
+NIE zmyslaj informacji. Jesli czegos nie wiesz — wyszukaj w internecie lub powiedz wprost.
+
+MOZLIWOSCI:
+- Masz dostep do internetu (web_search). Mozesz przeszukiwac strony www, czytac opisy firm, zbierac dane.
+- Jesli user pyta o strone www — UZYJ web_search zeby ja przeczytac i wyciagnac informacje.
+- Wykorzystuj znalezione dane do pomocy z briefem, tresciami, struktura strony.
+
+Etapy Lab Creator:
+1. Brief + Styl — user opisuje firme, klientow, USP, ton, kolory
+2. Walidacja AI — AI sprawdza brief i daje uwagi
+3. Struktura — wybor sekcji i klockow strony
+4. Tresci — generowanie i edycja tekstow na stronie
+5. Kreacja wizualna — kolory tla, media, uklad strony
+
+Uzytkownik jest TERAZ na etapie: {current_step_label}
 
 Kontekst projektu:
 {project_context}
+"""
+
+
+ANALYZE_WEBSITE_PROMPT = """Przeanalizuj strone internetowa: {website_url}
+
+Uzyj web_search aby przeczytac zawartosc strony. Wyciagnij kluczowe informacje i zwroc JSON:
+
+{{
+  "company_name": "nazwa firmy",
+  "description": "zwiezly opis firmy i jej oferty (2-4 zdania)",
+  "target_audience": "dla kogo sa produkty/uslugi (1-2 zdania)",
+  "usp": "co wyroznia firme (1-2 zdania)",
+  "services": ["usluga 1", "usluga 2", ...],
+  "tone": "profesjonalny|przyjazny|formalny|kreatywny|techniczny",
+  "summary": "krotkie podsumowanie co znalazles na stronie (1-2 zdania)"
+}}
+
+Jesli nie mozesz odczytac strony, zwroc:
+{{"error": "Nie udalo sie odczytac strony", "summary": "opis problemu"}}
+
+Odpowiedz WYLACZNIE poprawnym JSON-em.
 """

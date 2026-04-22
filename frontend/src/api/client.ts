@@ -41,6 +41,12 @@ export const reorderSections = (projectId: string, section_ids: string[]) =>
 
 // ─── AI ───
 
+export const validateBrief = (projectId: string) =>
+  api.post(`/projects/${projectId}/validate-brief`);
+
+export const analyzeWebsite = (projectId: string, url: string) =>
+  api.post(`/projects/${projectId}/analyze-website`, { url });
+
 export const generateStructure = (projectId: string) =>
   api.post(`/projects/${projectId}/generate-structure`);
 
@@ -69,6 +75,43 @@ export const listBlocks = (category?: string) =>
 
 export const listSiteTypes = () =>
   api.get("/site-types");
+
+// ─── Chat ───
+
+export const chatStream = async (
+  projectId: string,
+  message: string,
+  step?: number,
+  onChunk?: (text: string) => void,
+  context?: Record<string, unknown>,
+): Promise<void> => {
+  const resp = await fetch(`${API_BASE}/projects/${projectId}/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message, step, context }),
+  });
+  if (!resp.ok) throw new Error(`Chat error: ${resp.status}`);
+  const reader = resp.body?.getReader();
+  if (!reader) return;
+  const decoder = new TextDecoder();
+  let buffer = "";
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+    for (const line of lines) {
+      if (!line.startsWith("data: ")) continue;
+      const payload = line.slice(6).trim();
+      if (payload === "[DONE]") return;
+      try {
+        const parsed = JSON.parse(payload);
+        if (parsed.text && onChunk) onChunk(parsed.text);
+      } catch { /* skip */ }
+    }
+  }
+};
 
 // ─── Export ───
 

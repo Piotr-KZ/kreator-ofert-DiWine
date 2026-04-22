@@ -75,6 +75,41 @@ class ClaudeClient:
             duration_ms=duration_ms,
         )
 
+    async def complete_with_web_search(
+        self,
+        system: str,
+        user_message: str,
+        max_tokens: int = 4096,
+    ) -> ClaudeResponse:
+        """Complete with web_search tool — AI can browse the internet."""
+        start = time.monotonic()
+        try:
+            response = await self.client.messages.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": user_message}],
+                tools=[{"type": "web_search_20250305"}],
+            )
+        except Exception as e:
+            raise _handle_api_error(e) from e
+
+        duration_ms = int((time.monotonic() - start) * 1000)
+        # Extract text from response blocks (skip tool_use/tool_result blocks)
+        text_parts = []
+        for block in response.content:
+            if hasattr(block, "text"):
+                text_parts.append(block.text)
+        text = "\n".join(text_parts)
+
+        return ClaudeResponse(
+            text=text,
+            tokens_in=response.usage.input_tokens,
+            tokens_out=response.usage.output_tokens,
+            model=self.model,
+            duration_ms=duration_ms,
+        )
+
     async def complete_json(
         self,
         system: str,
@@ -127,6 +162,28 @@ class ClaudeClient:
             ) as stream:
                 async for text in stream.text_stream:
                     yield text
+        except Exception as e:
+            raise _handle_api_error(e) from e
+
+    async def stream_with_web_search(
+        self,
+        system: str,
+        messages: list[dict],
+        max_tokens: int = 4096,
+    ) -> AsyncIterator[str]:
+        """Stream with web_search tool — AI can browse the internet."""
+        try:
+            async with self.client.messages.stream(
+                model=self.model,
+                max_tokens=max_tokens,
+                system=system,
+                messages=messages,
+                tools=[{"type": "web_search_20250305"}],
+            ) as stream:
+                async for event in stream:
+                    if event.type == "content_block_delta":
+                        if hasattr(event.delta, "text"):
+                            yield event.delta.text
         except Exception as e:
             raise _handle_api_error(e) from e
 

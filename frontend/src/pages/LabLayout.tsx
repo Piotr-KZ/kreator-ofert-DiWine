@@ -1,13 +1,14 @@
 import { useEffect } from "react";
 import { Outlet, useParams, useNavigate, useLocation } from "react-router-dom";
 import { useLabStore } from "@/store/labStore";
+import AIChatModal from "@/components/AIChatModal";
 
 const STEPS = [
   { num: 1, label: "Brief + Styl" },
-  { num: 2, label: "Struktura" },
-  { num: 3, label: "Visual Concept" },
-  { num: 4, label: "Tresci + Podglad" },
-  { num: 5, label: "Gotowa strona" },
+  { num: 2, label: "Walidacja AI" },
+  { num: 3, label: "Struktura" },
+  { num: 4, label: "Treści" },
+  { num: 5, label: "Kreacja wizualna" },
 ];
 
 export default function LabLayout() {
@@ -72,6 +73,9 @@ export default function LabLayout() {
       <main className="flex-1">
         <Outlet />
       </main>
+
+      {/* AI Chat */}
+      <AIChatModal projectId={projectId} currentStep={currentStep} />
     </div>
   );
 }

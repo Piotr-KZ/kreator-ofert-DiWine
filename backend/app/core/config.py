@@ -25,6 +25,9 @@ class Settings:
     UNSPLASH_ACCESS_KEY: str = os.getenv("UNSPLASH_ACCESS_KEY", "")
     PEXELS_API_KEY: str = os.getenv("PEXELS_API_KEY", "")
 
+    # Canva MCP
+    CANVA_MCP_ENABLED: bool = os.getenv("CANVA_MCP_ENABLED", "false").lower() == "true"
+
     # File uploads
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "./uploads")
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10 MB

@@ -722,16 +722,16 @@ _OF1 = {
             {"id": "price", "type": "text", "label": "Cena (opcj.)"},
         ]},
     ],
-    "html_template": """<section class="bg-white py-20 px-8">
-  <div class="max-w-6xl mx-auto">
-    <h2 class="text-3xl font-bold text-gray-900 text-center mb-4">{{title}}</h2>
-    {{#if subtitle}}<p class="text-gray-500 text-center mb-12 max-w-2xl mx-auto">{{subtitle}}</p>{{/if}}
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-8">
-      {{#each services}}<div class="bg-gray-50 rounded-2xl p-8 border border-gray-100 hover:shadow-md transition-shadow">
-        <div class="w-12 h-12 bg-indigo-100 rounded-xl flex items-center justify-center mb-4 text-indigo-600 text-xl">&#9679;</div>
-        <h3 class="font-bold text-gray-900 mb-2 text-lg">{{this.title}}</h3>
-        <p class="text-sm text-gray-600 mb-4">{{this.description}}</p>
-        {{#if this.price}}<div class="text-indigo-600 font-semibold">{{this.price}}</div>{{/if}}
+    "html_template": """<section style="padding:var(--space-section-y) 0;">
+  <div style="max-width:var(--max-width);margin:0 auto;padding:0 var(--space-section-x);">
+    <h2 style="font-size:var(--font-size-h2);font-weight:var(--font-weight-bold);color:var(--color-text);text-align:center;margin-bottom:var(--space-heading-mb);">{{title}}</h2>
+    {{#if subtitle}}<p style="color:var(--color-text-muted);text-align:center;margin-bottom:var(--space-subheading-mb);max-width:640px;margin-left:auto;margin-right:auto;">{{subtitle}}</p>{{/if}}
+    <div style="display:grid;grid-template-columns:repeat(var(--grid-columns),1fr);gap:var(--grid-gap);">
+      {{#each services}}<div style="background:var(--color-bg-muted);border-radius:var(--radius-card);padding:var(--space-card);border:1px solid var(--color-border-light);box-shadow:var(--shadow-card);transition:box-shadow 0.2s;">
+        <div style="width:48px;height:48px;background:var(--color-primary-light);border-radius:var(--radius-card);display:flex;align-items:center;justify-content:center;margin-bottom:1rem;color:var(--color-primary);">{{this.icon}}</div>
+        <h3 style="font-size:var(--font-size-h3);font-weight:var(--font-weight-semibold);color:var(--color-text);margin-bottom:0.5rem;">{{this.title}}</h3>
+        <p style="font-size:var(--font-size-small);color:var(--color-text-muted);margin-bottom:1rem;">{{this.description}}</p>
+        {{#if this.price}}<div style="color:var(--color-primary);font-weight:var(--font-weight-semibold);">{{this.price}}</div>{{/if}}
       </div>{{/each}}
     </div>
   </div>

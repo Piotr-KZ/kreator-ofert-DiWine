@@ -1,17 +1,20 @@
 """
 Block & Page renderer — template + slot data + visual concept → HTML.
 Brief 33: slot-based templating with loops, conditions, HTML escape.
-Brief 43: Visual Concept support — backgrounds, separators, stock photos.
+Brief 43: Visual Concept support — backgrounds, stock photos.
+Brief 44: Design tokens CSS, separators disabled, Unsplash integration.
 """
 
 import re
+from pathlib import Path
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.block_template import BlockTemplate
-from app.services.creator.separators import get_separator_svg
+# Separators disabled (Brief 44) — import kept for potential future use
+# from app.services.creator.separators import get_separator_svg
 
 
 # ─── Background helpers ───
@@ -164,6 +167,27 @@ class PageRenderer:
     def __init__(self) -> None:
         self.block_renderer = BlockRenderer()
 
+    async def resolve_media(self, project, unsplash) -> None:
+        """Fetch real photos from Unsplash for sections with photo_query."""
+        vc = project.visual_concept_json or {}
+        vc_sections = {s["block_code"]: s for s in vc.get("sections", [])}
+
+        for section in project.sections:
+            vc_s = vc_sections.get(section.block_code, {})
+            photo_query = vc_s.get("photo_query")
+            media_type = vc_s.get("media_type", "none")
+
+            if photo_query and media_type in ("photo_wide", "photo_split"):
+                url = await unsplash.get_photo_for_section(photo_query, media_type)
+                if url:
+                    slots = dict(section.slots_json or {})
+                    # Insert URL into the appropriate slot
+                    for slot_key in ("hero_image", "image_url", "image", "photo"):
+                        if slot_key in slots:
+                            slots[slot_key] = url
+                            section.slots_json = slots
+                            break
+
     async def render_project_html(
         self,
         db: AsyncSession,
@@ -185,8 +209,6 @@ class PageRenderer:
             s["block_code"]: s
             for s in visual_concept.get("sections", [])
         }
-        separator_type = visual_concept.get("separator_type", "none")
-
         sorted_sections = sorted(project.sections, key=lambda s: s.position)
         sections_html = []
 
@@ -221,20 +243,8 @@ class PageRenderer:
                 f'  <div style="max-width:1200px;margin:0 auto;padding:0 1.5rem;">\n{html}\n  </div>\n</div>'
             )
 
-            # Add separator between sections with different backgrounds
-            if separator_type != "none" and i < len(sorted_sections) - 1:
-                next_section = sorted_sections[i + 1]
-                next_vc = vc_sections.get(next_section.block_code, {})
-                should_separate = vc_section.get("separator_after", False)
-
-                if should_separate:
-                    color_top = _get_bg_color(vc_section)
-                    color_bottom = _get_bg_color(next_vc)
-
-                    if color_top != color_bottom:
-                        sep_svg = get_separator_svg(separator_type, color_top, color_bottom)
-                        if sep_svg:
-                            sections_html.append(sep_svg)
+            # Separators disabled — they look amateurish (Brief 44)
+            # Logic preserved as dead code in separators/__init__.py if needed later
 
         html_body = "\n".join(sections_html)
 
@@ -248,54 +258,64 @@ class PageRenderer:
         return html_body, css
 
     def _generate_css(self, style: dict, visual_concept: dict = None) -> str:
-        """Generate CSS from project style settings + visual concept."""
+        """Generate CSS from design tokens + project style overrides."""
         primary = style.get("primary_color", style.get("color_primary", "#4F46E5"))
         secondary = style.get("secondary_color", style.get("color_secondary", "#F59E0B"))
-        accent = style.get("color_accent", primary)
-        heading_font = style.get("heading_font", "Outfit")
+        heading_font = style.get("heading_font", "Inter")
         body_font = style.get("body_font", "Inter")
-        radius = style.get("border_radius", "rounded")
 
-        radius_map = {
-            "sharp": "0",
-            "rounded-sm": "0.375rem",
-            "rounded": "0.75rem",
-        }
+        # Load base design tokens
+        tokens_path = Path(__file__).parent / "design_tokens.css"
+        base_css = tokens_path.read_text(encoding="utf-8") if tokens_path.exists() else ""
 
-        css = (
+        # Google Fonts import
+        fonts_css = (
             f"@import url('https://fonts.googleapis.com/css2?"
             f"family={heading_font.replace(' ', '+')}:wght@400;500;600;700;800"
             f"&family={body_font.replace(' ', '+')}:wght@300;400;500;600&display=swap');\n\n"
-            f"@font-face {{ font-display: swap; }}\n\n"
+        )
+
+        # Override colors from user's brief
+        overrides = (
             f":root {{\n"
             f"  --color-primary: {primary};\n"
             f"  --color-secondary: {secondary};\n"
-            f"  --color-accent: {accent};\n"
-            f"  --font-heading: '{heading_font}', system-ui;\n"
-            f"  --font-body: '{body_font}', system-ui;\n"
-            f"  --radius: {radius_map.get(radius, '0.75rem')};\n"
+            f"  --color-primary-light: {primary}1a;\n"
+            f"  --color-primary-dark: {self._darken_color(primary)};\n"
+            f"  --font-family: '{body_font}', -apple-system, BlinkMacSystemFont, sans-serif;\n"
+            f"  --font-family-heading: '{heading_font}', -apple-system, BlinkMacSystemFont, sans-serif;\n"
             f"}}\n\n"
-            f"* {{ margin: 0; padding: 0; box-sizing: border-box; }}\n"
-            f"body {{ font-family: var(--font-body); color: #1f2937; line-height: 1.6; }}\n"
-            f"h1, h2, h3, h4 {{ font-family: var(--font-heading); line-height: 1.2; }}\n"
-            f"img {{ max-width: 100%; height: auto; }}\n"
-            f"a {{ color: var(--color-primary); text-decoration: none; }}\n"
-            f"a:hover {{ text-decoration: underline; }}\n\n"
-            # Responsive
-            f"@media (max-width: 768px) {{\n"
-            f"  [data-section-id] {{ padding: 2rem 0 !important; }}\n"
-            f"  [data-section-id] > div {{ padding: 0 1rem !important; }}\n"
-            f"}}\n\n"
-            # Scroll animations
-            f"@keyframes fadeInUp {{ from {{ opacity:0; transform:translateY(20px); }} to {{ opacity:1; transform:translateY(0); }} }}\n"
-            f"[data-section-id] {{ animation: fadeInUp 0.6s ease-out both; }}\n"
-            f"[data-section-id]:nth-child(2) {{ animation-delay: 0.1s; }}\n"
-            f"[data-section-id]:nth-child(3) {{ animation-delay: 0.2s; }}\n"
-            f"[data-section-id]:nth-child(4) {{ animation-delay: 0.3s; }}\n"
-            f"@media (prefers-reduced-motion: reduce) {{ [data-section-id] {{ animation: none; }} }}\n"
         )
 
-        return css
+        # CSS reset + normalization using design tokens
+        reset = (
+            "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n"
+            "body { font-family: var(--font-family); color: var(--color-text); line-height: var(--line-height); }\n"
+            "h1, h2, h3, h4 { font-family: var(--font-family-heading); line-height: var(--line-height-heading); }\n"
+            "img { max-width: 100%; height: auto; border-radius: var(--radius-image); }\n"
+            "a { color: var(--color-primary); text-decoration: none; }\n"
+            "a:hover { text-decoration: underline; }\n\n"
+            # Scroll animations
+            "@keyframes fadeInUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }\n"
+            "[data-section-id] { animation: fadeInUp 0.6s ease-out both; }\n"
+            "[data-section-id]:nth-child(2) { animation-delay: 0.1s; }\n"
+            "[data-section-id]:nth-child(3) { animation-delay: 0.2s; }\n"
+            "[data-section-id]:nth-child(4) { animation-delay: 0.3s; }\n"
+            "@media (prefers-reduced-motion: reduce) { [data-section-id] { animation: none; } }\n"
+        )
+
+        return fonts_css + base_css + overrides + reset
+
+    @staticmethod
+    def _darken_color(hex_color: str) -> str:
+        """Darken a hex color by ~30%."""
+        c = hex_color.lstrip("#")
+        if len(c) != 6:
+            return "#312E81"
+        r = max(0, int(c[0:2], 16) - 60)
+        g = max(0, int(c[2:4], 16) - 60)
+        b = max(0, int(c[4:6], 16) - 60)
+        return f"#{r:02x}{g:02x}{b:02x}"
 
     def _apply_fixes(self, css: str, fixes: list) -> str:
         """Apply CSS fixes from Vision loop."""

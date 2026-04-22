@@ -42,6 +42,7 @@ interface LabState {
     target_audience: string;
     usp: string;
     tone: string;
+    website: string;
   };
   style: {
     primary_color: string;
@@ -65,8 +66,9 @@ interface LabState {
   loadProject: (id: string) => Promise<void>;
   saveBrief: () => Promise<void>;
 
+  validateBrief: () => Promise<Array<{type: string; message: string; field?: string}>>;
   generateStructure: () => Promise<void>;
-  addSection: (blockCode: string) => Promise<void>;
+  addSection: (blockCode: string, position?: number) => Promise<void>;
   removeSection: (sectionId: string) => Promise<void>;
   reorderSections: (ids: string[]) => Promise<void>;
   updateSection: (sectionId: string, data: Record<string, unknown>) => Promise<void>;
@@ -77,6 +79,7 @@ interface LabState {
   generateContent: () => Promise<void>;
   regenerateSection: (sectionId: string, instruction?: string) => Promise<void>;
 
+  analyzeWebsite: () => Promise<Record<string, unknown> | null>;
   setStep: (step: number) => void;
   setBrief: (field: string, value: string) => void;
   setStyle: (field: string, value: string) => void;
@@ -88,7 +91,7 @@ export const useLabStore = create<LabState>((set, get) => ({
   projectId: null,
   projectName: "",
   siteType: "company_card",
-  brief: { description: "", target_audience: "", usp: "", tone: "profesjonalny" },
+  brief: { description: "", target_audience: "", usp: "", tone: "profesjonalny", website: "" },
   style: { primary_color: "#4F46E5", secondary_color: "#F59E0B" },
   sections: [],
   visualConcept: null,
@@ -111,7 +114,7 @@ export const useLabStore = create<LabState>((set, get) => ({
         projectId: data.id,
         projectName: data.name,
         siteType: data.site_type || "company_card",
-        brief: data.brief_json || { description: "", target_audience: "", usp: "", tone: "profesjonalny" },
+        brief: data.brief_json || { description: "", target_audience: "", usp: "", tone: "profesjonalny", website: "" },
         style: data.style_json || { primary_color: "#4F46E5", secondary_color: "#F59E0B" },
         sections: data.sections || [],
         visualConcept: data.visual_concept_json || null,
@@ -132,6 +135,22 @@ export const useLabStore = create<LabState>((set, get) => ({
     });
   },
 
+  validateBrief: async () => {
+    const { projectId } = get();
+    if (!projectId) return [];
+    set({ isGenerating: true, error: null });
+    try {
+      const { data } = await api.validateBrief(projectId);
+      return data.items || [];
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Blad walidacji";
+      set({ error: msg });
+      return [];
+    } finally {
+      set({ isGenerating: false });
+    }
+  },
+
   generateStructure: async () => {
     const { projectId } = get();
     if (!projectId) return;
@@ -140,7 +159,7 @@ export const useLabStore = create<LabState>((set, get) => ({
       const { data } = await api.generateStructure(projectId);
       // Reload project to get sections
       await get().loadProject(projectId);
-      set({ currentStep: 2 });
+      set({ currentStep: 3 });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Blad generowania struktury";
       set({ error: msg });
@@ -149,10 +168,11 @@ export const useLabStore = create<LabState>((set, get) => ({
     }
   },
 
-  addSection: async (blockCode) => {
+  addSection: async (blockCode, position) => {
     const { projectId, sections } = get();
     if (!projectId) return;
-    await api.addSection(projectId, blockCode, sections.length);
+    const pos = position !== undefined ? position : sections.length;
+    await api.addSection(projectId, blockCode, pos);
     await get().loadProject(projectId);
   },
 
@@ -193,7 +213,7 @@ export const useLabStore = create<LabState>((set, get) => ({
     set({ isGenerating: true, error: null });
     try {
       const { data } = await api.generateVisualConcept(projectId);
-      set({ visualConcept: data, currentStep: 3 });
+      set({ visualConcept: data, currentStep: 5 });
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : "Blad generowania visual concept";
       set({ error: msg });
@@ -229,14 +249,39 @@ export const useLabStore = create<LabState>((set, get) => ({
   regenerateSection: async (sectionId, instruction) => {
     const { projectId } = get();
     if (!projectId) return;
-    set({ isGenerating: true });
+    set({ isGenerating: true, error: null });
     try {
       const { data } = await api.regenerateSection(projectId, sectionId, instruction);
-      set({
-        sections: get().sections.map((s) =>
-          s.id === sectionId ? { ...s, slots_json: data.slots_json } : s,
-        ),
-      });
+      if (data.slots_json && Object.keys(data.slots_json).length > 0) {
+        set({
+          sections: get().sections.map((s) =>
+            s.id === sectionId ? { ...s, slots_json: data.slots_json } : s,
+          ),
+        });
+      }
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Błąd regeneracji sekcji";
+      set({ error: msg });
+    } finally {
+      set({ isGenerating: false });
+    }
+  },
+
+  analyzeWebsite: async () => {
+    const { projectId, brief } = get();
+    if (!projectId || !brief.website) return null;
+    set({ isGenerating: true, error: null });
+    try {
+      const { data } = await api.analyzeWebsite(projectId, brief.website);
+      if (data.error) {
+        set({ error: data.error });
+        return null;
+      }
+      return data;
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : "Błąd analizy strony";
+      set({ error: msg });
+      return null;
     } finally {
       set({ isGenerating: false });
     }

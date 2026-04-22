@@ -105,6 +105,10 @@ async def delete_project(project_id: str, db: AsyncSession = Depends(get_db)):
 async def add_section(project_id: str, data: dict, db: AsyncSession = Depends(get_db)):
     project = await _get_project(project_id, db)
     position = data.get("position", len(project.sections))
+    # Shift existing sections at positions >= new position
+    for s in project.sections:
+        if s.position >= position:
+            s.position += 1
     section = ProjectSection(
         id=str(uuid4()),
         project_id=project_id,

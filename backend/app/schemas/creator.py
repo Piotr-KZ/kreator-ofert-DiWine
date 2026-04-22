@@ -38,6 +38,7 @@ class SectionCreate(BaseModel):
 
 
 class SectionUpdate(BaseModel):
+    block_code: Optional[str] = None
     slots_json: Optional[dict] = None
     variant: Optional[str] = None
     is_visible: Optional[bool] = None
@@ -54,3 +55,4 @@ class GenerateRequest(BaseModel):
 class ChatMessage(BaseModel):
     message: str
     step: Optional[int] = None
+    context: Optional[dict] = None
