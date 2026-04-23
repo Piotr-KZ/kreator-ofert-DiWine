@@ -49,10 +49,15 @@ LUCIDE_ICONS: dict[str, str] = {
     "Circle": '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg>',
 }
 
+# Case-insensitive lookup: "users" → "Users", "barchart" → "BarChart"
+_ICON_LOOKUP = {k.lower(): k for k in LUCIDE_ICONS}
+
 
 def get_icon_svg(name: str, size: int = 24, color: str = "currentColor") -> str:
-    """Return Lucide icon SVG by name with configurable size and color."""
-    svg = LUCIDE_ICONS.get(name, LUCIDE_ICONS.get("Circle", ""))
+    """Return Lucide icon SVG by name with configurable size and color (case-insensitive)."""
+    # Try exact match first, then case-insensitive
+    canonical = _ICON_LOOKUP.get(name.lower(), "Circle")
+    svg = LUCIDE_ICONS.get(canonical, LUCIDE_ICONS["Circle"])
     if size != 24:
         svg = svg.replace('width="24"', f'width="{size}"')
         svg = svg.replace('height="24"', f'height="{size}"')

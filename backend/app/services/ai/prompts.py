@@ -132,8 +132,12 @@ ZASADY:
 - Naglowki: 3-8 slow, mocne, konkretne
 - Opisy: 1-3 zdania, zwiezle
 - Jesli slot to lista (menu_items, features, steps itd.) — podaj 3-6 elementow
-- Jesli slot to URL — uzyj "#" jako placeholder
-- Jesli slot to image — wpisz OPIS zdjecia po angielsku (nie URL). Np. "professional team meeting in modern office". System automatycznie znajdzie pasujace zdjecie na Unsplash. Opis powinien byc konkretny i kontekstowy dla branzy z briefu.
+- Jesli slot to URL (cta_url, link itp.) — uzyj "#" jako placeholder
+- ZDJECIA/OBRAZY — WAZNE: Jesli slot nazywa sie "image", "image_url", "hero_image", "photo", "logo_url" lub zawiera slowo "image"/"photo":
+  * NIGDY nie wpisuj "/placeholder.jpg" ani zadnego URL
+  * Zamiast tego wpisz OPIS zdjecia PO ANGIELSKU, np. "professional business team in modern training room with whiteboard"
+  * Opis powinien byc 5-10 slow, konkretny dla branzy z briefu
+  * System automatycznie znajdzie pasujace zdjecie stockowe na podstawie opisu
 - Jesli sekcja wymaga ikon, uzyj NAZW z biblioteki Lucide (nie emoji!):
   Target, Users, BarChart, Shield, Clock, CheckCircle, Star, Heart, Zap, Globe,
   Mail, Phone, MapPin, Award, TrendingUp, Settings, Code, Briefcase, BookOpen,

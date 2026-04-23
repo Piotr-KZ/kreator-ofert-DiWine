@@ -239,6 +239,20 @@ class TestLucideIcons:
         svg = get_icon_svg("Target", color="#FF0000")
         assert 'stroke="#FF0000"' in svg
 
+    def test_get_icon_svg_case_insensitive(self):
+        """get_icon_svg('users') matches 'Users' (case-insensitive)."""
+        svg_lower = get_icon_svg("users")
+        svg_pascal = get_icon_svg("Users")
+        assert svg_lower == svg_pascal
+        assert svg_lower.startswith("<svg")
+
+    def test_get_icon_svg_case_insensitive_multi_word(self):
+        """get_icon_svg('barchart') matches 'BarChart'."""
+        svg = get_icon_svg("barchart")
+        expected = get_icon_svg("BarChart")
+        assert svg == expected
+        assert "line" in svg.lower()
+
 
 # ─── Validation Endpoint Test (1) ───
 

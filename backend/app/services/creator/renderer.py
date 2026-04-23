@@ -57,12 +57,13 @@ def _build_section_style(vc_section: dict) -> str:
         # bg_value should be primary color; we create gradient with opacity
         base += f"background:linear-gradient(135deg, {bg_value}, {bg_value}cc);"
     elif bg_type == "dark_photo_overlay":
-        photo_query = vc_section.get("photo_query", "")
-        if photo_query:
-            photo_url = f"https://source.unsplash.com/1600x900/?{photo_query.replace(' ', '+')}"
+        # Real photo URL is injected by resolve_media() before rendering.
+        # Here we use photo_url from vc_section if already resolved, else dark fallback.
+        resolved_url = vc_section.get("resolved_photo_url")
+        if resolved_url:
             base += (
                 f"background:linear-gradient(rgba(0,0,0,0.65),rgba(0,0,0,0.65)),"
-                f"url('{photo_url}') center/cover no-repeat;"
+                f"url('{resolved_url}') center/cover no-repeat;"
             )
         else:
             base += "background-color:#1a1a2e;"
@@ -170,12 +171,14 @@ class PageRenderer:
     async def resolve_media(self, project, unsplash) -> None:
         """Fetch real photos from Unsplash for sections with photo_query."""
         vc = project.visual_concept_json or {}
-        vc_sections = {s["block_code"]: s for s in vc.get("sections", [])}
+        vc_sections_list = vc.get("sections", [])
+        vc_sections = {s["block_code"]: s for s in vc_sections_list}
 
         for section in project.sections:
             vc_s = vc_sections.get(section.block_code, {})
             photo_query = vc_s.get("photo_query")
             media_type = vc_s.get("media_type", "none")
+            bg_type = vc_s.get("bg_type", "white")
 
             if photo_query and media_type in ("photo_wide", "photo_split"):
                 url = await unsplash.get_photo_for_section(photo_query, media_type)
@@ -187,6 +190,14 @@ class PageRenderer:
                             slots[slot_key] = url
                             section.slots_json = slots
                             break
+
+                    # Also store in vc_section for background rendering
+                    if bg_type == "dark_photo_overlay":
+                        vc_s["resolved_photo_url"] = url
+
+        # Persist vc changes back to project
+        if vc_sections_list:
+            project.visual_concept_json = vc
 
     async def render_project_html(
         self,

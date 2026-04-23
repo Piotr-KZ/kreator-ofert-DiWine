@@ -109,9 +109,10 @@ class TestVisualConceptStyles:
             "bg_type": "dark_photo_overlay",
             "bg_value": "#4F46E5CC",
             "photo_query": "business team",
+            "resolved_photo_url": "https://images.unsplash.com/photo-123?w=1600",
         })
         assert "url(" in style
-        assert "business+team" in style
+        assert "images.unsplash.com" in style
 
     def test_build_style_dark_overlay_no_photo(self):
         style = _build_section_style({"bg_type": "dark_photo_overlay"})
