@@ -19,7 +19,7 @@ const FIELD_LABELS: Record<string, string> = {
 export default function Step2Validation() {
   const { projectId } = useParams();
   const navigate = useNavigate();
-  const { validateBrief, analyzeWebsite, brief, setBrief, saveBrief, isGenerating, error, projectId: storeProjectId } = useLabStore();
+  const { validateBrief, analyzeWebsite, setBrief, saveBrief, isGenerating, error, projectId: storeProjectId } = useLabStore();
 
   const [items, setItems] = useState<ValidationItem[]>([]);
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
@@ -134,10 +134,10 @@ export default function Step2Validation() {
             <span className="text-indigo-500">🌐</span>
             <span className="text-sm font-medium text-indigo-700">Dane ze strony www</span>
           </div>
-          {websiteAnalysis.summary && (
-            <p className="text-sm text-indigo-600">{websiteAnalysis.summary as string}</p>
+          {!!websiteAnalysis.summary && (
+            <p className="text-sm text-indigo-600">{String(websiteAnalysis.summary)}</p>
           )}
-          {websiteAnalysis.services && Array.isArray(websiteAnalysis.services) && (
+          {!!websiteAnalysis.services && Array.isArray(websiteAnalysis.services) && (
             <div className="flex flex-wrap gap-1 mt-1">
               {(websiteAnalysis.services as string[]).slice(0, 6).map((s, i) => (
                 <span key={i} className="text-xs bg-indigo-100 text-indigo-600 px-2 py-0.5 rounded">{s}</span>

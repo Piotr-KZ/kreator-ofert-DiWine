@@ -4,6 +4,10 @@
 
 import { create } from "zustand";
 import * as api from "@/api/client";
+import { DEFAULT_BRAND } from "@/types/lab";
+import type { Brand, Gradient } from "@/types/lab";
+
+export type { Brand, Gradient };
 
 export interface Section {
   id: string;
@@ -12,6 +16,13 @@ export interface Section {
   variant: string;
   slots_json: Record<string, unknown> | null;
   is_visible: boolean;
+  // Brief 45 extended fields (stored in variant_config on backend)
+  name?: string;
+  bgColor?: string | Gradient | null;
+  ctaColor?: string | Gradient | null;
+  padding?: { top: number; right: number; bottom: number; left: number };
+  brandWarning?: string;
+  variant_config?: Record<string, unknown> | null;
 }
 
 export interface VisualConceptSection {
@@ -48,6 +59,7 @@ interface LabState {
     primary_color: string;
     secondary_color: string;
   };
+  brand: Brand;
 
   // Step 2: Structure
   sections: Section[];
@@ -85,6 +97,8 @@ interface LabState {
   setStyle: (field: string, value: string) => void;
   setSiteType: (t: string) => void;
   setError: (e: string | null) => void;
+  setBrand: (patch: Partial<Brand>) => void;
+  updateSectionMeta: (sectionId: string, meta: Partial<Pick<Section, 'name' | 'bgColor' | 'ctaColor' | 'padding' | 'brandWarning'>>) => Promise<void>;
 }
 
 export const useLabStore = create<LabState>((set, get) => ({
@@ -93,6 +107,7 @@ export const useLabStore = create<LabState>((set, get) => ({
   siteType: "company_card",
   brief: { description: "", target_audience: "", usp: "", tone: "profesjonalny", website: "" },
   style: { primary_color: "#4F46E5", secondary_color: "#F59E0B" },
+  brand: { ...DEFAULT_BRAND },
   sections: [],
   visualConcept: null,
   currentStep: 1,
@@ -110,13 +125,32 @@ export const useLabStore = create<LabState>((set, get) => ({
     set({ isLoading: true });
     try {
       const { data } = await api.getProject(id);
+      const styleJson = data.style_json || {};
+      const loadedBrand: Brand = {
+        ...DEFAULT_BRAND,
+        ctaColor: styleJson.primary_color || DEFAULT_BRAND.ctaColor,
+        ctaColor2: styleJson.secondary_color || DEFAULT_BRAND.ctaColor2,
+        ...(styleJson.brand || {}),
+      };
+      // Hydrate section meta from variant_config
+      const sections = (data.sections || []).map((s: Section) => {
+        const vc = (s.variant_config || {}) as Record<string, unknown>;
+        return {
+          ...s,
+          name: (vc.name as string) || s.block_code,
+          bgColor: (vc.bgColor as string | Gradient | null) ?? null,
+          ctaColor: (vc.ctaColor as string | Gradient | null) ?? null,
+          padding: (vc.padding as Section['padding']) ?? undefined,
+        };
+      });
       set({
         projectId: data.id,
         projectName: data.name,
         siteType: data.site_type || "company_card",
         brief: data.brief_json || { description: "", target_audience: "", usp: "", tone: "profesjonalny", website: "" },
-        style: data.style_json || { primary_color: "#4F46E5", secondary_color: "#F59E0B" },
-        sections: data.sections || [],
+        style: { primary_color: styleJson.primary_color || "#4F46E5", secondary_color: styleJson.secondary_color || "#F59E0B" },
+        brand: loadedBrand,
+        sections,
         visualConcept: data.visual_concept_json || null,
         currentStep: data.current_step || 1,
       });
@@ -126,11 +160,15 @@ export const useLabStore = create<LabState>((set, get) => ({
   },
 
   saveBrief: async () => {
-    const { projectId, brief, style, siteType } = get();
+    const { projectId, brief, brand, siteType } = get();
     if (!projectId) return;
     await api.updateProject(projectId, {
       brief_json: brief,
-      style_json: style,
+      style_json: {
+        primary_color: brand.ctaColor,
+        secondary_color: brand.ctaColor2,
+        brand,                          // full Brand object stored here
+      },
       site_type: siteType,
     });
   },
@@ -156,7 +194,7 @@ export const useLabStore = create<LabState>((set, get) => ({
     if (!projectId) return;
     set({ isGenerating: true, error: null });
     try {
-      const { data } = await api.generateStructure(projectId);
+      await api.generateStructure(projectId);
       // Reload project to get sections
       await get().loadProject(projectId);
       set({ currentStep: 3 });
@@ -234,7 +272,7 @@ export const useLabStore = create<LabState>((set, get) => ({
     if (!projectId) return;
     set({ isGenerating: true, error: null });
     try {
-      const { data } = await api.generateContent(projectId);
+      await api.generateContent(projectId);
       // Reload to get updated sections with content
       await get().loadProject(projectId);
       set({ currentStep: 4 });
@@ -292,4 +330,20 @@ export const useLabStore = create<LabState>((set, get) => ({
   setStyle: (field, value) => set({ style: { ...get().style, [field]: value } }),
   setSiteType: (t) => set({ siteType: t }),
   setError: (e) => set({ error: e }),
+  setBrand: (patch) => set({ brand: { ...get().brand, ...patch } }),
+
+  updateSectionMeta: async (sectionId, meta) => {
+    const { projectId } = get();
+    if (!projectId) return;
+    // Merge into variant_config on backend
+    const section = get().sections.find(s => s.id === sectionId);
+    const currentVc = (section?.variant_config || {}) as Record<string, unknown>;
+    const newVc = { ...currentVc, ...meta };
+    await api.updateSection(projectId, sectionId, { variant_config: newVc });
+    set({
+      sections: get().sections.map((s) =>
+        s.id === sectionId ? { ...s, ...meta, variant_config: newVc } : s,
+      ),
+    });
+  },
 }));

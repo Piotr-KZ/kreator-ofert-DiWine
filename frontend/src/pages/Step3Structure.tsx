@@ -1,160 +1,364 @@
-import { useEffect, useState, useRef } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { useLabStore } from "@/store/labStore";
-import * as api from "@/api/client";
+import { useEffect, useState, useCallback } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import {
+  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext, useSortable, verticalListSortingStrategy, arrayMove,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { useLabStore, type Section } from '@/store/labStore';
+import {
+  BLOCK_LIBRARY, CATEGORIES, bgColorToCSS,
+} from '@/types/lab';
+import type { Brand, Gradient } from '@/types/lab';
+import { BlockPreview } from '@/lib/blocks';
+import { ColorPicker } from '@/components/ColorPicker';
 
-interface BlockInfo {
-  code: string;
-  category_code: string;
-  name: string;
-  description: string;
-  media_type: string;
-  layout_type: string;
-  size: string;
+// ── Helpers ──
+
+function getCatCode(code: string) { return code.replace(/\d+/g, ''); }
+
+function getBrandBg(brand: Brand) {
+  if (brand.ctaIsGradient) return `linear-gradient(135deg, ${brand.bgColor}, ${brand.bgColor})`;
+  return brand.bgColor;
 }
 
-const CAT_LABELS: Record<string, string> = {
-  NA: "Nawigacja", HE: "Hero", FI: "O firmie", OF: "Oferta", CE: "Cennik",
-  ZE: "Zespół", OP: "Opinie", FA: "FAQ", CT: "CTA", KO: "Kontakt",
-  FO: "Stopka", GA: "Galeria", RE: "Realizacje", PR: "Proces", PB: "Problem",
-  RO: "Rozwiązanie", KR: "Korzyści", CF: "Cechy", OB: "Obiekcje",
-  LO: "Loga klientów", ST: "Statystyki",
-};
-
-/** Wireframe per layout */
-function LayoutWireframe({ block }: { block: BlockInfo | undefined }) {
-  if (!block) return <div className="w-full h-full flex items-center justify-center rounded text-gray-300 text-xs">?</div>;
-  const lt = block.layout_type || "";
-  const mt = block.media_type || "none";
-  const cat = block.category_code;
-
-  if (cat === "NA") return (
-    <div className="w-full h-full flex items-center px-4 rounded">
-      <div className="w-6 h-3 bg-gray-400 rounded-sm" /><div className="flex-1" />
-      <div className="flex gap-2">{[1,2,3].map(i=><div key={i} className="w-8 h-2 bg-gray-300 rounded-sm"/>)}</div>
-      <div className="ml-3 w-12 h-4 bg-indigo-400 rounded-sm" />
-    </div>
-  );
-  if (cat === "FO") return (
-    <div className="w-full h-full flex items-center px-4 rounded">
-      <div className="flex gap-6">{[1,2,3,4].map(i=><div key={i} className="flex flex-col gap-1"><div className="w-8 h-1.5 bg-gray-500 rounded-sm"/><div className="w-6 h-1 bg-gray-600 rounded-sm"/></div>)}</div>
-    </div>
-  );
-  if (lt.includes("photo-full-2") || lt.includes("photo-left") || lt.includes("photo-right")) {
-    const right = !lt.includes("-left") && !lt.includes("FI2");
-    const text = <div className="flex flex-col justify-center gap-2 flex-1 px-3"><div className="w-16 h-2 bg-gray-300 rounded-sm"/><div className="w-24 h-3 bg-gray-400 rounded-sm"/><div className="w-20 h-1.5 bg-gray-200 rounded-sm"/><div className="w-12 h-4 bg-indigo-400 rounded-sm mt-1"/></div>;
-    const photo = <div className="flex-1 bg-indigo-100 rounded flex items-center justify-center m-1"><svg className="w-8 h-8 text-indigo-300" fill="currentColor" viewBox="0 0 24 24"><path d="M21 19V5c0-1.1-.9-2-2-2H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2zM8.5 13.5l2.5 3.01L14.5 12l4.5 6H5l3.5-4.5z"/></svg></div>;
-    return <div className="w-full h-full flex rounded overflow-hidden">{right ? <>{text}{photo}</> : <>{photo}{text}</>}</div>;
-  }
-  if (lt.includes("-3") || lt.includes("info-title-text-3")) return <GridWire cols={3} hasIcons={mt==="icons"||mt==="infographic"}/>;
-  if (lt.includes("-4") || cat === "ST") return <GridWire cols={4}/>;
-  if (lt.includes("-2") && !lt.includes("photo-full-2")) return <GridWire cols={2}/>;
-  if (cat === "OP") return <div className="w-full h-full flex flex-col items-center justify-center rounded p-3 gap-1"><div className="text-2xl text-gray-300 leading-none">"</div><div className="w-24 h-1.5 bg-gray-300 rounded-sm"/><div className="w-5 h-5 rounded-full bg-gray-300 mt-1"/></div>;
-  if (cat === "FA" || cat === "OB") return <div className="w-full h-full flex flex-col rounded p-3 gap-1.5"><div className="w-16 h-2 bg-gray-400 rounded-sm mx-auto mb-1"/>{[1,2,3].map(i=><div key={i} className="flex items-center gap-2 bg-white/50 rounded border border-gray-200 px-2 py-1"><div className="flex-1 h-1.5 bg-gray-300 rounded-sm"/><div className="text-gray-400 text-[8px] font-bold">+</div></div>)}</div>;
-  if (cat === "CT") return <div className="w-full h-full flex flex-col items-center justify-center rounded gap-2 p-3"><div className="w-24 h-3 bg-gray-300 rounded-sm"/><div className="w-16 h-5 bg-indigo-400 rounded-sm mt-1"/></div>;
-  if (cat === "HE") return <div className="w-full h-full flex flex-col items-center justify-center rounded gap-2 p-3"><div className="w-28 h-3 bg-gray-300 rounded-sm"/><div className="w-20 h-1.5 bg-gray-400 rounded-sm"/><div className="w-14 h-4 bg-indigo-500 rounded-sm mt-1"/></div>;
-  if (cat === "CE") return <GridWire cols={3} isPricing/>;
-  if (cat === "PR") return <div className="w-full h-full flex flex-col rounded p-3"><div className="w-16 h-2 bg-gray-400 rounded-sm mx-auto mb-2"/><div className="flex-1 flex items-center justify-center gap-2">{[1,2,3,4].map(n=><div key={n} className="flex flex-col items-center gap-1"><div className="w-5 h-5 rounded-full bg-indigo-400 text-white text-[8px] flex items-center justify-center font-bold">{n}</div><div className="w-8 h-1 bg-gray-300 rounded-sm"/></div>)}</div></div>;
-  return <div className="w-full h-full flex flex-col items-center justify-center rounded gap-1.5 p-3"><div className="w-24 h-2.5 bg-gray-400 rounded-sm"/><div className="w-28 h-1.5 bg-gray-200 rounded-sm"/></div>;
+function brandForPreview(brand: Brand) {
+  return { cta: brand.ctaColor, ctaSecondary: brand.ctaColor2 };
 }
 
-function GridWire({ cols, hasIcons, isPricing }: { cols: number; hasIcons?: boolean; isPricing?: boolean }) {
-  return (
-    <div className="w-full h-full flex flex-col rounded p-3">
-      <div className="w-20 h-2 bg-gray-400 rounded-sm mx-auto mb-2" />
-      <div className="flex-1 grid gap-2" style={{ gridTemplateColumns: `repeat(${cols}, 1fr)` }}>
-        {Array.from({ length: cols }).map((_, i) => (
-          <div key={i} className="bg-white/50 rounded border border-gray-200 flex flex-col items-center justify-center p-1.5 gap-1">
-            {hasIcons && <div className="w-5 h-5 rounded-full bg-indigo-200" />}
-            {isPricing && <div className="w-6 h-2 bg-indigo-300 rounded-sm" />}
-            <div className="w-10 h-1.5 bg-gray-300 rounded-sm" />
-            <div className="w-8 h-1 bg-gray-200 rounded-sm" />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
+// ── Block Library Sidebar ──
 
-// ─── Add Section Picker ───
-
-function AddSectionPicker({ blocksList, onAdd, onCancel }: {
-  blocksList: BlockInfo[];
+interface SidebarProps {
   onAdd: (code: string) => void;
-  onCancel: () => void;
-}) {
-  const [selectedCat, setSelectedCat] = useState<string | null>(null);
-  const categories = [...new Set(blocksList.map((b) => b.category_code))];
-  const blocksInCat = selectedCat ? blocksList.filter((b) => b.category_code === selectedCat) : [];
+}
+
+function BlockLibrarySidebar({ onAdd }: SidebarProps) {
+  const [search, setSearch] = useState('');
+  const [activeCat, setActiveCat] = useState<string | null>(null);
+
+  const filtered = BLOCK_LIBRARY.filter(b => {
+    const matchCat = !activeCat || b.cat === activeCat;
+    const matchSearch = !search || b.name.toLowerCase().includes(search.toLowerCase()) || b.code.toLowerCase().includes(search.toLowerCase());
+    return matchCat && matchSearch;
+  });
+
+  const cats = [...new Set(BLOCK_LIBRARY.map(b => b.cat))];
 
   return (
-    <div className="bg-white border border-dashed border-emerald-300 rounded-xl p-4 space-y-3">
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-gray-700">
-          {selectedCat ? `Wybierz klocek: ${CAT_LABELS[selectedCat] || selectedCat}` : "Wybierz kategorię sekcji"}
-        </span>
-        <button onClick={() => selectedCat ? setSelectedCat(null) : onCancel()} className="text-xs text-gray-400 hover:text-gray-600">
-          {selectedCat ? "← Wróć" : "Anuluj"}
-        </button>
+    <aside className="w-72 flex-shrink-0 bg-white border-r border-gray-100 flex flex-col h-full overflow-hidden">
+      {/* Header */}
+      <div className="px-4 py-3 border-b border-gray-100">
+        <div className="text-sm font-bold text-slate-800 mb-2">Biblioteka klocków</div>
+        <input
+          type="text"
+          placeholder="Szukaj klocka..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="w-full h-8 px-3 text-xs border border-gray-200 rounded-lg outline-none focus:border-indigo-400 bg-gray-50"
+        />
       </div>
-      {!selectedCat ? (
-        <div className="grid grid-cols-4 gap-2">
-          {categories.map((cat) => (
-            <button key={cat} onClick={() => setSelectedCat(cat)} className="px-3 py-2 text-xs border border-gray-200 rounded-lg hover:bg-emerald-50 hover:border-emerald-300 hover:text-emerald-700 text-gray-600 text-center transition-colors">
-              {CAT_LABELS[cat] || cat}
+
+      {/* Category chips */}
+      <div className="px-3 py-2 border-b border-gray-100 flex flex-wrap gap-1">
+        <button
+          onClick={() => setActiveCat(null)}
+          className={`px-2 py-0.5 rounded-md text-xs font-semibold transition-colors ${
+            activeCat === null ? 'bg-indigo-100 text-indigo-700' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+          }`}
+        >Wszystkie</button>
+        {cats.map(cat => {
+          const c = CATEGORIES[cat];
+          return (
+            <button
+              key={cat}
+              onClick={() => setActiveCat(activeCat === cat ? null : cat)}
+              className="px-2 py-0.5 rounded-md text-xs font-semibold transition-colors"
+              style={{
+                background: activeCat === cat ? `${c.color}20` : '#F1F5F9',
+                color: activeCat === cat ? c.color : '#64748B',
+              }}
+            >
+              {cat}
             </button>
-          ))}
-        </div>
-      ) : (
-        <div className="grid grid-cols-2 gap-2">
-          {blocksInCat.map((b) => (
-            <button key={b.code} onClick={() => onAdd(b.code)} className="px-3 py-2 text-left border border-gray-200 rounded-lg hover:bg-emerald-50 hover:border-emerald-300 transition-colors">
-              <span className="text-xs font-mono font-semibold text-indigo-600">{b.code}</span>
-              <span className="text-xs text-gray-500 ml-2">{b.name}</span>
+          );
+        })}
+      </div>
+
+      {/* Block list */}
+      <div className="flex-1 overflow-y-auto px-3 py-2 space-y-1.5">
+        {filtered.map(block => {
+          const cat = CATEGORIES[block.cat];
+          return (
+            <button
+              key={block.code}
+              onClick={() => onAdd(block.code)}
+              className="w-full text-left rounded-xl border border-gray-100 bg-gray-50 hover:border-indigo-200 hover:bg-indigo-50 transition-all group overflow-hidden"
+            >
+              {/* Thumbnail */}
+              <div className="h-24 overflow-hidden rounded-t-xl bg-white relative">
+                <BlockPreview code={block.code} bg="#FFFFFF" />
+              </div>
+              {/* Info */}
+              <div className="px-2.5 py-2 flex items-center gap-2">
+                <span
+                  className="text-[10px] font-bold font-mono px-1.5 py-0.5 rounded"
+                  style={{ background: `${cat.color}18`, color: cat.color }}
+                >
+                  {block.code}
+                </span>
+                <span className="text-xs text-gray-600 truncate flex-1">{block.name}</span>
+                <span className="text-[9px] text-gray-400 font-mono">{block.size}</span>
+              </div>
             </button>
-          ))}
+          );
+        })}
+        {filtered.length === 0 && (
+          <div className="text-center text-gray-400 text-xs py-8">Brak wyników</div>
+        )}
+      </div>
+    </aside>
+  );
+}
+
+// ── Sortable Section Card ──
+
+interface SectionCardProps {
+  section: Section;
+  index: number;
+  total: number;
+  onDelete: () => void;
+  onDuplicate: () => void;
+}
+
+function SortableSectionCard({ section, index, total, onDelete, onDuplicate }: SectionCardProps) {
+  const {
+    attributes, listeners, setNodeRef, transform, transition, isDragging,
+  } = useSortable({ id: section.id });
+
+  const { brand, updateSectionMeta, updateSection } = useLabStore();
+
+  const [localName, setLocalName] = useState(section.name ?? section.block_code);
+
+  useEffect(() => {
+    setLocalName(section.name ?? section.block_code);
+  }, [section.name, section.block_code]);
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 50 : 'auto',
+  };
+
+  const block = BLOCK_LIBRARY.find(b => b.code === section.block_code);
+  const catCode = getCatCode(section.block_code);
+  const cat = CATEGORIES[catCode] ?? { name: catCode, color: '#6366F1', icon: '' };
+  const sameCatBlocks = BLOCK_LIBRARY.filter(b => b.cat === catCode);
+
+  const bgCSS = bgColorToCSS(section.bgColor, brand.bgColor);
+  const brandBg = getBrandBg(brand);
+
+  const handleBgChange = useCallback((v: string | Gradient | null) => {
+    updateSectionMeta(section.id, { bgColor: v });
+  }, [section.id, updateSectionMeta]);
+
+  const handleCtaChange = useCallback((v: string | Gradient | null) => {
+    updateSectionMeta(section.id, { ctaColor: v });
+  }, [section.id, updateSectionMeta]);
+
+  const handleNameBlur = useCallback(() => {
+    if (localName !== (section.name ?? section.block_code)) {
+      updateSectionMeta(section.id, { name: localName });
+    }
+  }, [localName, section.id, section.name, section.block_code, updateSectionMeta]);
+
+  const handleVariantChange = useCallback((code: string) => {
+    updateSection(section.id, { block_code: code });
+  }, [section.id, updateSection]);
+
+  const previewBg = section.bgColor ? bgCSS : brand.bgColor;
+  const previewBrand = brandForPreview(brand);
+
+  return (
+    <div ref={setNodeRef} style={style} className="bg-white rounded-2xl border border-gray-200 hover:border-gray-300 hover:shadow-md transition-all overflow-hidden">
+      {/* Header strip */}
+      <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-gray-100 bg-gradient-to-b from-gray-50 to-gray-100/50">
+        {/* Drag handle */}
+        <div
+          {...attributes}
+          {...listeners}
+          className="text-gray-300 cursor-grab active:cursor-grabbing p-1 hover:text-gray-400"
+          title="Przeciągnij aby zmienić kolejność"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+            <circle cx="9" cy="6" r="1.5"/><circle cx="15" cy="6" r="1.5"/>
+            <circle cx="9" cy="12" r="1.5"/><circle cx="15" cy="12" r="1.5"/>
+            <circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="18" r="1.5"/>
+          </svg>
         </div>
-      )}
+
+        {/* Code badge */}
+        <span
+          className="text-[11px] font-bold font-mono px-2 py-0.5 rounded-md"
+          style={{ background: `${cat.color}18`, color: cat.color }}
+        >
+          {section.block_code}
+        </span>
+        <span className="text-[10px] text-gray-400 font-medium uppercase tracking-wide">
+          Sekcja {String(index + 1).padStart(2, '0')} / {total}
+        </span>
+        <div className="flex-1" />
+        {/* Status */}
+        <span className="inline-flex items-center gap-1 h-5 px-2 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-semibold">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+          Aktywna
+        </span>
+      </div>
+
+      {/* Body: 2.2fr preview + 1fr config */}
+      <div className="grid" style={{ gridTemplateColumns: '2.2fr 1fr', minHeight: 280 }}>
+        {/* Preview */}
+        <div className="p-3.5 border-r border-gray-100 bg-slate-50 flex">
+          <div className="flex-1 rounded-xl overflow-hidden shadow-sm" style={{ minHeight: 240 }}>
+            <BlockPreview code={section.block_code} bg={previewBg} brand={previewBrand} />
+          </div>
+          {/* Size badge */}
+          <div className="absolute" style={{ position: 'relative' }}>
+            <span className="absolute bottom-2 left-2 text-[10px] font-mono bg-white/90 border border-gray-200 px-1.5 py-0.5 rounded text-gray-500">
+              {block?.size ?? 'M'}
+            </span>
+          </div>
+        </div>
+
+        {/* Config */}
+        <div className="p-4 flex flex-col gap-3.5">
+          {/* Name */}
+          <label className="block">
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1">Nazwa sekcji</span>
+            <input
+              value={localName}
+              onChange={e => setLocalName(e.target.value)}
+              onBlur={handleNameBlur}
+              className="w-full h-8 px-2.5 border border-gray-200 rounded-lg text-sm outline-none focus:border-indigo-400 transition-colors"
+            />
+          </label>
+
+          {/* Variant */}
+          {sameCatBlocks.length > 1 && (
+            <label className="block">
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1">Wariant klocka</span>
+              <select
+                value={section.block_code}
+                onChange={e => handleVariantChange(e.target.value)}
+                className="w-full h-8 px-2 border border-gray-200 rounded-lg text-xs bg-white outline-none focus:border-indigo-400"
+              >
+                {sameCatBlocks.map(b => (
+                  <option key={b.code} value={b.code}>{b.code} — {b.name}</option>
+                ))}
+              </select>
+            </label>
+          )}
+
+          {/* Bg color */}
+          <div>
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1.5">Kolor tła</span>
+            <ColorPicker
+              value={section.bgColor}
+              brandValue={brandBg}
+              onChange={handleBgChange}
+            />
+            {section.brandWarning && (
+              <div className="mt-1.5 text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1 flex items-center gap-1">
+                <span>⚠</span>{section.brandWarning}
+              </div>
+            )}
+          </div>
+
+          {/* CTA color */}
+          <div>
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1.5">
+              Kolor CTA <span className="normal-case font-normal text-gray-300">(opcjonalnie)</span>
+            </span>
+            <ColorPicker
+              value={section.ctaColor}
+              brandValue={brand.ctaColor}
+              onChange={handleCtaChange}
+            />
+          </div>
+
+          <div className="flex-1" />
+
+          {/* Actions */}
+          <div className="flex gap-1.5 pt-2.5 border-t border-gray-100">
+            <ActionBtn onClick={onDuplicate} title="Duplikuj">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="9" y="9" width="13" height="13" rx="2"/>
+                <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/>
+              </svg>
+            </ActionBtn>
+            <ActionBtn onClick={onDelete} title="Usuń" danger>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+              </svg>
+            </ActionBtn>
+            <div className="flex-1" />
+            {/* Hidden toggle */}
+            <ActionBtn
+              onClick={() => updateSection(section.id, { is_visible: !section.is_visible })}
+              title={section.is_visible ? 'Ukryj sekcję' : 'Pokaż sekcję'}
+            >
+              {section.is_visible
+                ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                : <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24M1 1l22 22"/></svg>
+              }
+            </ActionBtn>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
 
-// ─── Hex to tint ───
-
-function tintBg(hex: string, opacity: number = 0.12): string {
-  const c = hex.replace("#", "");
-  const r = parseInt(c.substr(0, 2), 16);
-  const g = parseInt(c.substr(2, 2), 16);
-  const b = parseInt(c.substr(4, 2), 16);
-  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+function ActionBtn({ onClick, title, danger, children }: { onClick: () => void; title?: string; danger?: boolean; children: React.ReactNode }) {
+  return (
+    <button
+      onClick={onClick}
+      title={title}
+      className="w-8 h-8 border border-gray-200 bg-white rounded-lg grid place-items-center transition-all hover:bg-gray-50"
+      style={{ color: danger ? '#EF4444' : '#64748B' }}
+      onMouseEnter={e => {
+        if (danger) {
+          e.currentTarget.style.background = '#FEE2E2';
+          e.currentTarget.style.borderColor = '#FCA5A5';
+        }
+      }}
+      onMouseLeave={e => {
+        e.currentTarget.style.background = '';
+        e.currentTarget.style.borderColor = '';
+      }}
+    >
+      {children}
+    </button>
+  );
 }
 
-// ─── Main Component ───
+// ── Main Page ──
 
 export default function Step3Structure() {
   const { projectId } = useParams();
   const navigate = useNavigate();
+
   const {
-    sections, removeSection, reorderSections, generateStructure,
-    addSection, updateSection, style, setStyle, saveBrief,
-    isGenerating, error, setError,
+    sections, brand, addSection, removeSection, reorderSections,
+    generateStructure, isGenerating, error, setError,
   } = useLabStore();
 
-  const [blocksMap, setBlocksMap] = useState<Record<string, BlockInfo>>({});
-  const [blocksList, setBlocksList] = useState<BlockInfo[]>([]);
-  const [addingAt, setAddingAt] = useState<number | null>(null);
-  const startedRef = useRef(false);
+  const startedRef = { current: false };
 
-  const bgColor = style.primary_color;
-
-  useEffect(() => {
-    api.listBlocks().then(({ data }) => {
-      const map: Record<string, BlockInfo> = {};
-      for (const b of data) map[b.code] = b;
-      setBlocksMap(map);
-      setBlocksList(data);
-    });
-  }, []);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   useEffect(() => {
     if (sections.length === 0 && !isGenerating && !startedRef.current) {
@@ -164,199 +368,135 @@ export default function Step3Structure() {
     }
   }, [sections.length, isGenerating]);
 
-  const moveSection = (idx: number, dir: -1 | 1) => {
-    const n = idx + dir;
-    if (n < 0 || n >= sections.length) return;
-    const ids = sections.map((s) => s.id);
-    [ids[idx], ids[n]] = [ids[n], ids[idx]];
-    reorderSections(ids);
-  };
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = sections.findIndex(s => s.id === active.id);
+    const newIndex = sections.findIndex(s => s.id === over.id);
+    if (oldIndex === -1 || newIndex === -1) return;
+    const reordered = arrayMove(sections, oldIndex, newIndex);
+    reorderSections(reordered.map(s => s.id));
+  }, [sections, reorderSections]);
 
-  const changeBlock = (sectionId: string, newCode: string) => {
-    updateSection(sectionId, { block_code: newCode });
-  };
+  const handleAdd = useCallback(async (code: string) => {
+    await addSection(code, sections.length);
+  }, [addSection, sections.length]);
 
-  const handleColorChange = (val: string) => {
-    setStyle("primary_color", val);
-    saveBrief();
-  };
+  const handleDuplicate = useCallback(async (section: Section) => {
+    await addSection(section.block_code, section.position + 1);
+  }, [addSection]);
 
-  const handleAddSection = async (code: string, afterIdx: number) => {
-    await addSection(code, afterIdx + 1);
-    setAddingAt(null);
-  };
+  const handleDelete = useCallback(async (id: string) => {
+    if (confirm('Usunąć tę sekcję?')) await removeSection(id);
+  }, [removeSection]);
 
   return (
-    <div className="max-w-4xl mx-auto p-6 space-y-4">
-      <div className="flex items-center justify-between mb-2">
-        <h1 className="text-xl font-bold text-gray-800">Struktura strony</h1>
-        <button
-          onClick={() => { setError(null); startedRef.current = true; generateStructure(); }}
-          disabled={isGenerating}
-          className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 disabled:opacity-50"
-        >
-          {isGenerating ? "Generowanie..." : "Regeneruj strukturę"}
-        </button>
-      </div>
+    <div className="flex h-full overflow-hidden" style={{ minHeight: 'calc(100vh - 96px)' }}>
+      {/* Sidebar */}
+      <BlockLibrarySidebar onAdd={handleAdd} />
 
-      {/* Single color picker — one field */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-center gap-4">
-        <span className="text-sm font-medium text-gray-700">Kolor sekcji:</span>
-        <input
-          type="color"
-          value={bgColor}
-          onChange={(e) => handleColorChange(e.target.value)}
-          className="w-10 h-10 rounded-lg border border-gray-200 cursor-pointer"
-        />
-        <span className="text-xs font-mono text-gray-400">{bgColor}</span>
-      </div>
-
-      {/* Loading */}
-      {isGenerating && sections.length === 0 && (
-        <div className="text-center py-16">
-          <div className="inline-flex items-center gap-3 bg-emerald-50 text-emerald-700 px-6 py-4 rounded-xl">
-            <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-            <span className="text-sm font-medium">AI generuje strukturę strony...</span>
-          </div>
-        </div>
-      )}
-
-      {/* Error */}
-      {!isGenerating && error && sections.length === 0 && (
-        <div className="text-center py-12 space-y-4">
-          <div className="inline-flex items-center gap-2 bg-red-50 text-red-700 px-5 py-3 rounded-xl border border-red-200">
-            <span>✗</span><span className="text-sm">{error}</span>
-          </div>
-          <div>
-            <button onClick={() => { setError(null); generateStructure(); }} className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700">
-              Spróbuj ponownie
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Empty */}
-      {!isGenerating && !error && sections.length === 0 && (
-        <div className="text-center py-12 space-y-4">
-          <p className="text-gray-400 text-sm">Brak sekcji.</p>
-          <button onClick={() => generateStructure()} className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700">Generuj strukturę</button>
-        </div>
-      )}
-
-      {/* Sections */}
-      {sections.map((section, idx) => {
-        const block = blocksMap[section.block_code];
-        const catCode = block?.category_code || section.block_code.replace(/\d+/g, "");
-        const catLabel = CAT_LABELS[catCode] || catCode;
-        const sameCatBlocks = blocksList.filter((b) => b.category_code === catCode);
-
-        return (
-          <div key={section.id}>
-            {/* Section card — wireframe colored, description white, vertical line separator */}
-            <div className="border border-gray-200 rounded-xl overflow-hidden hover:border-gray-300 transition-all flex">
-              {/* Left: arrows */}
-              <div className="flex flex-col justify-center gap-1 px-3 bg-white">
-                <button onClick={() => moveSection(idx, -1)} disabled={idx === 0} className="text-gray-400 hover:text-gray-600 disabled:opacity-20 text-sm">▲</button>
-                <button onClick={() => moveSection(idx, 1)} disabled={idx === sections.length - 1} className="text-gray-400 hover:text-gray-600 disabled:opacity-20 text-sm">▼</button>
-              </div>
-
-              {/* Wireframe area — colored background */}
-              <div
-                className="w-64 h-36 flex-shrink-0 my-0"
-                style={{ backgroundColor: tintBg(bgColor, 0.12) }}
-              >
-                <LayoutWireframe block={block} />
-              </div>
-
-              {/* Vertical separator */}
-              <div className="w-px bg-gray-200 self-stretch" />
-
-              {/* Description area — white background */}
-              <div className="flex-1 flex items-center bg-white">
-                <div className="flex-1 flex flex-col justify-center py-4 px-5 gap-2">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded font-semibold">
-                      {section.block_code}
-                    </span>
-                    <span className="text-base font-semibold text-gray-700">{catLabel}</span>
-                  </div>
-                  <p className="text-sm text-gray-400">{block?.name || "Nieznany blok"}</p>
-
-                  {/* Block type selector — same category only */}
-                  {sameCatBlocks.length > 1 && (
-                    <div className="flex items-center gap-2">
-                      <label className="text-xs text-gray-500">Wariant:</label>
-                      <select
-                        value={section.block_code}
-                        onChange={(e) => changeBlock(section.id, e.target.value)}
-                        className="text-xs border border-gray-200 rounded-lg px-2 py-1 bg-white max-w-xs"
-                      >
-                        {sameCatBlocks.map((b) => (
-                          <option key={b.code} value={b.code}>{b.code} — {b.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
-                </div>
-
-                {/* Delete */}
-                <div className="flex items-center pr-4">
-                  <button
-                    onClick={() => { if (confirm("Usunąć tę sekcję?")) removeSection(section.id); }}
-                    className="text-gray-300 hover:text-red-500 text-base transition-colors"
-                  >
-                    ✕
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Add section button */}
-            {addingAt === idx ? (
-              <div className="my-2">
-                <AddSectionPicker
-                  blocksList={blocksList}
-                  onAdd={(code) => handleAddSection(code, idx)}
-                  onCancel={() => setAddingAt(null)}
-                />
-              </div>
-            ) : (
-              <div className="flex justify-center my-1">
-                <button
-                  onClick={() => setAddingAt(idx)}
-                  className="flex items-center gap-1 text-xs text-gray-300 hover:text-emerald-600 transition-colors py-1 px-3 rounded-lg hover:bg-emerald-50"
-                >
-                  <span className="text-base leading-none">+</span>
-                  <span>Dodaj sekcję</span>
-                </button>
-              </div>
-            )}
-          </div>
-        );
-      })}
-
-      {/* Add section at the end */}
-      {sections.length > 0 && addingAt === null && (
-        <div className="flex justify-center">
+      {/* Main area */}
+      <main className="flex-1 overflow-y-auto bg-slate-50">
+        {/* Toolbar */}
+        <div className="sticky top-0 z-10 bg-white border-b border-gray-100 px-6 py-3 flex items-center gap-3">
+          <h1 className="text-base font-bold text-slate-800">Struktura strony</h1>
+          <div className="flex-1" />
           <button
-            onClick={() => setAddingAt(sections.length - 1)}
-            className="flex items-center gap-1 text-xs text-gray-400 hover:text-emerald-600 transition-colors py-2 px-4 rounded-lg hover:bg-emerald-50 border border-dashed border-gray-200 hover:border-emerald-300"
+            onClick={() => { setError(null); generateStructure(); }}
+            disabled={isGenerating}
+            className="flex items-center gap-1.5 text-xs px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-500 disabled:opacity-50 transition-colors"
           >
-            <span className="text-base leading-none">+</span>
-            <span>Dodaj nową sekcję</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/></svg>
+            {isGenerating ? 'Generowanie...' : 'AI sugestia'}
           </button>
         </div>
-      )}
 
-      <div className="flex justify-between pt-6">
-        <button onClick={() => navigate(`/lab/${projectId}/step/2`)} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700">← Wstecz</button>
-        <button onClick={() => navigate(`/lab/${projectId}/step/4`)} disabled={sections.length === 0 || isGenerating} className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors">
-          Dalej → Treści
-        </button>
-      </div>
+        <div className="p-6 space-y-4">
+          {/* Loading */}
+          {isGenerating && sections.length === 0 && (
+            <div className="text-center py-20">
+              <div className="inline-flex items-center gap-3 bg-white border border-gray-200 px-6 py-4 rounded-2xl shadow-sm">
+                <svg className="animate-spin w-5 h-5 text-indigo-500" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
+                </svg>
+                <span className="text-sm font-medium text-gray-600">AI generuje strukturę strony...</span>
+              </div>
+            </div>
+          )}
+
+          {/* Error */}
+          {!isGenerating && error && sections.length === 0 && (
+            <div className="text-center py-12 space-y-4">
+              <div className="inline-flex items-center gap-2 bg-red-50 text-red-700 px-5 py-3 rounded-xl border border-red-200">
+                <span>✗</span><span className="text-sm">{error}</span>
+              </div>
+              <div>
+                <button onClick={() => { setError(null); generateStructure(); }} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700">
+                  Spróbuj ponownie
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Empty */}
+          {!isGenerating && !error && sections.length === 0 && (
+            <div className="text-center py-20 text-gray-400 text-sm">
+              <p className="mb-4">Dodaj klocki z panelu po lewej lub wygeneruj strukturę AI.</p>
+              <button onClick={() => generateStructure()} className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700">
+                Generuj z AI
+              </button>
+            </div>
+          )}
+
+          {/* Section cards with DnD */}
+          {sections.length > 0 && (
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+              <SortableContext items={sections.map(s => s.id)} strategy={verticalListSortingStrategy}>
+                <div className="space-y-4">
+                  {sections.map((section, idx) => (
+                    <SortableSectionCard
+                      key={section.id}
+                      section={section}
+                      index={idx}
+                      total={sections.length}
+                      onDelete={() => handleDelete(section.id)}
+                      onDuplicate={() => handleDuplicate(section)}
+                    />
+                  ))}
+                </div>
+              </SortableContext>
+            </DndContext>
+          )}
+
+          {/* Brand summary bar */}
+          {sections.length > 0 && (
+            <div className="bg-white border border-gray-200 rounded-xl px-4 py-3 flex items-center gap-3 text-xs text-gray-500">
+              <span className="font-semibold text-gray-700">Brand:</span>
+              <span className="w-5 h-5 rounded-md border border-gray-200 flex-shrink-0" style={{ background: brand.ctaColor }} />
+              <span>{brand.ctaColor}</span>
+              <span className="text-gray-300">|</span>
+              <span>{brand.fontHeading}</span>
+              <span className="text-gray-300">|</span>
+              <span>{brand.density}</span>
+            </div>
+          )}
+        </div>
+
+        {/* Nav */}
+        <div className="sticky bottom-0 bg-white border-t border-gray-100 px-6 py-3 flex justify-between">
+          <button onClick={() => navigate(`/lab/${projectId}/step/2`)} className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700">
+            ← Wstecz
+          </button>
+          <button
+            onClick={() => navigate(`/lab/${projectId}/step/4`)}
+            disabled={sections.length === 0 || isGenerating}
+            className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-semibold hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+          >
+            Dalej → Treści
+          </button>
+        </div>
+      </main>
     </div>
   );
 }
