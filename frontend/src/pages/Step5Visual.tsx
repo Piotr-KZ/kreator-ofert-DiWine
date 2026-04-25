@@ -1,644 +1,516 @@
 /**
- * Step 5 — Kreacja wizualna
- *
- * Components:
- *  1. VisualToolbar     — sticky top bar: project name, actions (regenerate, preview, export)
- *  2. BgTypePicker      — visual bg_type button grid (6 options)
- *  3. MediaTypePicker   — media_type button grid (5 options)
- *  4. SectionDetailPanel — right panel for selected section editing
- *  5. SectionBlock      — single colored section block in the canvas
- *  6. PreviewMode       — full iframe preview with viewport switcher
+ * Step 5 — Wizualizacja (Krok 5 z 6)
+ * Odwzorowanie makiety wiz_app.jsx: podgląd strony z TweakPanel,
+ * device switcher, Edit/Preview toggle, fullscreen overlay, AI FAB.
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef, useLayoutEffect, useCallback, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { useLabStore, type VisualConceptSection } from "@/store/labStore";
-import { getPreviewUrl, exportHtml } from "@/api/client";
+import { useLabStore } from "@/store/labStore";
+import * as api from "@/api/client";
+import {
+  makeTypo,
+  getRenderer, PlaceholderSection,
+} from "@/components/SectionRenderers";
+import ElementToolbar from "@/components/ElementToolbar";
 
-// ── Constants ─────────────────────────────────────────────────
+// ─── Constants ─────────────────────────────────────────────────────────────────
 
-const CAT_LABELS: Record<string, string> = {
-  NA: "Nawigacja", HE: "Hero", FI: "O firmie", OF: "Oferta", CE: "Cennik",
-  ZE: "Zespół", OP: "Opinie", FA: "FAQ", CT: "CTA", KO: "Kontakt",
-  FO: "Stopka", GA: "Galeria", RE: "Realizacje", PR: "Proces", PB: "Problem",
-  RO: "Rozwiązanie", KR: "Korzyści", CF: "Cechy", OB: "Obiekcje",
-  LO: "Loga klientów", ST: "Statystyki",
+const DEVICES = {
+  desktop: { w: 1440, label: 'Desktop' },
+  tablet:  { w: 820,  label: 'Tablet'  },
+  mobile:  { w: 390,  label: 'Mobile'  },
+} as const;
+
+type Device = keyof typeof DEVICES;
+
+const BRAND_COLORS = ['#0F766E', '#065F46', '#7C3AED', '#6366F1', '#EC4899', '#DC2626', '#F59E0B', '#0F172A'];
+
+const FONT_PAIRS: Record<string, { h: string; b: string }> = {
+  'Fraunces + Inter':           { h: 'Fraunces',          b: 'Inter'   },
+  'Instrument Serif + Inter':   { h: 'Instrument Serif',  b: 'Inter'   },
+  'Playfair Display + Inter':   { h: 'Playfair Display',  b: 'Inter'   },
+  'DM Serif Display + Manrope': { h: 'DM Serif Display',  b: 'Manrope' },
+  'Space Grotesk + Inter':      { h: 'Space Grotesk',     b: 'Inter'   },
+  'Cormorant + Inter':          { h: 'Cormorant Garamond', b: 'Inter'  },
 };
 
-const BG_TYPES = [
-  { value: "white",             label: "Białe",        bg: "#FFFFFF" },
-  { value: "light_gray",        label: "Jasne",        bg: "#F1F5F9" },
-  { value: "dark",              label: "Ciemne",       bg: "#1a1a2e" },
-  { value: "brand_color",       label: "Brandowe",     bg: null },      // uses primary_color
-  { value: "brand_gradient",    label: "Gradient",     bg: null },      // gradient
-  { value: "dark_photo_overlay",label: "Foto",         bg: "#111827" },
-];
+const DENSITY_LEVELS: Record<string, number> = { compact: 2, normal: 3, spacious: 4 };
 
-const MEDIA_TYPES = [
-  { value: "none",         label: "Brak",     icon: "○" },
-  { value: "image",        label: "Zdjęcie",  icon: "🖼" },
-  { value: "icon",         label: "Ikona",    icon: "◈" },
-  { value: "illustration", label: "Ilustr.",  icon: "✦" },
-  { value: "pattern",      label: "Wzór",     icon: "▦" },
-];
+// ─── Helper ────────────────────────────────────────────────────────────────────
 
-type Viewport = "desktop" | "tablet" | "mobile";
-
-// ── Helpers ───────────────────────────────────────────────────
-
-function getCatCode(code: string) { return code.replace(/\d+/g, ""); }
-
-function getBgCSS(sec: VisualConceptSection, primary: string, secondary: string): string {
-  switch (sec.bg_type) {
-    case "white": return "#ffffff";
-    case "light_gray": return "#f3f4f6";
-    case "dark": return "#1a1a2e";
-    case "brand_color": return primary;
-    case "brand_gradient": return `linear-gradient(135deg, ${primary}, ${secondary})`;
-    case "dark_photo_overlay": return "#111827";
-    default: return sec.bg_value || "#ffffff";
+function getFontPairKey(fontHeading: string, fontBody: string): string {
+  for (const [key, pair] of Object.entries(FONT_PAIRS)) {
+    if (pair.h === fontHeading && pair.b === fontBody) return key;
   }
-}
-
-function isDark(hex: string): boolean {
-  const c = hex.replace("#", "");
-  if (c.length < 6) return false;
-  const r = parseInt(c.substr(0, 2), 16);
-  const g = parseInt(c.substr(2, 2), 16);
-  const b = parseInt(c.substr(4, 2), 16);
-  return (r * 299 + g * 587 + b * 114) / 1000 < 128;
-}
-
-function getTextFromSections(
-  sections: Array<{ block_code: string; slots_json: Record<string, unknown> | null }>,
-  blockCode: string
-): { heading: string; sub: string } {
-  const sec = sections.find(s => s.block_code === blockCode);
-  if (!sec?.slots_json) return { heading: "", sub: "" };
-  const slots = sec.slots_json;
-  const headingKeys = ["heading", "title", "headline", "cta_text", "logo_text"];
-  const subKeys = ["subheading", "subtitle", "description", "text", "paragraph"];
-  let heading = "";
-  let sub = "";
-  for (const [k, v] of Object.entries(slots)) {
-    if (typeof v !== "string") continue;
-    if (!heading && headingKeys.some(hk => k.toLowerCase().includes(hk))) heading = v;
-    if (!sub && subKeys.some(sk => k.toLowerCase().includes(sk))) sub = v;
+  for (const [key, pair] of Object.entries(FONT_PAIRS)) {
+    if (pair.h === fontHeading) return key;
   }
-  if (!heading) {
-    const first = Object.values(slots).find(
-      v => typeof v === "string" && v.length > 3 && !v.startsWith("/") && v !== "#"
-    ) as string | undefined;
-    if (first) heading = first;
-  }
-  return { heading: heading.slice(0, 80), sub: sub.slice(0, 120) };
+  return 'Instrument Serif + Inter';
 }
 
-// ══════════════════════════════════════════════════════════════
-// 1. VisualToolbar
-// ══════════════════════════════════════════════════════════════
+// ─── useToast ──────────────────────────────────────────────────────────────────
 
-interface VisualToolbarProps {
-  projectName: string;
-  isGenerating: boolean;
-  showPreview: boolean;
-  onRegenerate: () => void;
-  onTogglePreview: () => void;
-  onExport: () => void;
+function useToast() {
+  const [msg, setMsg] = useState<string | null>(null);
+  const tRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const show = useCallback((text: string) => {
+    setMsg(text);
+    if (tRef.current) clearTimeout(tRef.current);
+    tRef.current = setTimeout(() => setMsg(null), 2200);
+  }, []);
+  return { toast: msg, show };
 }
 
-function VisualToolbar({ projectName, isGenerating, showPreview, onRegenerate, onTogglePreview, onExport }: VisualToolbarProps) {
+// ─── TweakRow ─────────────────────────────────────────────────────────────────
+
+function TweakRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="bg-white border-b border-gray-200 px-6 py-3 flex items-center justify-between flex-shrink-0">
-      <div className="flex items-center gap-3">
-        <h2 className="text-sm font-bold text-slate-800">Kreacja wizualna</h2>
-        {projectName && <span className="text-xs text-gray-400">{projectName}</span>}
-      </div>
-      <div className="flex items-center gap-2">
-        <button
-          onClick={onRegenerate}
-          disabled={isGenerating}
-          className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 disabled:opacity-50 transition-colors"
-        >
-          {isGenerating ? "Generowanie..." : "Regeneruj"}
-        </button>
-        <button
-          onClick={onTogglePreview}
-          className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-colors ${
-            showPreview
-              ? "bg-slate-800 text-white"
-              : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
-          }`}
-        >
-          {showPreview ? "← Edytuj" : "Podgląd"}
-        </button>
-        <button
-          onClick={onExport}
-          className="text-xs px-3 py-1.5 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-semibold transition-colors"
-        >
-          Pobierz HTML
-        </button>
-      </div>
+    <div style={{ marginBottom: 20 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8 }}>{label}</div>
+      {children}
     </div>
   );
 }
 
-// ══════════════════════════════════════════════════════════════
-// 2. BgTypePicker
-// ══════════════════════════════════════════════════════════════
+// ─── TweakPanel ───────────────────────────────────────────────────────────────
 
-interface BgTypePickerProps {
-  value: string;
-  primary: string;
-  secondary: string;
-  onChange: (bgType: string) => void;
+interface TweakPanelProps {
+  brandColor: string;
+  accentColor: string;
+  fontPairKey: string;
+  density: string;
+  onBrandColor: (c: string) => void;
+  onAccentColor: (c: string) => void;
+  onFontPair: (key: string) => void;
+  onDensity: (d: string) => void;
 }
 
-function BgTypePicker({ value, primary, secondary, onChange }: BgTypePickerProps) {
+function TweakPanel({ brandColor, accentColor, fontPairKey, density, onBrandColor, onAccentColor, onFontPair, onDensity }: TweakPanelProps) {
   return (
-    <div className="grid grid-cols-3 gap-1.5">
-      {BG_TYPES.map(bt => {
-        const bg = bt.bg ?? (bt.value === "brand_gradient"
-          ? `linear-gradient(135deg, ${primary}, ${secondary})`
-          : primary);
-        const active = value === bt.value;
-        return (
-          <button
-            key={bt.value}
-            onClick={() => onChange(bt.value)}
-            title={bt.label}
-            className={`h-10 rounded-lg text-[10px] font-semibold border-2 transition-all ${
-              active ? "border-indigo-600 shadow-sm" : "border-transparent hover:border-gray-300"
-            }`}
-            style={{ background: bg }}
-          >
-            <span
-              className="block text-center"
-              style={{
-                color: isDark(typeof bg === "string" && bg.startsWith("#") ? bg : "#1a1a2e") ? "#fff" : "#1a1a2e",
-                textShadow: "0 1px 2px rgba(0,0,0,.2)",
-              }}
-            >
-              {bt.label}
-            </span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+    <div style={{ fontFamily: 'Inter, system-ui, sans-serif' }}>
+      <h3 style={{ margin: '0 0 3px', fontSize: 15, fontWeight: 600, color: '#0F172A' }}>Tweaki</h3>
+      <p style={{ margin: '0 0 20px', fontSize: 12, color: '#64748B' }}>Dostrój globalne style całej strony</p>
 
-// ══════════════════════════════════════════════════════════════
-// 3. MediaTypePicker
-// ══════════════════════════════════════════════════════════════
-
-interface MediaTypePickerProps {
-  value: string;
-  onChange: (mediaType: string) => void;
-}
-
-function MediaTypePicker({ value, onChange }: MediaTypePickerProps) {
-  return (
-    <div className="flex gap-1.5 flex-wrap">
-      {MEDIA_TYPES.map(mt => (
-        <button
-          key={mt.value}
-          onClick={() => onChange(mt.value)}
-          className={`h-8 px-3 rounded-lg text-xs font-medium border transition-all flex items-center gap-1.5 ${
-            value === mt.value
-              ? "border-indigo-600 bg-indigo-50 text-indigo-700"
-              : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-          }`}
-        >
-          <span>{mt.icon}</span>
-          <span>{mt.label}</span>
-        </button>
-      ))}
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════
-// 4. SectionDetailPanel
-// ══════════════════════════════════════════════════════════════
-
-interface SectionDetailPanelProps {
-  sec: VisualConceptSection;
-  primary: string;
-  secondary: string;
-  onClose: () => void;
-  onChange: (field: string, value: string | boolean) => void;
-}
-
-function SectionDetailPanel({ sec, primary, secondary, onClose, onChange }: SectionDetailPanelProps) {
-  const catCode = getCatCode(sec.block_code);
-  const catLabel = CAT_LABELS[catCode] ?? catCode;
-
-  return (
-    <aside className="w-72 flex-shrink-0 bg-white border-l border-gray-200 flex flex-col h-full overflow-y-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
-        <div>
-          <div className="text-xs font-bold text-slate-800">{sec.block_code}</div>
-          <div className="text-[10px] text-gray-400">{catLabel}</div>
-        </div>
-        <button onClick={onClose} className="text-gray-300 hover:text-gray-600 text-sm w-7 h-7 grid place-items-center rounded-lg hover:bg-gray-50">
-          ✕
-        </button>
-      </div>
-
-      <div className="p-4 space-y-5">
-        {/* Bg type */}
-        <div>
-          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-2">
-            Kolor tła
-          </label>
-          <BgTypePicker value={sec.bg_type} primary={primary} secondary={secondary} onChange={v => onChange("bg_type", v)} />
-        </div>
-
-        {/* Custom bg color — show only when bg_type is "white" or "light_gray" so user can override */}
-        {(sec.bg_type === "white" || sec.bg_type === "light_gray") && (
-          <div>
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1.5">
-              Własny kolor tła
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                type="color"
-                value={sec.bg_value || (sec.bg_type === "white" ? "#ffffff" : "#f3f4f6")}
-                onChange={e => { onChange("bg_type", "custom"); onChange("bg_value", e.target.value); }}
-                className="w-9 h-9 cursor-pointer border border-gray-200 rounded-lg p-0.5 bg-white"
-              />
-              <span className="text-xs font-mono text-gray-500">{sec.bg_value || "domyślny"}</span>
-            </div>
-          </div>
-        )}
-
-        {/* Media type */}
-        <div>
-          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-2">
-            Media / ozdoba
-          </label>
-          <MediaTypePicker value={sec.media_type || "none"} onChange={v => onChange("media_type", v)} />
-        </div>
-
-        {/* Photo query */}
-        {(sec.media_type === "image" || sec.media_type === "illustration") && (
-          <div>
-            <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-1.5">
-              Hasło do wyszukiwania zdjęcia
-            </label>
-            <input
-              type="text"
-              value={sec.photo_query ?? ""}
-              onChange={e => onChange("photo_query", e.target.value)}
-              placeholder="np. modern office team"
-              className="w-full h-8 px-2.5 text-xs border border-gray-200 rounded-lg outline-none focus:border-indigo-400 transition-colors"
-            />
-            <p className="text-[10px] text-gray-400 mt-1">Używane przy generowaniu HTML</p>
-          </div>
-        )}
-
-        {/* Separator */}
-        <div>
-          <label className="flex items-center gap-2.5 cursor-pointer">
-            <div
-              onClick={() => onChange("separator_after", !sec.separator_after)}
-              className={`w-9 h-5 rounded-full transition-colors flex-shrink-0 ${sec.separator_after ? "bg-indigo-600" : "bg-gray-200"}`}
-            >
-              <div className={`w-4 h-4 bg-white rounded-full shadow-sm transition-transform mt-0.5 ${sec.separator_after ? "translate-x-4" : "translate-x-0.5"}`} />
-            </div>
-            <span className="text-xs text-gray-700">Separator po sekcji</span>
-          </label>
-        </div>
-
-        {/* Preview swatch */}
-        <div>
-          <label className="text-[10px] font-bold text-gray-400 uppercase tracking-wide block mb-2">Podgląd tła</label>
-          <div
-            className="h-12 rounded-xl border border-gray-200"
-            style={{ background: getBgCSS(sec, primary, secondary) }}
-          />
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════
-// 5. SectionBlock
-// ══════════════════════════════════════════════════════════════
-
-interface SectionBlockProps {
-  sec: VisualConceptSection;
-  idx: number;
-  total: number;
-  primary: string;
-  secondary: string;
-  isSelected: boolean;
-  textContent: { heading: string; sub: string };
-  onClick: () => void;
-}
-
-function SectionBlock({ sec, idx, primary, secondary, isSelected, textContent, onClick }: SectionBlockProps) {
-  const catCode = getCatCode(sec.block_code);
-  const catLabel = CAT_LABELS[catCode] ?? catCode;
-  const isNav = catCode === "NA";
-  const isFooter = catCode === "FO";
-  const isHero = catCode === "HE";
-  const isCta = catCode === "CT";
-  const minH = isNav ? "h-12" : isFooter ? "h-16" : isHero ? "h-48" : isCta ? "h-28" : "h-32";
-
-  const bgStyle = sec.bg_type === "brand_gradient"
-    ? { background: `linear-gradient(135deg, ${primary}, ${secondary})` }
-    : { background: getBgCSS(sec, primary, secondary) };
-
-  const dark = isDark(bgStyle.background.startsWith("linear-gradient") ? primary : bgStyle.background);
-
-  return (
-    <div
-      onClick={onClick}
-      className={`${minH} relative flex flex-col justify-center px-8 transition-all cursor-pointer group ${
-        isSelected ? "ring-2 ring-indigo-500 ring-inset" : "hover:brightness-95"
-      }`}
-      style={bgStyle}
-      title="Kliknij aby edytować"
-    >
-      {/* Section label */}
-      <div className={`absolute top-2 left-3 flex items-center gap-2 ${dark ? "text-white/50" : "text-black/25"}`}>
-        <span className="text-[10px] font-mono font-bold">{sec.block_code}</span>
-        <span className="text-[10px]">{catLabel}</span>
-        {idx === 0 && <span className="text-[9px] opacity-0 group-hover:opacity-100 transition-opacity">(kliknij aby edytować)</span>}
-      </div>
-
-      {/* Selected indicator */}
-      {isSelected && (
-        <div className="absolute top-2 right-3 bg-indigo-600 text-white text-[9px] font-bold px-2 py-0.5 rounded">
-          EDYTUJESZ
-        </div>
-      )}
-
-      {/* Content preview */}
-      <div className={isNav ? "flex items-center justify-between" : ""}>
-        {textContent.heading && (
-          <h3 className={`${isHero ? "text-xl" : isNav ? "text-sm" : "text-base"} font-bold leading-tight ${dark ? "text-white" : "text-gray-800"}`}>
-            {textContent.heading}
-          </h3>
-        )}
-        {textContent.sub && !isNav && (
-          <p className={`text-sm mt-1 line-clamp-2 ${dark ? "text-white/70" : "text-gray-500"}`}>
-            {textContent.sub}
-          </p>
-        )}
-        {!textContent.heading && !textContent.sub && (
-          <span className={`text-sm italic ${dark ? "text-white/30" : "text-gray-300"}`}>{catLabel}</span>
-        )}
-      </div>
-
-      {/* Media badge */}
-      {sec.media_type && sec.media_type !== "none" && (
-        <div className={`absolute top-2 right-${isSelected ? "20" : "3"} text-[9px] px-1.5 py-0.5 rounded ${dark ? "bg-white/10 text-white/50" : "bg-black/5 text-black/30"}`}>
-          {sec.media_type.replace(/_/g, " ")}
-        </div>
-      )}
-
-      {/* Separator indicator */}
-      {sec.separator_after && (
-        <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-gray-300/60 to-transparent" />
-      )}
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════
-// 6. PreviewMode
-// ══════════════════════════════════════════════════════════════
-
-interface PreviewModeProps {
-  previewUrl: string;
-  onClose: () => void;
-}
-
-function PreviewMode({ previewUrl, onClose }: PreviewModeProps) {
-  const [viewport, setViewport] = useState<Viewport>("desktop");
-  const [iframeKey, setIframeKey] = useState(0);
-  const viewportWidths: Record<Viewport, string> = { desktop: "100%", tablet: "768px", mobile: "375px" };
-
-  useEffect(() => { setIframeKey(k => k + 1); }, [viewport]);
-
-  return (
-    <>
-      {/* Preview toolbar */}
-      <div className="bg-white border-b border-gray-100 px-6 py-2 flex items-center gap-3 flex-shrink-0">
-        <div className="flex border border-gray-200 rounded-lg overflow-hidden">
-          {(["desktop", "tablet", "mobile"] as const).map(v => (
-            <button
-              key={v}
-              onClick={() => setViewport(v)}
-              className={`px-3 py-1.5 text-xs font-medium transition-colors ${
-                viewport === v ? "bg-slate-800 text-white" : "text-gray-500 hover:bg-gray-50"
-              }`}
-            >
-              {v === "desktop" ? "🖥 Desktop" : v === "tablet" ? "⬜ Tablet" : "📱 Mobile"}
-            </button>
+      <TweakRow label="Kolor brandu">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 4 }}>
+          {BRAND_COLORS.map(c => (
+            <button key={c} onClick={() => onBrandColor(c)} style={{
+              aspectRatio: '1', border: brandColor === c ? '2.5px solid #0F172A' : '1.5px solid #E2E8F0',
+              borderRadius: 6, background: c, cursor: 'pointer', padding: 0,
+            }} />
           ))}
         </div>
-        <button
-          onClick={() => setIframeKey(k => k + 1)}
-          className="text-xs px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-500"
-          title="Odśwież podgląd"
-        >
-          ↻ Odśwież
-        </button>
-        <button onClick={onClose} className="text-xs text-gray-500 hover:text-gray-700 ml-auto">
-          ✕ Zamknij podgląd
-        </button>
-      </div>
-      <div className="flex-1 bg-gray-200 flex justify-center overflow-auto p-6">
-        <div
-          style={{ width: viewportWidths[viewport], maxWidth: "100%" }}
-          className="bg-white shadow-2xl rounded-xl overflow-hidden transition-all duration-300"
-        >
-          <iframe
-            key={iframeKey}
-            src={previewUrl}
-            className="w-full border-0"
-            style={{ minHeight: "80vh", height: "100%" }}
-            title="Podgląd strony"
-          />
+      </TweakRow>
+
+      <TweakRow label="Kolor akcentu">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 4 }}>
+          {BRAND_COLORS.map(c => (
+            <button key={c} onClick={() => onAccentColor(c)} style={{
+              aspectRatio: '1', border: accentColor === c ? '2.5px solid #0F172A' : '1.5px solid #E2E8F0',
+              borderRadius: 6, background: c, cursor: 'pointer', padding: 0,
+            }} />
+          ))}
         </div>
-      </div>
-    </>
+      </TweakRow>
+
+      <TweakRow label="Typografia">
+        <div style={{ display: 'grid', gap: 5 }}>
+          {Object.entries(FONT_PAIRS).map(([key, pair]) => {
+            const active = fontPairKey === key;
+            return (
+              <button key={key} onClick={() => onFontPair(key)} style={{
+                padding: '9px 11px',
+                border: active ? '1.5px solid #6366F1' : '1px solid #E2E8F0',
+                background: active ? '#EEF2FF' : '#fff',
+                borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
+                textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10,
+              }}>
+                <span style={{ fontFamily: `'${pair.h}', serif`, fontSize: 18, fontWeight: 600, color: '#0F172A', lineHeight: 1 }}>Aa</span>
+                <span style={{ fontFamily: `'${pair.b}', sans-serif`, fontSize: 11, color: '#64748B', flex: 1 }}>{key}</span>
+                {active && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366F1" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
+              </button>
+            );
+          })}
+        </div>
+      </TweakRow>
+
+      <TweakRow label="Gęstość">
+        <div style={{ display: 'inline-flex', background: '#F1F5F9', padding: 2, borderRadius: 7, gap: 1, width: '100%' }}>
+          {[
+            { k: 'compact',  l: 'Kompakt' },
+            { k: 'normal',   l: 'Komfort' },
+            { k: 'spacious', l: 'Luźna'   },
+          ].map(o => (
+            <button key={o.k} onClick={() => onDensity(o.k)} style={{
+              flex: 1, padding: '7px 6px', border: 'none',
+              background: density === o.k ? '#fff' : 'transparent',
+              borderRadius: 5, cursor: 'pointer',
+              fontFamily: 'inherit', fontSize: 11.5, fontWeight: density === o.k ? 600 : 500,
+              color: density === o.k ? '#0F172A' : '#64748B',
+              boxShadow: density === o.k ? '0 1px 2px rgba(0,0,0,.06)' : 'none',
+            }}>{o.l}</button>
+          ))}
+        </div>
+      </TweakRow>
+    </div>
   );
 }
 
-// ══════════════════════════════════════════════════════════════
-// Main Page
-// ══════════════════════════════════════════════════════════════
+// ─── AiChatPanel ──────────────────────────────────────────────────────────────
+
+interface AIChatMsg { role: 'ai' | 'user'; text: string }
+
+function AiChatPanel({ projectId, onClose }: { projectId: string; onClose: () => void }) {
+  const [messages, setMessages] = useState<AIChatMsg[]>([
+    { role: 'ai', text: 'Cześć! Widzę podgląd Twojej strony. Co chcesz zmienić w wyglądzie lub treści?' },
+  ]);
+  const [input, setInput] = useState('');
+  const [sending, setSending] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages]);
+
+  const send = async () => {
+    const text = input.trim();
+    if (!text || sending) return;
+    setMessages(prev => [...prev, { role: 'user', text }]);
+    setInput('');
+    setSending(true);
+    let aiText = '';
+    setMessages(prev => [...prev, { role: 'ai', text: '…' }]);
+    try {
+      await api.chatStream(projectId, text, 5, (chunk) => {
+        aiText += chunk;
+        setMessages(prev => { const n = [...prev]; n[n.length - 1] = { role: 'ai', text: aiText }; return n; });
+      });
+    } catch {
+      setMessages(prev => { const n = [...prev]; n[n.length - 1] = { role: 'ai', text: 'Błąd połączenia z AI.' }; return n; });
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const suggestions = ['Zmień styl na ciemny', 'Bardziej minimalistycznie', 'Dobierz kolory do branży', 'Co poprawić?'];
+
+  return (
+    <div style={{ position: 'fixed', right: 24, bottom: 90, width: 380, height: 480, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 16, boxShadow: '0 20px 48px rgba(15,23,42,.18)', display: 'flex', flexDirection: 'column', zIndex: 70, fontFamily: 'Inter, sans-serif' }}>
+      <div style={{ padding: '12px 16px', borderBottom: '1px solid #F1F5F9', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+        <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg, #6366F1, #EC4899)', display: 'grid', placeItems: 'center' }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg>
+        </div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: '#0F172A' }}>AI asystent</div>
+          <div style={{ fontSize: 10.5, color: '#94A3B8' }}>Kreacja wizualna · Krok 5</div>
+        </div>
+        <button onClick={onClose} style={{ marginLeft: 'auto', width: 28, height: 28, border: 'none', background: 'transparent', cursor: 'pointer', borderRadius: 6, display: 'grid', placeItems: 'center', color: '#94A3B8', fontSize: 16, fontFamily: 'inherit' }}
+          onMouseEnter={e => (e.currentTarget.style.background = '#F1F5F9')}
+          onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>×</button>
+      </div>
+      <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {messages.map((m, i) => (
+          <div key={i} style={{ maxWidth: '85%', alignSelf: m.role === 'user' ? 'flex-end' : 'flex-start', padding: '9px 12px', background: m.role === 'user' ? 'linear-gradient(135deg, #6366F1, #EC4899)' : '#F1F5F9', color: m.role === 'user' ? '#fff' : '#0F172A', borderRadius: m.role === 'user' ? '12px 12px 2px 12px' : '12px 12px 12px 2px', fontSize: 13, lineHeight: 1.45 }}>{m.text}</div>
+        ))}
+      </div>
+      <div style={{ padding: '8px 12px 0', display: 'flex', gap: 6, flexWrap: 'wrap', flexShrink: 0 }}>
+        {suggestions.map(s => (
+          <button key={s} onClick={() => { setInput(s); inputRef.current?.focus(); }}
+            style={{ padding: '5px 10px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 999, fontSize: 11.5, color: '#475569', cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#6366F1'; (e.currentTarget as HTMLButtonElement).style.color = '#6366F1'; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.borderColor = '#E2E8F0'; (e.currentTarget as HTMLButtonElement).style.color = '#475569'; }}>{s}</button>
+        ))}
+      </div>
+      <div style={{ padding: 12, borderTop: '1px solid #F1F5F9', marginTop: 8, flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, padding: '8px 10px', background: '#F8FAFC', border: '1px solid #E2E8F0', borderRadius: 12 }}>
+          <textarea ref={inputRef} value={input} onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+            placeholder="Co chcesz zmienić?"
+            rows={1}
+            style={{ flex: 1, border: 'none', background: 'transparent', outline: 'none', resize: 'none', fontSize: 13, fontFamily: 'inherit', color: '#0F172A', minHeight: 20, maxHeight: 80, lineHeight: 1.5 }} />
+          <button onClick={send} disabled={!input.trim() || sending}
+            style={{ width: 32, height: 32, background: input.trim() ? 'linear-gradient(135deg, #6366F1, #EC4899)' : '#E2E8F0', color: input.trim() ? '#fff' : '#94A3B8', border: 'none', borderRadius: 8, cursor: input.trim() ? 'pointer' : 'not-allowed', display: 'grid', placeItems: 'center', flexShrink: 0 }}>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Main ─────────────────────────────────────────────────────────────────────
 
 export default function Step5Visual() {
   const { projectId } = useParams();
   const navigate = useNavigate();
-  const {
-    visualConcept, sections, style, projectName,
-    generateVisualConcept, saveVisualConcept,
-    isGenerating, error, setError,
-  } = useLabStore();
+  const { sections, brand, setBrand, saveBrief, projectName } = useLabStore();
 
-  const [showPreview, setShowPreview] = useState(false);
-  const [selectedIdx, setSelectedIdx] = useState<number | null>(null);
-  const startedRef = useRef(false);
+  const [device, setDevice] = useState<Device>('desktop');
+  const [tweaksOpen, setTweaksOpen] = useState(true);
+  const [liveEdit, setLiveEdit] = useState(true);
+  const [fullscreen, setFullscreen] = useState(false);
+  const [aiChatOpen, setAiChatOpen] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const { toast, show: showToast } = useToast();
 
-  const previewUrl = projectId ? getPreviewUrl(projectId) : "";
+  const colRef = useRef<HTMLDivElement>(null);
+  const [previewScale, setPreviewScale] = useState(1);
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Derived values
+  const fontPairKey = getFontPairKey(brand.fontHeading || 'Instrument Serif', brand.fontBody || 'Inter');
+  const densityLevel = DENSITY_LEVELS[brand.density || 'normal'] ?? 3;
+  const typo = makeTypo(densityLevel, brand.fontHeading || 'Instrument Serif', brand.fontBody || 'Inter');
+
+  // Canvas scaling via ResizeObserver
+  useLayoutEffect(() => {
+    const fit = () => {
+      const col = colRef.current;
+      if (!col) return;
+      if (!liveEdit) { setPreviewScale(1); return; }
+      const available = col.clientWidth - 48;
+      setPreviewScale(Math.min(1, available / DEVICES[device].w));
+    };
+    fit();
+    const ro = new ResizeObserver(fit);
+    if (colRef.current) ro.observe(colRef.current);
+    return () => ro.disconnect();
+  }, [device, tweaksOpen, liveEdit]);
+
+  // Escape closes fullscreen
   useEffect(() => {
-    if (!visualConcept && !isGenerating && !startedRef.current) {
-      startedRef.current = true;
-      setError(null);
-      generateVisualConcept();
-    }
-  }, [visualConcept, isGenerating, setError, generateVisualConcept]);
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, []);
 
-  const handleSectionChange = (idx: number, field: string, value: string | boolean) => {
-    if (!visualConcept) return;
-    const updated = { ...visualConcept, sections: [...visualConcept.sections] };
-    updated.sections[idx] = { ...updated.sections[idx], [field]: value } as VisualConceptSection;
-    saveVisualConcept(updated);
+  // Debounced brand save after TweakPanel change
+  const patchBrand = useCallback((patch: Parameters<typeof setBrand>[0]) => {
+    setBrand(patch);
+    setSaved(false);
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveBrief().catch(() => {});
+    }, 800);
+  }, [setBrand, saveBrief]);
+
+  const handleFontPair = useCallback((key: string) => {
+    const pair = FONT_PAIRS[key];
+    if (pair) patchBrand({ fontHeading: pair.h, fontBody: pair.b });
+  }, [patchBrand]);
+
+  const handleSave = async () => {
+    await saveBrief();
+    setSaved(true);
+    showToast('Styl strony zapisany!');
   };
 
-  const handleRegenerate = () => {
-    setError(null);
-    setSelectedIdx(null);
-    generateVisualConcept();
-  };
+  // Sections renderer (read-only in Step5 — tweaks only)
+  const noop = useCallback(() => {}, []);
 
-  // ── Loading / error / empty states ────────────────────────
-  if (!visualConcept) {
-    return (
-      <div className="max-w-2xl mx-auto p-6 text-center py-16 space-y-4">
-        {isGenerating && (
-          <>
-            <div className="inline-flex items-center gap-3 bg-emerald-50 text-emerald-700 px-6 py-4 rounded-xl">
-              <svg className="animate-spin w-5 h-5" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"/>
-              </svg>
-              <span className="text-sm font-medium">AI generuje kreację wizualną...</span>
-            </div>
-            <p className="text-xs text-gray-400">To może potrwać kilka sekund</p>
-          </>
-        )}
-        {!isGenerating && error && (
-          <>
-            <div className="inline-flex items-center gap-2 bg-red-50 text-red-700 px-5 py-3 rounded-xl border border-red-200">
-              <span>✗</span><span className="text-sm">{error}</span>
-            </div>
-            <button
-              onClick={handleRegenerate}
-              className="px-4 py-2 bg-emerald-600 text-white rounded-lg text-sm font-medium hover:bg-emerald-700"
-            >
-              Spróbuj ponownie
-            </button>
-          </>
-        )}
-        {!isGenerating && !error && (
-          <>
-            <p className="text-gray-400 text-sm">Brak kreacji wizualnej.</p>
-            <button onClick={handleRegenerate} className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700">
-              Generuj kreację wizualną
-            </button>
-          </>
-        )}
-        <div className="pt-4">
-          <button onClick={() => navigate(`/lab/${projectId}/step/4`)} className="text-xs text-gray-500 hover:text-gray-700">
-            ← Wstecz
-          </button>
+  const renderSections = () =>
+    sections.map(section => {
+      const Renderer = section.slots_json ? getRenderer(section.block_code) : null;
+      return (
+        <div key={section.id}>
+          {Renderer
+            ? <Renderer section={section} brand={brand} typo={typo} onSlotUpdate={noop} />
+            : <PlaceholderSection section={section} />
+          }
         </div>
-      </div>
-    );
-  }
+      );
+    });
 
-  const selectedSec = selectedIdx !== null ? visualConcept.sections[selectedIdx] : null;
+  const stageW = DEVICES[device].w;
+  const chromeW = Math.min(stageW * previewScale, stageW);
 
   return (
-    <div className="flex flex-col h-full overflow-hidden" style={{ minHeight: "calc(100vh - 96px)" }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden', fontFamily: 'Inter, system-ui, sans-serif' }}>
 
-      {/* 1. VisualToolbar */}
-      <VisualToolbar
-        projectName={projectName}
-        isGenerating={isGenerating}
-        showPreview={showPreview}
-        onRegenerate={handleRegenerate}
-        onTogglePreview={() => { setShowPreview(p => !p); setSelectedIdx(null); }}
-        onExport={() => projectId && exportHtml(projectId)}
-      />
+      {/* ── Topbar ─────────────────────────────────────────────────────────── */}
+      <div style={{ background: '#fff', borderBottom: '1px solid #E2E8F0', height: 56, display: 'flex', alignItems: 'center', padding: '0 20px', gap: 12, flexShrink: 0, zIndex: 40 }}>
 
-      {showPreview ? (
-        /* 6. PreviewMode */
-        <PreviewMode previewUrl={previewUrl} onClose={() => setShowPreview(false)} />
-      ) : (
-        <div className="flex flex-1 overflow-hidden">
-          {/* Canvas */}
-          <div className="flex-1 overflow-y-auto bg-gray-100 p-4">
-            {/* Global info strip */}
-            <div className="bg-white rounded-xl border border-gray-200 p-3 mb-4 flex items-center gap-4">
-              <span className="text-xs text-gray-500">Styl: <strong>{visualConcept.style}</strong></span>
-              <span className="text-xs text-gray-500">Tło: <strong>{visualConcept.bg_approach}</strong></span>
-              <div className="flex items-center gap-1 ml-auto">
-                <div className="w-5 h-5 rounded border border-gray-200" style={{ backgroundColor: style.primary_color }} title="Kolor główny" />
-                <div className="w-5 h-5 rounded border border-gray-200" style={{ backgroundColor: style.secondary_color }} title="Kolor dodatkowy" />
-                <span className="text-[10px] text-gray-400 ml-1 font-mono">{style.primary_color}</span>
-              </div>
+        <div style={{ fontSize: 10, fontWeight: 600, color: '#6366F1', textTransform: 'uppercase', letterSpacing: 0.8, whiteSpace: 'nowrap' }}>
+          ● Krok 5 · Wizualizacja
+        </div>
+
+        <div style={{ flex: 1 }} />
+
+        {/* Device switcher */}
+        <div style={{ display: 'inline-flex', background: '#F1F5F9', padding: 3, borderRadius: 9, gap: 2 }}>
+          {(['desktop', 'tablet', 'mobile'] as const).map(d => (
+            <button key={d} onClick={() => setDevice(d)} title={`${DEVICES[d].label} — ${DEVICES[d].w}px`}
+              style={{ padding: '5px 10px', border: 'none', borderRadius: 7, background: device === d ? '#fff' : 'transparent', color: device === d ? '#0F172A' : '#64748B', fontSize: 12, fontWeight: device === d ? 600 : 500, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6, boxShadow: device === d ? '0 1px 2px rgba(15,23,42,.08)' : 'none', fontFamily: 'inherit' }}>
+              {d === 'desktop'
+                ? <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>Desktop</>
+                : d === 'tablet'
+                  ? <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="5" y="2" width="14" height="20" rx="2"/></svg>Tablet</>
+                  : <><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="6" y="2" width="12" height="20" rx="2"/></svg>Mobile</>
+              }
+            </button>
+          ))}
+        </div>
+
+        {/* Edit / Preview toggle */}
+        <div style={{ display: 'inline-flex', background: '#F1F5F9', padding: 3, borderRadius: 9, gap: 2 }}>
+          {[
+            { v: true,  label: 'Edytuj',  icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg> },
+            { v: false, label: 'Podgląd', icon: <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> },
+          ].map(({ v, label, icon }) => (
+            <button key={label} onClick={() => setLiveEdit(v)}
+              style={{ padding: '5px 11px', border: 'none', background: liveEdit === v ? '#fff' : 'transparent', borderRadius: 6, cursor: 'pointer', color: liveEdit === v ? '#0F172A' : '#64748B', boxShadow: liveEdit === v ? '0 1px 2px rgba(15,23,42,.08)' : 'none', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: liveEdit === v ? 600 : 500, fontFamily: 'inherit' }}>
+              {icon}{label}
+            </button>
+          ))}
+        </div>
+
+        {/* Fullscreen */}
+        <button onClick={() => { setLiveEdit(false); setFullscreen(true); }}
+          style={{ padding: '6px 12px', border: '1px solid #E2E8F0', background: '#fff', borderRadius: 9, cursor: 'pointer', color: '#334155', fontSize: 12, fontWeight: 500, display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M3 3h6M3 3v6M21 3h-6M21 3v6M21 21h-6M21 21v-6M3 21h6M3 21v-6"/></svg>
+          Pełny ekran
+        </button>
+
+        {/* Tweaks toggle */}
+        <button onClick={() => setTweaksOpen(v => !v)}
+          style={{ padding: '6px 12px', border: `1px solid ${tweaksOpen ? '#6366F1' : '#E2E8F0'}`, background: tweaksOpen ? '#EEF2FF' : '#fff', borderRadius: 9, cursor: 'pointer', color: tweaksOpen ? '#6366F1' : '#334155', fontSize: 12, fontWeight: tweaksOpen ? 600 : 500, display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'inherit' }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41M21 12h-3M6 12H3M12 21v-3M12 6V3"/></svg>
+          Tweaki
+        </button>
+
+        {/* Save */}
+        <button onClick={handleSave}
+          style={{ padding: '8px 16px', background: saved ? '#DCFCE7' : 'linear-gradient(135deg, #10B981 0%, #14B8A6 100%)', color: saved ? '#065F46' : '#fff', border: 'none', borderRadius: 9, fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7, boxShadow: saved ? 'none' : '0 2px 8px rgba(16,185,129,.35)', transition: 'background .2s' }}>
+          {saved
+            ? <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>Zapisano</>
+            : <><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 00-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 012-3.95A12.88 12.88 0 0122 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 01-4 2z"/></svg>Zapisz styl</>
+          }
+        </button>
+      </div>
+
+      {/* ── Main area ──────────────────────────────────────────────────────── */}
+      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: tweaksOpen ? 'minmax(0,1fr) 320px' : '1fr', overflow: 'hidden' }}>
+
+        {/* ── Preview column ── */}
+        <div ref={colRef} style={{ background: '#E5E7EB', padding: '20px 24px 40px', overflow: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+
+          {/* Browser chrome */}
+          <div style={{ width: chromeW, maxWidth: '100%', background: '#F8FAFC', borderRadius: '12px 12px 0 0', border: '1px solid #D1D5DB', borderBottom: 'none', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10, boxShadow: '0 2px 4px rgba(0,0,0,.04)', fontFamily: 'Inter, sans-serif', flexShrink: 0 }}>
+            <div style={{ display: 'flex', gap: 5 }}>
+              <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#FF5F57', display: 'block' }} />
+              <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#FEBC2E', display: 'block' }} />
+              <span style={{ width: 11, height: 11, borderRadius: '50%', background: '#28C840', display: 'block' }} />
             </div>
-
-            {/* Stacked section blocks */}
-            <div className="rounded-2xl overflow-hidden shadow-xl border border-gray-200 max-w-3xl mx-auto">
-              {visualConcept.sections.map((sec, idx) => (
-                /* 5. SectionBlock */
-                <SectionBlock
-                  key={idx}
-                  sec={sec}
-                  idx={idx}
-                  total={visualConcept.sections.length}
-                  primary={style.primary_color}
-                  secondary={style.secondary_color}
-                  isSelected={selectedIdx === idx}
-                  textContent={getTextFromSections(sections, sec.block_code)}
-                  onClick={() => setSelectedIdx(selectedIdx === idx ? null : idx)}
-                />
-              ))}
+            <div style={{ flex: 1, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 6, padding: '4px 10px', fontSize: 11, color: '#94A3B8', fontFamily: 'ui-monospace, monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {(projectName || 'moja-strona').toLowerCase().replace(/\s+/g, '-')}.pl/
             </div>
-
-            <p className="text-center text-[10px] text-gray-400 mt-3">
-              Kliknij sekcję aby edytować jej właściwości wizualne
-            </p>
+            <div style={{ fontSize: 10, color: '#94A3B8', flexShrink: 0 }}>{stageW}px</div>
           </div>
 
-          {/* 4. SectionDetailPanel */}
-          {selectedSec && selectedIdx !== null && (
-            <SectionDetailPanel
-              sec={selectedSec}
-              primary={style.primary_color}
-              secondary={style.secondary_color}
-              onClose={() => setSelectedIdx(null)}
-              onChange={(field, value) => handleSectionChange(selectedIdx, field, value)}
+          {/* Scaled canvas */}
+          <div style={{ width: chromeW, maxWidth: '100%', background: '#fff', border: '1px solid #D1D5DB', borderTop: 'none', overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,.08)', flexShrink: 0, position: 'relative' }}>
+            {/* Overlay in preview mode to prevent accidental edits */}
+            {!liveEdit && <div style={{ position: 'absolute', inset: 0, zIndex: 10 }} />}
+            <div style={{ width: stageW, transformOrigin: 'top left', transform: `scale(${previewScale})` }}>
+              {sections.length === 0 ? (
+                <div style={{ padding: '80px 40px', textAlign: 'center', color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>
+                  <div style={{ fontSize: 16, fontWeight: 500, marginBottom: 8 }}>Brak sekcji</div>
+                  <div style={{ fontSize: 13 }}>Wróć do kroku 3 aby wygenerować strukturę strony.</div>
+                </div>
+              ) : renderSections()}
+            </div>
+          </div>
+        </div>
+
+        {/* ── TweakPanel column ── */}
+        {tweaksOpen && (
+          <div style={{ background: '#fff', borderLeft: '1px solid #E2E8F0', overflow: 'auto', padding: '20px 20px 40px' }}>
+            <TweakPanel
+              brandColor={brand.ctaColor as string}
+              accentColor={brand.ctaColor2 as string}
+              fontPairKey={fontPairKey}
+              density={brand.density || 'normal'}
+              onBrandColor={c => patchBrand({ ctaColor: c })}
+              onAccentColor={c => patchBrand({ ctaColor2: c })}
+              onFontPair={handleFontPair}
+              onDensity={d => patchBrand({ density: d as 'compact' | 'normal' | 'spacious' })}
             />
-          )}
+          </div>
+        )}
+      </div>
+
+      {/* ── Fullscreen overlay ─────────────────────────────────────────────── */}
+      {fullscreen && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 500, background: '#0F172A', display: 'flex', flexDirection: 'column' }}>
+          {/* Top bar */}
+          <div style={{ height: 44, background: '#0F172A', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 16px', borderBottom: '1px solid rgba(255,255,255,.08)', fontSize: 12, fontFamily: 'Inter, sans-serif' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 8, height: 8, borderRadius: 4, background: '#10B981', boxShadow: '0 0 0 3px rgba(16,185,129,.2)' }} />
+              <span style={{ fontWeight: 600 }}>Podgląd 1:1</span>
+              <span style={{ color: 'rgba(255,255,255,.5)' }}>·</span>
+              <span style={{ color: 'rgba(255,255,255,.7)' }}>{projectName || 'Projekt'}</span>
+              <span style={{ color: 'rgba(255,255,255,.5)' }}>·</span>
+              <span style={{ color: 'rgba(255,255,255,.7)' }}>{DEVICES[device].w}px</span>
+            </div>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              {(['desktop', 'tablet', 'mobile'] as const).map(d => (
+                <button key={d} onClick={() => setDevice(d)} style={{ padding: '4px 10px', border: '1px solid rgba(255,255,255,.15)', background: device === d ? 'rgba(255,255,255,.12)' : 'transparent', color: '#fff', borderRadius: 6, cursor: 'pointer', fontSize: 11, fontWeight: 500, fontFamily: 'inherit' }}>
+                  {DEVICES[d].label}
+                </button>
+              ))}
+              <div style={{ width: 1, height: 18, background: 'rgba(255,255,255,.15)', margin: '0 4px' }} />
+              <button onClick={() => setFullscreen(false)} style={{ padding: '6px 12px', border: '1px solid rgba(255,255,255,.2)', background: 'rgba(255,255,255,.1)', color: '#fff', borderRadius: 6, cursor: 'pointer', fontSize: 12, fontWeight: 600, fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                Zamknij (Esc)
+              </button>
+            </div>
+          </div>
+          {/* Canvas 1:1 */}
+          <div style={{ flex: 1, overflow: 'auto', display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: device === 'desktop' ? 0 : 24 }}>
+            <div style={{ width: DEVICES[device].w, minHeight: '100%', background: '#fff', boxShadow: device === 'desktop' ? 'none' : '0 30px 60px rgba(0,0,0,.4)', borderRadius: device === 'desktop' ? 0 : 14, overflow: 'hidden' }}>
+              {renderSections()}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Bottom nav */}
-      <div className="bg-white border-t border-gray-200 px-6 py-3 flex justify-between flex-shrink-0">
-        <button
-          onClick={() => navigate(`/lab/${projectId}/step/4`)}
-          className="text-xs text-gray-500 hover:text-gray-700"
-        >
+      {/* ── AI FAB ──────────────────────────────────────────────────────────── */}
+      {!aiChatOpen && (
+        <button onClick={() => setAiChatOpen(true)}
+          style={{ position: 'fixed', right: 24, bottom: 80, zIndex: 60, padding: '12px 18px', background: 'linear-gradient(135deg, #6366F1, #EC4899)', color: '#fff', border: 'none', borderRadius: 999, fontSize: 13, fontWeight: 600, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8, boxShadow: '0 12px 30px rgba(99,102,241,.35)', fontFamily: 'Inter, sans-serif' }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg>
+          AI asystent
+        </button>
+      )}
+
+      {/* ── AI Chat ─────────────────────────────────────────────────────────── */}
+      {aiChatOpen && projectId && (
+        <AiChatPanel projectId={projectId} onClose={() => setAiChatOpen(false)} />
+      )}
+
+      {/* ── ElementToolbar ──────────────────────────────────────────────────── */}
+      <ElementToolbar />
+
+      {/* ── Toast ───────────────────────────────────────────────────────────── */}
+      {toast && (
+        <div style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', padding: '10px 18px', background: '#0F172A', color: '#fff', borderRadius: 10, fontSize: 13, fontWeight: 500, zIndex: 100, boxShadow: '0 8px 24px rgba(15,23,42,.3)', fontFamily: 'Inter, sans-serif', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+          {toast}
+        </div>
+      )}
+
+      {/* ── Bottom nav ──────────────────────────────────────────────────────── */}
+      <div style={{ background: '#fff', borderTop: '1px solid #F1F5F9', padding: '12px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, zIndex: 30 }}>
+        <button onClick={() => navigate(`/lab/${projectId}/step/4`)}
+          style={{ padding: '8px 16px', background: 'transparent', border: '1px solid #E2E8F0', borderRadius: 10, fontSize: 13, color: '#64748B', cursor: 'pointer', fontFamily: 'inherit' }}>
           ← Wstecz
         </button>
-        <div className="text-xs text-gray-400 flex items-center gap-2">
-          <span className="w-2 h-2 bg-emerald-400 rounded-full" />
-          Gotowe — pobierz HTML lub otwórz podgląd
-        </div>
+        <button onClick={() => { saveBrief(); navigate(`/lab/${projectId}/step/6`); }}
+          style={{ padding: '9px 22px', background: '#6366F1', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+          Dalej → Eksport
+        </button>
       </div>
     </div>
   );
