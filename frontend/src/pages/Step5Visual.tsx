@@ -211,27 +211,41 @@ function Btn5({ children, onClick, title, disabled, danger }: {
 
 interface SAProps {
   label: string; bgColor: string; brandColor: string;
-  canUp: boolean; canDown: boolean;
+  canUp: boolean; canDown: boolean; isHidden: boolean;
   onUp: () => void; onDown: () => void; onDel: () => void; onRegen: () => void;
-  onBgChange: (c: string) => void;
+  onBgChange: (c: string) => void; onDuplicate: () => void;
+  onInsertBelow: () => void; onToggleHide: () => void;
 }
 
-function SectionActions({ label, bgColor, brandColor, canUp, canDown, onUp, onDown, onDel, onRegen, onBgChange }: SAProps) {
+function SectionActions({ label, bgColor, brandColor, canUp, canDown, isHidden, onUp, onDown, onDel, onRegen, onBgChange, onDuplicate, onInsertBelow, onToggleHide }: SAProps) {
   const [bgOpen, setBgOpen] = useState(false);
   return (
-    <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 20 }}>
-      <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6 }}>
-        <div style={{ padding: '3px 9px', background: '#0F172A', color: '#fff', borderRadius: 6, fontSize: 10.5, fontWeight: 600, fontFamily: 'Inter, sans-serif', letterSpacing: 0.2 }}>
+    <div style={{ position: 'absolute', top: '50%', right: 8, transform: 'translateY(-50%)', zIndex: 20 }}>
+      <div style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+        {/* Label */}
+        <div style={{ padding: '3px 9px', background: '#0F172A', color: '#fff', borderRadius: 6, fontSize: 10.5, fontWeight: 600, fontFamily: 'Inter, sans-serif', letterSpacing: 0.2, whiteSpace: 'nowrap' }}>
           {label}
         </div>
-        <div style={{ display: 'inline-flex', gap: 1, padding: 3, background: '#fff', border: '1px solid rgba(15,23,42,.1)', borderRadius: 8, boxShadow: '0 4px 14px rgba(15,23,42,.12)', position: 'relative' }}>
+        {/* Toolbar pionowy */}
+        <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 1, padding: 3, background: '#fff', border: '1px solid rgba(15,23,42,.1)', borderRadius: 8, boxShadow: '0 4px 14px rgba(15,23,42,.12)', position: 'relative' }}>
           <Btn5 title="Przesuń w górę" disabled={!canUp} onClick={onUp}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M18 15l-6-6-6 6"/></svg>
           </Btn5>
           <Btn5 title="Przesuń w dół" disabled={!canDown} onClick={onDown}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M6 9l6 6 6-6"/></svg>
           </Btn5>
-          <div style={{ width: 1, background: '#E2E8F0', margin: '2px 2px' }} />
+
+          <div style={{ height: 1, background: '#E2E8F0', margin: '2px 2px' }} />
+
+          <Btn5 title="Wstaw sekcję poniżej" onClick={onInsertBelow}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          </Btn5>
+          <Btn5 title="Duplikuj sekcję" onClick={onDuplicate}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+          </Btn5>
+
+          <div style={{ height: 1, background: '#E2E8F0', margin: '2px 2px' }} />
+
           {/* Tło sekcji */}
           <div style={{ position: 'relative' }}>
             <Btn5 title="Kolor tła sekcji" onClick={() => setBgOpen(v => !v)}>
@@ -244,7 +258,17 @@ function SectionActions({ label, bgColor, brandColor, canUp, canDown, onUp, onDo
               />
             )}
           </div>
-          <div style={{ width: 1, background: '#E2E8F0', margin: '2px 2px' }} />
+
+          <Btn5 title={isHidden ? 'Pokaż sekcję' : 'Ukryj sekcję'} onClick={onToggleHide}>
+            {isHidden ? (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+            ) : (
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+            )}
+          </Btn5>
+
+          <div style={{ height: 1, background: '#E2E8F0', margin: '2px 2px' }} />
+
           <Btn5 title="Regeneruj AI" onClick={onRegen}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#6366F1" strokeWidth="2" strokeLinecap="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg>
           </Btn5>
@@ -366,6 +390,7 @@ export default function Step5Visual() {
     setBrand, saveBrief,
     updateSection, updateSectionMeta,
     regenerateSection, removeSection, reorderSections,
+    addSection, duplicateSection, toggleHideSection,
     isGenerating,
   } = useLabStore();
 
@@ -427,6 +452,18 @@ export default function Step5Visual() {
     showToast('Sekcja zregenerowana');
   }, [regenerateSection, showToast]);
 
+  const handleDuplicate = useCallback(async (sectionId: string) => {
+    await duplicateSection(sectionId);
+    showToast('Sekcja zduplikowana');
+  }, [duplicateSection, showToast]);
+
+  const handleInsertBelow = useCallback(async (sectionId: string) => {
+    const sec = sections.find(s => s.id === sectionId);
+    if (!sec) return;
+    await addSection(sec.block_code, (sec.position ?? 0) + 1);
+    showToast('Sekcja dodana');
+  }, [sections, addSection, showToast]);
+
   // ── Debounced brand save ────────────────────────────────────────────────────
   const patchBrand = useCallback((patch: Parameters<typeof setBrand>[0]) => {
     setBrand(patch);
@@ -477,14 +514,16 @@ export default function Step5Visual() {
               <div style={{ fontSize: 13 }}>Wróć do kroku 3 aby wygenerować strukturę strony.</div>
             </div>
           ) : (
-            <div ref={canvasRef} style={{ background: '#fff' }}>
+            <div ref={canvasRef} id="page-preview" style={{ background: '#fff' }}>
               {sorted.map((section, idx) => {
                 const effectiveBg = resolveBg(section, idx, vcSections);
                 const augmented: Section = { ...section, bgColor: effectiveBg };
                 const Renderer = section.slots_json ? getRenderer(section.block_code) : null;
                 const vcSection = vcSections?.[idx];
+                const isHidden = section.is_visible === false;
                 return (
-                  <div key={section.id} style={{ position: 'relative' }}
+                  <div key={section.id}
+                    style={{ position: 'relative', opacity: isHidden ? 0.45 : 1, transition: 'opacity .2s' }}
                     onMouseEnter={() => setHoveredSection(section.id)}
                     onMouseLeave={() => setHoveredSection(p => p === section.id ? null : p)}>
                     {Renderer ? (
@@ -497,6 +536,11 @@ export default function Step5Visual() {
                     ) : (
                       <PlaceholderSection section={augmented} />
                     )}
+                    {isHidden && (
+                      <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none', zIndex: 5 }}>
+                        <span style={{ background: '#0F172A', color: '#fff', padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, fontFamily: 'Inter, sans-serif' }}>UKRYTA</span>
+                      </div>
+                    )}
                     {hoveredSection === section.id && (
                       <SectionActions
                         label={section.name || section.block_code}
@@ -504,11 +548,15 @@ export default function Step5Visual() {
                         brandColor={brand.ctaColor as string}
                         canUp={idx > 0}
                         canDown={idx < sorted.length - 1}
+                        isHidden={isHidden}
                         onUp={() => handleMove(section.id, 'up')}
                         onDown={() => handleMove(section.id, 'down')}
                         onDel={() => handleDelete(section.id)}
                         onRegen={() => setRegenPanel(section.id)}
                         onBgChange={c => handleBgChange(section.id, c)}
+                        onDuplicate={() => handleDuplicate(section.id)}
+                        onInsertBelow={() => handleInsertBelow(section.id)}
+                        onToggleHide={() => toggleHideSection(section.id)}
                       />
                     )}
                   </div>

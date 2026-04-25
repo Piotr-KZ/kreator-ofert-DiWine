@@ -99,6 +99,8 @@ interface LabState {
   setError: (e: string | null) => void;
   setBrand: (patch: Partial<Brand>) => void;
   updateSectionMeta: (sectionId: string, meta: Partial<Pick<Section, 'name' | 'bgColor' | 'ctaColor' | 'padding' | 'brandWarning'>>) => Promise<void>;
+  duplicateSection: (sectionId: string) => Promise<void>;
+  toggleHideSection: (sectionId: string) => void;
 }
 
 export const useLabStore = create<LabState>((set, get) => ({
@@ -345,5 +347,30 @@ export const useLabStore = create<LabState>((set, get) => ({
         s.id === sectionId ? { ...s, ...meta, variant_config: newVc } : s,
       ),
     });
+  },
+
+  duplicateSection: async (sectionId) => {
+    const { projectId, sections } = get();
+    if (!projectId) return;
+    const orig = sections.find(s => s.id === sectionId);
+    if (!orig) return;
+    const pos = (orig.position ?? 0) + 1;
+    const { data: resp } = await api.addSection(projectId, orig.block_code, pos);
+    const newId: string | undefined = resp?.id ?? resp?.data?.id;
+    if (orig.slots_json && newId) {
+      await api.updateSection(projectId, newId, { slots_json: orig.slots_json });
+    }
+    await get().loadProject(projectId);
+  },
+
+  toggleHideSection: (sectionId) => {
+    const orig = get().sections.find(s => s.id === sectionId);
+    if (!orig) return;
+    const newVisible = orig.is_visible !== false ? false : true;
+    set({ sections: get().sections.map(s => s.id === sectionId ? { ...s, is_visible: newVisible } : s) });
+    const { projectId } = get();
+    if (projectId) {
+      api.updateSection(projectId, sectionId, { is_visible: newVisible }).catch(() => {});
+    }
   },
 }));
