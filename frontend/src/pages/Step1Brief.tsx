@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useLabStore } from "@/store/labStore";
 
@@ -15,6 +15,15 @@ export default function Step1Brief() {
   const navigate = useNavigate();
   const { brief, style, siteType, setBrief, setStyle, setSiteType, saveBrief, isGenerating } = useLabStore();
   const [saved, setSaved] = useState<"idle" | "saving" | "ok" | "error">("idle");
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-save po każdej zmianie (debounce 1s)
+  const autosave = useCallback(() => {
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      saveBrief().catch(() => {});
+    }, 1000);
+  }, [saveBrief]);
 
   const handleSave = async () => {
     setSaved("saving");
@@ -45,7 +54,7 @@ export default function Step1Brief() {
         <input
           type="url"
           value={brief.website || ""}
-          onChange={(e) => setBrief("website", e.target.value)}
+          onChange={(e) => { setBrief("website", e.target.value); autosave(); }}
           placeholder="https://www.example.pl"
           className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-emerald-400"
         />
@@ -60,7 +69,7 @@ export default function Step1Brief() {
         <textarea
           rows={4}
           value={brief.description}
-          onChange={(e) => setBrief("description", e.target.value)}
+          onChange={(e) => { setBrief("description", e.target.value); autosave(); }}
           placeholder="Czym sie zajmuje firma? Jakie produkty/uslugi oferuje?"
           className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-emerald-400 resize-none"
         />
@@ -74,7 +83,7 @@ export default function Step1Brief() {
         <textarea
           rows={2}
           value={brief.target_audience}
-          onChange={(e) => setBrief("target_audience", e.target.value)}
+          onChange={(e) => { setBrief("target_audience", e.target.value); autosave(); }}
           placeholder="Kim sa klienci? Jakie maja potrzeby?"
           className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-emerald-400 resize-none"
         />
@@ -88,7 +97,7 @@ export default function Step1Brief() {
         <textarea
           rows={2}
           value={brief.usp}
-          onChange={(e) => setBrief("usp", e.target.value)}
+          onChange={(e) => { setBrief("usp", e.target.value); autosave(); }}
           placeholder="Czym rozni sie od konkurencji?"
           className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-emerald-400 resize-none"
         />
@@ -100,7 +109,7 @@ export default function Step1Brief() {
           <label className="block text-sm font-medium text-gray-700 mb-1">Ton komunikacji</label>
           <select
             value={brief.tone}
-            onChange={(e) => setBrief("tone", e.target.value)}
+            onChange={(e) => { setBrief("tone", e.target.value); autosave(); }}
             className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-emerald-400 bg-white"
           >
             {TONES.map((t) => (
@@ -112,7 +121,7 @@ export default function Step1Brief() {
           <label className="block text-sm font-medium text-gray-700 mb-1">Typ strony</label>
           <select
             value={siteType}
-            onChange={(e) => setSiteType(e.target.value)}
+            onChange={(e) => { setSiteType(e.target.value); autosave(); }}
             className="w-full px-4 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:border-emerald-400 bg-white"
           >
             <option value="company_card">Wizytowka firmowa</option>
@@ -132,13 +141,13 @@ export default function Step1Brief() {
             <input
               type="color"
               value={style.primary_color}
-              onChange={(e) => setStyle("primary_color", e.target.value)}
+              onChange={(e) => { setStyle("primary_color", e.target.value); autosave(); }}
               className="w-10 h-10 rounded-lg border border-gray-200 cursor-pointer"
             />
             <input
               type="text"
               value={style.primary_color}
-              onChange={(e) => setStyle("primary_color", e.target.value)}
+              onChange={(e) => { setStyle("primary_color", e.target.value); autosave(); }}
               className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm font-mono"
             />
           </div>
@@ -149,13 +158,13 @@ export default function Step1Brief() {
             <input
               type="color"
               value={style.secondary_color}
-              onChange={(e) => setStyle("secondary_color", e.target.value)}
+              onChange={(e) => { setStyle("secondary_color", e.target.value); autosave(); }}
               className="w-10 h-10 rounded-lg border border-gray-200 cursor-pointer"
             />
             <input
               type="text"
               value={style.secondary_color}
-              onChange={(e) => setStyle("secondary_color", e.target.value)}
+              onChange={(e) => { setStyle("secondary_color", e.target.value); autosave(); }}
               className="flex-1 px-3 py-2 border border-gray-200 rounded-xl text-sm font-mono"
             />
           </div>

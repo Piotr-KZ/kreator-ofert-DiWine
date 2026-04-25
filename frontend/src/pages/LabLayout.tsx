@@ -15,7 +15,7 @@ export default function LabLayout() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { loadProject, isLoading, projectName } = useLabStore();
+  const { loadProject, isLoading, projectName, saveBrief } = useLabStore();
 
   useEffect(() => {
     if (projectId) loadProject(projectId);
@@ -55,7 +55,7 @@ export default function LabLayout() {
           {STEPS.map((step) => (
             <button
               key={step.num}
-              onClick={() => navigate(`/lab/${projectId}/step/${step.num}`)}
+              onClick={() => { saveBrief().catch(() => {}); navigate(`/lab/${projectId}/step/${step.num}`); }}
               className={`flex-1 py-3 text-xs font-medium border-b-2 transition-colors ${
                 currentStep === step.num
                   ? "border-emerald-500 text-emerald-700"
