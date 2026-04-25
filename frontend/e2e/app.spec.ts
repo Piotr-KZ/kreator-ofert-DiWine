@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 // Mock API before each test
 test.beforeEach(async ({ page }) => {
   // Mock listSiteTypes (Vite proxies /api/* to backend)
-  await page.route('http://localhost:8003/api/site-types', route =>
+  await page.route('http://localhost:8002/api/v1/site-types', route =>
     route.fulfill({
       status: 200,
       contentType: 'application/json',

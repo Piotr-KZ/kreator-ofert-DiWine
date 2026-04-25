@@ -4,7 +4,7 @@
 
 import { create } from "zustand";
 import * as api from "@/api/client";
-import { DEFAULT_BRAND } from "@/types/lab";
+import { DEFAULT_BRAND, BLOCK_LIBRARY } from "@/types/lab";
 import type { Brand, Gradient } from "@/types/lab";
 
 export type { Brand, Gradient };
@@ -137,7 +137,7 @@ export const useLabStore = create<LabState>((set, get) => ({
         const vc = (s.variant_config || {}) as Record<string, unknown>;
         return {
           ...s,
-          name: (vc.name as string) || s.block_code,
+          name: (vc.name as string) || BLOCK_LIBRARY.find(b => b.code === s.block_code)?.name || s.block_code,
           bgColor: (vc.bgColor as string | Gradient | null) ?? null,
           ctaColor: (vc.ctaColor as string | Gradient | null) ?? null,
           padding: (vc.padding as Section['padding']) ?? undefined,

@@ -8,24 +8,36 @@ interface SiteType {
   label: string;
 }
 
+const FALLBACK_SITE_TYPES: SiteType[] = [
+  { value: 'company_card', label: 'Strona firmowa' },
+  { value: 'portfolio', label: 'Portfolio' },
+  { value: 'landing', label: 'Landing page' },
+];
+
 export default function CreateProject() {
   const navigate = useNavigate();
   const createProject = useLabStore((s) => s.createProject);
   const [name, setName] = useState("");
   const [siteType, setSiteType] = useState("company_card");
-  const [siteTypes, setSiteTypes] = useState<SiteType[]>([]);
+  const [siteTypes, setSiteTypes] = useState<SiteType[]>(FALLBACK_SITE_TYPES);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.listSiteTypes().then(({ data }) => setSiteTypes(data));
+    api.listSiteTypes().then(({ data }) => {
+      if (data?.length) setSiteTypes(data);
+    }).catch(() => {/* zostają fallbacki */});
   }, []);
 
   const handleCreate = async () => {
     if (!name.trim()) return;
     setLoading(true);
+    setError(null);
     try {
       const id = await createProject(name.trim(), siteType);
       navigate(`/lab/${id}/step/1`);
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : "Błąd połączenia z backendem — sprawdź czy serwer działa");
     } finally {
       setLoading(false);
     }
@@ -71,6 +83,10 @@ export default function CreateProject() {
             </select>
           </div>
         </div>
+
+        {error && (
+          <p className="text-sm text-red-600 bg-red-50 rounded-xl px-4 py-2">{error}</p>
+        )}
 
         <button
           onClick={handleCreate}

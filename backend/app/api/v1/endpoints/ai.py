@@ -83,11 +83,14 @@ async def generate_structure(
     # Create new sections
     created = []
     for i, s_data in enumerate(sections_data):
+        bg_color = s_data.get("bg_color")
+        variant_config = {"name": s_data.get("title", ""), "bgColor": bg_color} if (s_data.get("title") or bg_color) else None
         section = ProjectSection(
             id=str(uuid4()),
             project_id=project_id,
             block_code=s_data.get("block_code", s_data.get("block_id", "")),
             position=i,
+            variant_config=variant_config,
         )
         db.add(section)
         created.append({

@@ -76,6 +76,7 @@ async def get_project(project_id: str, db: AsyncSession = Depends(get_db)):
                 "variant": s.variant,
                 "slots_json": s.slots_json,
                 "is_visible": s.is_visible,
+                "variant_config": s.variant_config,
             }
             for s in sorted(project.sections, key=lambda x: x.position)
         ],

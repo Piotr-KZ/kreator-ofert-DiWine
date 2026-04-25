@@ -23,10 +23,20 @@ Nawigacja → Hero → sekcje tresciowe → CTA/Kontakt → Stopka
 DOSTEPNE KLOCKI:
 {available_blocks_list}
 
+KOLORY TLA do wyboru (hex):
+- "#FFFFFF" — bialy (neutralny, domyslny)
+- "#F8FAFC" — jasny szary (spokojny, odstep)
+- "#FEF7ED" — kremowy (cieplo, lifestyle)
+- "#FEF3C7" — piaskowy (cieplo, energie)
+- "#EEF2FF" — blekitny (zaufanie, tech)
+- "#ECFDF5" — mieta (zdrowie, natura)
+- "#FCE7F3" — roz (kreatywnosc, beauty)
+- "#0F172A" — ciemny (premium, kontrast)
+
 Zwroc liste sekcji jako JSON:
 [
-  {{"block_code": "NA2", "title": "Nawigacja"}},
-  {{"block_code": "HE1", "title": "Poligony Szkoleniowe — szkolenia ktore dzialaja"}},
+  {{"block_code": "NA2", "title": "Nawigacja", "bg_color": "#FFFFFF"}},
+  {{"block_code": "HE1", "title": "Poligony Szkoleniowe — szkolenia ktore dzialaja", "bg_color": "#0F172A"}},
   ...
 ]
 
@@ -36,6 +46,7 @@ WAZNE:
 - Strona firmowa = 8-12 sekcji, pelna prezentacja
 - ZERO DUPLIKATOW — kazdy block_code pojawia sie RAZ
 - Tytuly sekcji powinny byc KONKRETNE dla firmy z briefu, nie generyczne
+- Kolory tla: naprzemienny wzorzec jasny/ciemny/jasny lub monochromatyczny, HE i CT czesto ciemne
 """
 
 
