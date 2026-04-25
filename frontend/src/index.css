@@ -1,5 +1,28 @@
 @import "tailwindcss";
 
+/* CSS variables — defaults dla rendererów (Step4/Step5) */
+:root {
+  --font-heading: 'Instrument Serif', serif;
+  --font-body: 'Inter', sans-serif;
+  --brand-color: #6366F1;
+  --brand-color2: #EC4899;
+  --cta-bg: linear-gradient(135deg, #6366F1, #EC4899);
+  --cta-text: #FFFFFF;
+  --brand-text: #0F172A;
+  --radius: 8px;
+  --density-py: 5rem;
+  --fh1: 57px;
+  --fh2: 41px;
+  --fh3: 30px;
+  --fbody: 16px;
+  --fey: 12px;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: .5; }
+}
+
 body {
   margin: 0;
   font-family: 'Inter', system-ui, sans-serif;

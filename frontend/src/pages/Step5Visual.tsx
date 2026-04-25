@@ -9,10 +9,11 @@ import { useNavigate, useParams } from "react-router-dom";
 import { useLabStore, type Section } from "@/store/labStore";
 import * as api from "@/api/client";
 import {
-  makeTypo, isDark,
+  isDark,
   getRenderer, PlaceholderSection,
 } from "@/components/SectionRenderers";
 import ElementToolbar from "@/components/ElementToolbar";
+import { applyTweaks, loadGoogleFont } from "@/utils/tweaks";
 
 // ─── Stałe ─────────────────────────────────────────────────────────────────────
 
@@ -373,12 +374,22 @@ export default function Step5Visual() {
   const [aiChatOpen, setAiChatOpen] = useState(false);
   const { toast, show: showToast } = useToast();
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
 
   // ── Derived values ──────────────────────────────────────────────────────────
   const fontPairKey = getFontPairKey(brand.fontHeading || 'Instrument Serif', brand.fontBody || 'Inter');
-  const densityLevel = DENSITY_LEVELS[brand.density || 'normal'] ?? 3;
-  const typo = makeTypo(densityLevel, brand.fontHeading || 'Instrument Serif', brand.fontBody || 'Inter');
   const vcSections = visualConcept?.sections;
+
+  // ── CSS variables — applyTweaks na canvasie ─────────────────────────────────
+  useEffect(() => {
+    if (canvasRef.current) applyTweaks(canvasRef.current, brand);
+  }, [brand]);
+
+  // ── Google Fonts ────────────────────────────────────────────────────────────
+  useEffect(() => {
+    loadGoogleFont(brand.fontHeading || 'Instrument Serif');
+    loadGoogleFont(brand.fontBody || 'Inter');
+  }, [brand.fontHeading, brand.fontBody]);
 
   // ── Section slot update (saves to backend) ──────────────────────────────────
   const handleSlotUpdate = useCallback((sectionId: string, key: string, val: unknown) => {
@@ -458,7 +469,7 @@ export default function Step5Visual() {
       {/* ── Main area ──────────────────────────────────────────────────────── */}
       <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '1fr 300px', overflow: 'hidden' }}>
 
-        {/* ── Canvas (1:1) ── */}
+        {/* ── Canvas (1:1) — canvasRef dla CSS variables ── */}
         <div style={{ overflow: 'auto', background: '#F5F6FA' }}>
           {sorted.length === 0 ? (
             <div style={{ padding: '80px 40px', textAlign: 'center', color: '#94A3B8', fontFamily: 'Inter, sans-serif' }}>
@@ -466,11 +477,12 @@ export default function Step5Visual() {
               <div style={{ fontSize: 13 }}>Wróć do kroku 3 aby wygenerować strukturę strony.</div>
             </div>
           ) : (
-            <div style={{ background: '#fff' }}>
+            <div ref={canvasRef} style={{ background: '#fff' }}>
               {sorted.map((section, idx) => {
                 const effectiveBg = resolveBg(section, idx, vcSections);
                 const augmented: Section = { ...section, bgColor: effectiveBg };
                 const Renderer = section.slots_json ? getRenderer(section.block_code) : null;
+                const vcSection = vcSections?.[idx];
                 return (
                   <div key={section.id} style={{ position: 'relative' }}
                     onMouseEnter={() => setHoveredSection(section.id)}
@@ -479,8 +491,8 @@ export default function Step5Visual() {
                       <Renderer
                         section={augmented}
                         brand={brand}
-                        typo={typo}
                         onSlotUpdate={(key, val) => handleSlotUpdate(section.id, key, val)}
+                        vcSection={vcSection}
                       />
                     ) : (
                       <PlaceholderSection section={augmented} />
