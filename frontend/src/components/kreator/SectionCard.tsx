@@ -5,6 +5,7 @@
 import React from 'react';
 import { BLOCK_LIBRARY, CATEGORIES } from '@/config/blocks';
 import { ColorPicker, CtaPicker } from './ColorPicker';
+import BlockPreview from './BlockPreviews';
 import type { Section } from '@/store/labStore';
 import type { Brand } from '@/config/blocks';
 
@@ -80,18 +81,14 @@ export default function SectionCard({ section, index, total, brand, onUpdate, on
 
       {/* Body: preview + config */}
       <div style={{ display: 'grid', gridTemplateColumns: '2.2fr 1fr', gap: 0, minHeight: 300 }}>
-        {/* PREVIEW (left) — placeholder, BlockPreview w KROK 7 */}
+        {/* PREVIEW (left) — graficzny podgląd klocka z BlockPreviews */}
         <div style={{ padding: 14, borderRight: '1px solid #E2E8F0', background: '#F8FAFC', position: 'relative', display: 'flex' }}>
-          <div style={{
-            flex: 1, minHeight: 280, boxShadow: '0 2px 8px rgba(15,23,42,.06)', borderRadius: 12, overflow: 'hidden',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            background: sectionBg || (brand.bgGradient ? `linear-gradient(135deg, ${brand.bg}, ${brand.bg2})` : brand.bg),
-          }}>
-            <div style={{ textAlign: 'center', color: '#94A3B8' }}>
-              <div style={{ fontFamily: 'ui-monospace, monospace', fontSize: 24, fontWeight: 700, color: cat?.color || '#6366F1', marginBottom: 6 }}>{section.block_code}</div>
-              <div style={{ fontSize: 13, fontWeight: 500 }}>{block?.name || ''}</div>
-              <div style={{ fontSize: 11, marginTop: 4, color: '#CBD5E1' }}>{block?.desc || ''}</div>
-            </div>
+          <div style={{ flex: 1, boxShadow: '0 2px 8px rgba(15,23,42,.06)', borderRadius: 12, overflow: 'hidden' }}>
+            <BlockPreview
+              code={section.block_code}
+              bg={sectionBg || (brand.bgGradient ? `linear-gradient(135deg, ${brand.bg}, ${brand.bg2})` : brand.bg)}
+              brand={{ cta: brand.cta, ctaSecondary: brand.cta2 || '#EC4899' }}
+            />
           </div>
           <div style={{ position: 'absolute', bottom: 24, left: 28, display: 'flex', gap: 5, fontSize: 10, color: '#64748B', fontFamily: 'ui-monospace, monospace', background: 'rgba(255,255,255,.9)', padding: '3px 7px', borderRadius: 5, border: '1px solid #E2E8F0' }}>
             rozmiar: {block?.size || '?'}
