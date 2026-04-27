@@ -39,6 +39,9 @@ export const deleteSection = (projectId: string, sectionId: string) =>
 export const reorderSections = (projectId: string, section_ids: string[]) =>
   api.post(`/projects/${projectId}/sections/reorder`, { section_ids });
 
+export const duplicateSection = (projectId: string, sectionId: string) =>
+  api.post(`/projects/${projectId}/sections/${sectionId}/duplicate`);
+
 // ─── AI ───
 
 export const validateBrief = (projectId: string) =>
@@ -112,6 +115,35 @@ export const chatStream = async (
     }
   }
 };
+
+// ─── Media / Unsplash ───
+
+export const searchUnsplash = (query: string, orientation = 'landscape', width = 1200) =>
+  api.get<{
+    url: string | null;
+    photo_id?: string;
+    photographer_name?: string;
+    photographer_url?: string;
+    photo_page_url?: string;
+  }>('/media/unsplash/search', { params: { query, orientation, width } });
+
+export interface UnsplashPhotoMeta {
+  url: string;
+  photo_id: string;
+  photographer_name: string;
+  photographer_url: string;
+  photo_page_url: string;
+}
+
+export const searchUnsplashGallery = (query: string, orientation = 'landscape', width = 800, count = 8) =>
+  api.get<{ photos: UnsplashPhotoMeta[] }>('/media/unsplash/gallery', { params: { query, orientation, width, count } });
+
+export const triggerUnsplashDownload = (photoId: string) =>
+  api.get<{
+    photographer_name: string | null;
+    photographer_url: string | null;
+    photo_page_url: string | null;
+  }>(`/media/unsplash/trigger-download/${encodeURIComponent(photoId)}`);
 
 // ─── Export ───
 

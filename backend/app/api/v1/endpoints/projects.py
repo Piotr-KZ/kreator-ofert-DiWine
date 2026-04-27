@@ -154,6 +154,40 @@ async def delete_section(project_id: str, section_id: str, db: AsyncSession = De
     return {"ok": True}
 
 
+@router.post("/projects/{project_id}/sections/{section_id}/duplicate")
+async def duplicate_section(project_id: str, section_id: str, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(ProjectSection).where(
+            ProjectSection.id == section_id,
+            ProjectSection.project_id == project_id,
+        )
+    )
+    section = result.scalar_one_or_none()
+    if not section:
+        raise HTTPException(status_code=404, detail="Sekcja nie znaleziona")
+    # Przesuń sekcje poniżej o +1
+    all_result = await db.execute(
+        select(ProjectSection).where(
+            ProjectSection.project_id == project_id,
+            ProjectSection.position > section.position,
+        )
+    )
+    for s in all_result.scalars().all():
+        s.position += 1
+    new_section = ProjectSection(
+        id=str(uuid4()),
+        project_id=project_id,
+        block_code=section.block_code,
+        position=section.position + 1,
+        variant=section.variant,
+        slots_json=section.slots_json,
+        is_visible=section.is_visible,
+    )
+    db.add(new_section)
+    await db.flush()
+    return {"id": new_section.id, "position": new_section.position}
+
+
 @router.post("/projects/{project_id}/sections/reorder")
 async def reorder_sections(project_id: str, data: ReorderSections, db: AsyncSession = Depends(get_db)):
     project = await _get_project(project_id, db)

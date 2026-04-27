@@ -1,21 +1,20 @@
 import { useEffect } from "react";
 import { Outlet, useParams, useNavigate, useLocation } from "react-router-dom";
 import { useLabStore } from "@/store/labStore";
-import AIChatModal from "@/components/AIChatModal";
 
 const STEPS = [
   { num: 1, label: "Brief + Styl" },
   { num: 2, label: "Walidacja AI" },
-  { num: 3, label: "Struktura" },
+  { num: 3, label: "Kreator" },
   { num: 4, label: "Treści" },
-  { num: 5, label: "Kreacja wizualna" },
+  { num: 5, label: "Wizualizacja" },
 ];
 
 export default function LabLayout() {
   const { projectId } = useParams<{ projectId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const { loadProject, isLoading, projectName, saveBrief } = useLabStore();
+  const { loadProject, isLoading, projectName } = useLabStore();
 
   useEffect(() => {
     if (projectId) loadProject(projectId);
@@ -55,7 +54,7 @@ export default function LabLayout() {
           {STEPS.map((step) => (
             <button
               key={step.num}
-              onClick={() => { saveBrief().catch(() => {}); navigate(`/lab/${projectId}/step/${step.num}`); }}
+              onClick={() => navigate(`/lab/${projectId}/step/${step.num}`)}
               className={`flex-1 py-3 text-xs font-medium border-b-2 transition-colors ${
                 currentStep === step.num
                   ? "border-emerald-500 text-emerald-700"
@@ -74,8 +73,6 @@ export default function LabLayout() {
         <Outlet />
       </main>
 
-      {/* AI Chat */}
-      <AIChatModal projectId={projectId} currentStep={currentStep} />
     </div>
   );
 }

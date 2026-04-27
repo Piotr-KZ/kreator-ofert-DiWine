@@ -32,6 +32,11 @@ async def _get_project_full(project_id: str, db: AsyncSession) -> Project:
     return project
 
 
+def _ai_error(e: Exception) -> HTTPException:
+    """Convert RuntimeError from ClaudeClient into a proper HTTP 502 response."""
+    return HTTPException(status_code=502, detail=str(e))
+
+
 @router.post("/projects/{project_id}/analyze-website")
 async def analyze_website(
     project_id: str,
@@ -44,8 +49,11 @@ async def analyze_website(
     if not url:
         raise HTTPException(status_code=400, detail="Brak URL")
 
-    engine = AIEngine(db)
-    result = await engine.analyze_website(url)
+    try:
+        engine = AIEngine(db)
+        result = await engine.analyze_website(url)
+    except RuntimeError as e:
+        raise _ai_error(e)
     return result
 
 
@@ -56,8 +64,11 @@ async def validate_brief(
 ):
     """AI validates brief and returns feedback."""
     project = await _get_project_full(project_id, db)
-    engine = AIEngine(db)
-    items = await engine.validate_brief(project)
+    try:
+        engine = AIEngine(db)
+        items = await engine.validate_brief(project)
+    except RuntimeError as e:
+        raise _ai_error(e)
     return {"items": items}
 
 
@@ -68,9 +79,11 @@ async def generate_structure(
 ):
     """AI generates page structure based on brief."""
     project = await _get_project_full(project_id, db)
-    engine = AIEngine(db)
-
-    sections_data = await engine.generate_structure(project)
+    try:
+        engine = AIEngine(db)
+        sections_data = await engine.generate_structure(project)
+    except RuntimeError as e:
+        raise _ai_error(e)
     if not sections_data:
         raise HTTPException(status_code=500, detail="AI nie wygenerowalo struktury")
 
@@ -116,8 +129,11 @@ async def generate_visual_concept(
     if not project.sections:
         raise HTTPException(status_code=400, detail="Brak sekcji — najpierw wygeneruj strukture")
 
-    engine = AIEngine(db)
-    vc = await engine.generate_visual_concept(project)
+    try:
+        engine = AIEngine(db)
+        vc = await engine.generate_visual_concept(project)
+    except RuntimeError as e:
+        raise _ai_error(e)
     if not vc:
         raise HTTPException(status_code=500, detail="AI nie wygenerowalo visual concept")
 
@@ -159,11 +175,17 @@ async def generate_all_content(
     if not project.sections:
         raise HTTPException(status_code=400, detail="Brak sekcji")
 
-    engine = AIEngine(db)
+    try:
+        engine = AIEngine(db)
+    except RuntimeError as e:
+        raise _ai_error(e)
     results = []
 
     for section in sorted(project.sections, key=lambda s: s.position):
-        content = await engine.generate_content(project, section)
+        try:
+            content = await engine.generate_content(project, section)
+        except RuntimeError as e:
+            raise _ai_error(e)
         if content:
             section.slots_json = content
             results.append({
@@ -196,8 +218,11 @@ async def regenerate_section(
     if not section:
         raise HTTPException(status_code=404, detail="Sekcja nie znaleziona")
 
-    engine = AIEngine(db)
-    content = await engine.regenerate_section(project, section, body.instruction or "")
+    try:
+        engine = AIEngine(db)
+        content = await engine.regenerate_section(project, section, body.instruction or "")
+    except RuntimeError as e:
+        raise _ai_error(e)
     if content:
         section.slots_json = content
         await db.flush()

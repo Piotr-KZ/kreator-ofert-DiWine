@@ -95,10 +95,10 @@ ZASADY PROJEKTOWANIA:
    - Tlo gradient: z glownego do drugorzednego
    - Overlay na zdjeciu hero: glowny kolor 70% opacity
 
-4. ZDJECIA STOCKOWE — precyzyjne query:
-   - NIE: "szkolenia" (generyczne)
+4. ZDJECIA STOCKOWE — precyzyjne query (ZAWSZE po angielsku!):
+   - NIE: "szkolenia" (generyczne, po polsku)
    - TAK: "business team workshop whiteboard candid professional"
-   - Dodaj kontekst branzy z briefu
+   - photo_query MUSI byc po angielsku — Unsplash API nie obsluguje polskiego
 
 Zwroc JSON:
 {{

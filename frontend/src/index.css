@@ -1,5 +1,14 @@
 @import "tailwindcss";
 
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes toastIn {
+  from { opacity: 0; transform: translateY(20px) scale(.96); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 /* CSS variables — defaults dla rendererów (Step4/Step5) */
 :root {
   --font-heading: 'Instrument Serif', serif;

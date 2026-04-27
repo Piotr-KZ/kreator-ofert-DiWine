@@ -100,16 +100,27 @@ class TestProjectContext:
 
 class TestUnsplash:
 
+    def _mock_photo_result(self, photo_id: str, raw_url: str) -> dict:
+        return {
+            "id": photo_id,
+            "urls": {"raw": raw_url},
+            "user": {
+                "name": "Test Photographer",
+                "links": {"html": "https://unsplash.com/@test"},
+            },
+            "links": {"html": f"https://unsplash.com/photos/{photo_id}"},
+        }
+
     @pytest.mark.asyncio
     async def test_unsplash_search_returns_url(self):
-        """Search returns a photo URL (mocked API)."""
+        """Search returns full photo dict with url and attribution (mocked API)."""
         service = UnsplashService()
         service.enabled = True
         service.api_key = "test_key"
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "results": [{"urls": {"raw": "https://images.unsplash.com/photo-123"}}]
+            "results": [self._mock_photo_result("photo-123", "https://images.unsplash.com/photo-123")]
         }
         mock_response.raise_for_status = MagicMock()
 
@@ -120,10 +131,13 @@ class TestUnsplash:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             MockClient.return_value = mock_client
 
-            url = await service.search_photo("business team professional")
-            assert url is not None
-            assert "images.unsplash.com" in url
-            assert "w=1200" in url
+            result = await service.search_photo("business team professional")
+            assert result is not None
+            assert "images.unsplash.com" in result["url"]
+            assert "w=1200" in result["url"]
+            assert result["photo_id"] == "photo-123"
+            assert result["photographer_name"] == "Test Photographer"
+            assert "utm_source=lab_creator" in result["photographer_url"]
 
     @pytest.mark.asyncio
     async def test_unsplash_photo_for_section_wide(self):
@@ -134,7 +148,7 @@ class TestUnsplash:
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "results": [{"urls": {"raw": "https://images.unsplash.com/photo-456"}}]
+            "results": [self._mock_photo_result("photo-456", "https://images.unsplash.com/photo-456")]
         }
         mock_response.raise_for_status = MagicMock()
 
@@ -145,9 +159,10 @@ class TestUnsplash:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             MockClient.return_value = mock_client
 
-            url = await service.get_photo_for_section("office", "photo_wide")
-            assert url is not None
-            assert "w=1600" in url
+            result = await service.get_photo_for_section("office", "photo_wide")
+            assert result is not None
+            assert "w=1600" in result["url"]
+            assert result["photo_id"] == "photo-456"
 
             # Verify the API was called with correct orientation
             call_args = mock_client.get.call_args
@@ -162,7 +177,7 @@ class TestUnsplash:
 
         mock_response = MagicMock()
         mock_response.json.return_value = {
-            "results": [{"urls": {"raw": "https://images.unsplash.com/photo-789"}}]
+            "results": [self._mock_photo_result("photo-789", "https://images.unsplash.com/photo-789")]
         }
         mock_response.raise_for_status = MagicMock()
 
@@ -173,9 +188,10 @@ class TestUnsplash:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             MockClient.return_value = mock_client
 
-            url = await service.get_photo_for_section("person portrait", "avatars")
-            assert url is not None
-            assert "w=200" in url
+            result = await service.get_photo_for_section("person portrait", "avatars")
+            assert result is not None
+            assert "w=200" in result["url"]
+            assert result["photo_id"] == "photo-789"
             call_args = mock_client.get.call_args
             assert call_args[1]["params"]["orientation"] == "squarish"
 

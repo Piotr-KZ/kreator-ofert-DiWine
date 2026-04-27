@@ -181,19 +181,29 @@ class PageRenderer:
             bg_type = vc_s.get("bg_type", "white")
 
             if photo_query and media_type in ("photo_wide", "photo_split"):
-                url = await unsplash.get_photo_for_section(photo_query, media_type)
-                if url:
+                photo = await unsplash.get_photo_for_section(photo_query, media_type)
+                if photo:
+                    photo_url = photo["url"]
+                    # Trigger required Unsplash download event (API requirement)
+                    await unsplash.trigger_download(photo["photo_id"])
+
                     slots = dict(section.slots_json or {})
                     # Insert URL into the appropriate slot
                     for slot_key in ("hero_image", "image_url", "image", "photo"):
                         if slot_key in slots:
-                            slots[slot_key] = url
+                            slots[slot_key] = photo_url
+                            # Store attribution alongside the image
+                            slots["image_credit"] = {
+                                "photographer_name": photo["photographer_name"],
+                                "photographer_url": photo["photographer_url"],
+                                "photo_page_url": photo["photo_page_url"],
+                            }
                             section.slots_json = slots
                             break
 
                     # Also store in vc_section for background rendering
                     if bg_type == "dark_photo_overlay":
-                        vc_s["resolved_photo_url"] = url
+                        vc_s["resolved_photo_url"] = photo_url
 
         # Persist vc changes back to project
         if vc_sections_list:

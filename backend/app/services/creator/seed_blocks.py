@@ -24,12 +24,11 @@ _NA1 = {
     "size": "S",
     "slots_definition": [
         {"id": "logo_url", "type": "image", "label": "Logo", "required": False},
-        {"id": "logo_text", "type": "text", "label": "Nazwa firmy", "max_length": 40, "required": True},
-        {"id": "menu_items", "type": "list", "label": "Menu", "item_fields": [
-            {"id": "label", "type": "text", "label": "Tekst"},
-            {"id": "url", "type": "url", "label": "Link"},
+        {"id": "logo", "type": "text", "label": "Nazwa firmy", "max_length": 40, "required": True},
+        {"id": "links", "type": "list", "label": "Menu", "item_fields": [
+            {"id": "text", "type": "text", "label": "Tekst"},
         ]},
-        {"id": "cta_text", "type": "text", "label": "Przycisk CTA", "max_length": 25, "required": False},
+        {"id": "cta", "type": "text", "label": "Przycisk CTA", "max_length": 25, "required": False},
         {"id": "cta_url", "type": "url", "label": "Link CTA", "required": False},
     ],
     "html_template": """<nav class="bg-white border-b border-gray-100 sticky top-0 z-50">
@@ -105,11 +104,11 @@ _HE1 = {
     "layout_type": "text-only",
     "size": "L",
     "slots_definition": [
-        {"id": "pre_title", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
-        {"id": "title", "type": "text", "label": "Tytul glowny", "max_length": 80, "required": True},
-        {"id": "subtitle", "type": "text", "label": "Podtytul", "max_length": 200, "required": True},
-        {"id": "cta_primary", "type": "text", "label": "Przycisk glowny", "max_length": 30, "required": True},
-        {"id": "cta_secondary", "type": "text", "label": "Drugi przycisk", "max_length": 30, "required": False},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul glowny", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": True},
+        {"id": "cta", "type": "text", "label": "Przycisk glowny", "max_length": 30, "required": True},
+        {"id": "cta2", "type": "text", "label": "Drugi przycisk", "max_length": 30, "required": False},
         {"id": "stats", "type": "list", "label": "Statystyki", "item_fields": [
             {"id": "value", "type": "text", "label": "Liczba"},
             {"id": "label", "type": "text", "label": "Opis"},
@@ -140,12 +139,12 @@ _HE2 = {
     "layout_type": "photo-full-2",
     "size": "L",
     "slots_definition": [
-        {"id": "pre_title", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
-        {"id": "title", "type": "text", "label": "Tytul glowny", "max_length": 80, "required": True},
-        {"id": "subtitle", "type": "text", "label": "Podtytul", "max_length": 200, "required": True},
-        {"id": "cta_primary", "type": "text", "label": "Przycisk glowny", "max_length": 30, "required": True},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul glowny", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": True},
+        {"id": "cta", "type": "text", "label": "Przycisk glowny", "max_length": 30, "required": True},
         {"id": "cta_url", "type": "url", "label": "Link przycisku", "required": True},
-        {"id": "cta_secondary_text", "type": "text", "label": "Drugi przycisk (opcj.)", "max_length": 30, "required": False},
+        {"id": "cta2", "type": "text", "label": "Drugi przycisk (opcj.)", "max_length": 30, "required": False},
         {"id": "image", "type": "image", "label": "Zdjecie", "aspect_ratio": "4:3", "required": True},
         {"id": "image_alt", "type": "text", "label": "Opis zdjecia (alt)", "max_length": 100, "required": False},
     ],
@@ -176,8 +175,8 @@ _HE3 = {
     "layout_type": "text-only",
     "size": "L",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul glowny", "max_length": 80, "required": True},
-        {"id": "subtitle", "type": "text", "label": "Podtytul", "max_length": 200, "required": True},
+        {"id": "heading", "type": "text", "label": "Tytul glowny", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": True},
         {"id": "checkmarks", "type": "list", "label": "Punkty", "item_fields": [
             {"id": "text", "type": "text", "label": "Tekst"},
         ]},
@@ -219,9 +218,9 @@ _HE4 = {
     "layout_type": "vid-full",
     "size": "L",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul glowny", "max_length": 80, "required": True},
-        {"id": "subtitle", "type": "text", "label": "Podtytul", "max_length": 200, "required": True},
-        {"id": "cta_text", "type": "text", "label": "Przycisk", "max_length": 30, "required": True},
+        {"id": "heading", "type": "text", "label": "Tytul glowny", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": True},
+        {"id": "cta", "type": "text", "label": "Przycisk", "max_length": 30, "required": True},
         {"id": "cta_url", "type": "url", "label": "Link", "required": True},
         {"id": "video_url", "type": "video", "label": "URL video", "required": True},
     ],
@@ -244,9 +243,9 @@ _HE5 = {
     "layout_type": "text-only",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul glowny", "max_length": 80, "required": True},
-        {"id": "subtitle", "type": "text", "label": "Podtytul", "max_length": 200, "required": True},
-        {"id": "cta_text", "type": "text", "label": "Przycisk", "max_length": 30, "required": True},
+        {"id": "heading", "type": "text", "label": "Tytul glowny", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": True},
+        {"id": "cta", "type": "text", "label": "Przycisk", "max_length": 30, "required": True},
         {"id": "cta_url", "type": "url", "label": "Link", "required": True},
     ],
     "html_template": """<section class="bg-white py-24 px-8">
@@ -271,8 +270,9 @@ _PB1 = {
     "layout_type": "text-only",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "subtitle", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
         {"id": "problems", "type": "list", "label": "Problemy", "item_fields": [
             {"id": "icon", "type": "icon", "label": "Ikona"},
             {"id": "title", "type": "text", "label": "Tytul"},
@@ -305,7 +305,9 @@ _PB2 = {
     "layout_type": "text-only",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
         {"id": "questions", "type": "list", "label": "Pytania", "item_fields": [
             {"id": "text", "type": "text", "label": "Pytanie"},
         ]},
@@ -329,7 +331,9 @@ _PB3 = {
     "layout_type": "text-only",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
         {"id": "stats", "type": "list", "label": "Statystyki", "item_fields": [
             {"id": "value", "type": "text", "label": "Wartosc"},
             {"id": "label", "type": "text", "label": "Etykieta"},
@@ -363,12 +367,13 @@ _RO1 = {
     "layout_type": "info-title-text-3",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "subtitle", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
-        {"id": "solutions", "type": "list", "label": "Rozwiazania", "item_fields": [
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
+        {"id": "features", "type": "list", "label": "Rozwiazania", "item_fields": [
             {"id": "icon", "type": "icon", "label": "Ikona"},
             {"id": "title", "type": "text", "label": "Tytul"},
-            {"id": "description", "type": "text", "label": "Opis"},
+            {"id": "body", "type": "text", "label": "Opis"},
         ]},
     ],
     "html_template": """<section class="bg-white py-20 px-8">
@@ -395,10 +400,12 @@ _RO2 = {
     "layout_type": "photo-full-2",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "description", "type": "text", "label": "Opis", "max_length": 300, "required": True},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Opis", "max_length": 300, "required": True},
         {"id": "features", "type": "list", "label": "Cechy", "item_fields": [
-            {"id": "text", "type": "text", "label": "Cecha"},
+            {"id": "title", "type": "text", "label": "Tytul"},
+            {"id": "body", "type": "text", "label": "Opis"},
         ]},
         {"id": "image", "type": "image", "label": "Zdjecie", "aspect_ratio": "4:3", "required": True},
     ],
@@ -431,11 +438,11 @@ _KR1 = {
     "layout_type": "info-title-text-3",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "benefits", "type": "list", "label": "Korzysci", "item_fields": [
-            {"id": "icon", "type": "icon", "label": "Ikona"},
-            {"id": "title", "type": "text", "label": "Tytul"},
-            {"id": "description", "type": "text", "label": "Opis"},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
+        {"id": "points", "type": "list", "label": "Korzysci", "item_fields": [
+            {"id": "text", "type": "text", "label": "Korzysc"},
         ]},
     ],
     "html_template": """<section class="bg-white py-20 px-8">
@@ -461,11 +468,11 @@ _KR2 = {
     "layout_type": "text-only",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "benefits", "type": "list", "label": "Korzysci", "item_fields": [
-            {"id": "number", "type": "text", "label": "Liczba"},
-            {"id": "label", "type": "text", "label": "Etykieta"},
-            {"id": "description", "type": "text", "label": "Opis"},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
+        {"id": "points", "type": "list", "label": "Korzysci", "item_fields": [
+            {"id": "text", "type": "text", "label": "Korzysc"},
         ]},
     ],
     "html_template": """<section class="bg-indigo-600 text-white py-20 px-8">
@@ -495,11 +502,12 @@ _CF1 = {
     "layout_type": "info-title-text-3",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
         {"id": "features", "type": "list", "label": "Cechy", "item_fields": [
             {"id": "icon", "type": "icon", "label": "Ikona"},
             {"id": "title", "type": "text", "label": "Tytul"},
-            {"id": "description", "type": "text", "label": "Opis"},
+            {"id": "body", "type": "text", "label": "Opis"},
         ]},
     ],
     "html_template": """<section class="bg-gray-50 py-20 px-8">
@@ -525,13 +533,12 @@ _CF2 = {
     "layout_type": "text-only",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "subtitle", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
-        {"id": "features_left", "type": "list", "label": "Cechy lewa kolumna", "item_fields": [
-            {"id": "text", "type": "text", "label": "Cecha"},
-        ]},
-        {"id": "features_right", "type": "list", "label": "Cechy prawa kolumna", "item_fields": [
-            {"id": "text", "type": "text", "label": "Cecha"},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
+        {"id": "features", "type": "list", "label": "Cechy", "item_fields": [
+            {"id": "title", "type": "text", "label": "Tytul"},
+            {"id": "body", "type": "text", "label": "Opis"},
         ]},
     ],
     "html_template": """<section class="bg-white py-20 px-8">
@@ -559,7 +566,9 @@ _OB1 = {
     "layout_type": "text-only",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
         {"id": "objections", "type": "list", "label": "Obiekcje", "item_fields": [
             {"id": "question", "type": "text", "label": "Pytanie/Obiekcja"},
             {"id": "answer", "type": "text", "label": "Odpowiedz"},
@@ -591,9 +600,10 @@ _FI1 = {
     "layout_type": "photo-full-2",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "description", "type": "richtext", "label": "Opis firmy", "required": True},
-        {"id": "highlights", "type": "list", "label": "Wyrozniki", "item_fields": [
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "richtext", "label": "Opis firmy", "required": True},
+        {"id": "points", "type": "list", "label": "Wyrozniki", "item_fields": [
             {"id": "text", "type": "text", "label": "Punkt"},
         ]},
         {"id": "image", "type": "image", "label": "Zdjecie", "aspect_ratio": "4:3", "required": True},
@@ -648,8 +658,9 @@ _FI3 = {
     "layout_type": "text-only",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "description", "type": "richtext", "label": "Opis firmy", "required": True},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "richtext", "label": "Opis firmy", "required": True},
         {"id": "quote", "type": "text", "label": "Cytat", "max_length": 300, "required": False},
         {"id": "quote_author", "type": "text", "label": "Autor cytatu", "max_length": 60, "required": False},
     ],
@@ -674,8 +685,13 @@ _FI4 = {
     "layout_type": "text-only",
     "size": "L",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "timeline", "type": "list", "label": "Kamienie milowe", "item_fields": [
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
+        {"id": "points", "type": "list", "label": "Kamienie milowe (skrot)", "item_fields": [
+            {"id": "text", "type": "text", "label": "Punkt"},
+        ]},
+        {"id": "timeline", "type": "list", "label": "Kamienie milowe (pelny)", "item_fields": [
             {"id": "year", "type": "text", "label": "Rok"},
             {"id": "title", "type": "text", "label": "Tytul"},
             {"id": "description", "type": "text", "label": "Opis"},
@@ -713,13 +729,17 @@ _OF1 = {
     "layout_type": "info-title-text-3",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "subtitle", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
-        {"id": "services", "type": "list", "label": "Uslugi", "item_fields": [
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
+        {"id": "tiers", "type": "list", "label": "Uslugi", "item_fields": [
             {"id": "icon", "type": "icon", "label": "Ikona"},
-            {"id": "title", "type": "text", "label": "Nazwa"},
-            {"id": "description", "type": "text", "label": "Opis"},
+            {"id": "name", "type": "text", "label": "Nazwa"},
+            {"id": "desc", "type": "text", "label": "Opis"},
             {"id": "price", "type": "text", "label": "Cena (opcj.)"},
+            {"id": "items", "type": "list", "label": "Cechy", "item_fields": [
+                {"id": "text", "type": "text", "label": "Cecha"},
+            ]},
         ]},
     ],
     "html_template": """<section style="padding:var(--space-section-y) 0;">
@@ -747,11 +767,16 @@ _OF2 = {
     "layout_type": "text-only",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "services", "type": "list", "label": "Uslugi", "item_fields": [
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "tiers", "type": "list", "label": "Uslugi", "item_fields": [
             {"id": "icon", "type": "icon", "label": "Ikona"},
-            {"id": "title", "type": "text", "label": "Nazwa"},
-            {"id": "description", "type": "text", "label": "Opis"},
+            {"id": "name", "type": "text", "label": "Nazwa"},
+            {"id": "desc", "type": "text", "label": "Opis"},
+            {"id": "price", "type": "text", "label": "Cena (opcj.)"},
+            {"id": "items", "type": "list", "label": "Cechy", "item_fields": [
+                {"id": "text", "type": "text", "label": "Cecha"},
+            ]},
         ]},
     ],
     "html_template": """<section class="bg-gray-50 py-20 px-8">
@@ -783,12 +808,12 @@ _PR1 = {
     "layout_type": "text-only",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "subtitle", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
-        {"id": "steps", "type": "list", "label": "Kroki", "item_fields": [
-            {"id": "number", "type": "text", "label": "Numer"},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
+        {"id": "features", "type": "list", "label": "Kroki", "item_fields": [
             {"id": "title", "type": "text", "label": "Tytul"},
-            {"id": "description", "type": "text", "label": "Opis"},
+            {"id": "body", "type": "text", "label": "Opis"},
         ]},
     ],
     "html_template": """<section class="bg-white py-20 px-8">
@@ -815,10 +840,11 @@ _PR2 = {
     "layout_type": "text-only",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "steps", "type": "list", "label": "Kroki", "item_fields": [
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "features", "type": "list", "label": "Kroki", "item_fields": [
             {"id": "title", "type": "text", "label": "Tytul"},
-            {"id": "description", "type": "text", "label": "Opis"},
+            {"id": "body", "type": "text", "label": "Opis"},
         ]},
     ],
     "html_template": """<section class="bg-gray-50 py-20 px-8">
@@ -848,7 +874,8 @@ _OP1 = {
     "layout_type": "opin-top-3",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
         {"id": "testimonials", "type": "list", "label": "Opinie", "item_fields": [
             {"id": "quote", "type": "text", "label": "Cytat"},
             {"id": "author", "type": "text", "label": "Imie i nazwisko"},
@@ -887,12 +914,16 @@ _OP2 = {
     "layout_type": "opin-top-1",
     "size": "M",
     "slots_definition": [
-        {"id": "quote", "type": "text", "label": "Cytat", "max_length": 500, "required": True},
-        {"id": "author", "type": "text", "label": "Imie i nazwisko", "required": True},
-        {"id": "role", "type": "text", "label": "Stanowisko", "required": False},
-        {"id": "avatar", "type": "image", "label": "Avatar", "required": False},
-        {"id": "company", "type": "text", "label": "Firma", "required": False},
-        {"id": "rating", "type": "number", "label": "Ocena (1-5)", "required": False},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": False},
+        {"id": "testimonials", "type": "list", "label": "Opinie", "item_fields": [
+            {"id": "quote", "type": "text", "label": "Cytat", "max_length": 500},
+            {"id": "author", "type": "text", "label": "Imie i nazwisko"},
+            {"id": "role", "type": "text", "label": "Stanowisko"},
+            {"id": "avatar", "type": "image", "label": "Avatar"},
+            {"id": "company", "type": "text", "label": "Firma"},
+            {"id": "rating", "type": "number", "label": "Ocena (1-5)"},
+        ]},
     ],
     "html_template": """<section class="bg-white py-20 px-8">
   <div class="max-w-3xl mx-auto text-center">
@@ -922,13 +953,11 @@ _ZE1 = {
     "layout_type": "photo-top-4",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "subtitle", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
-        {"id": "members", "type": "list", "label": "Czlonkowie", "item_fields": [
-            {"id": "name", "type": "text", "label": "Imie i nazwisko"},
-            {"id": "role", "type": "text", "label": "Stanowisko"},
-            {"id": "photo", "type": "image", "label": "Zdjecie"},
-            {"id": "description", "type": "text", "label": "Opis"},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
+        {"id": "points", "type": "list", "label": "Czlonkowie", "item_fields": [
+            {"id": "text", "type": "text", "label": "Imie, stanowisko i opis"},
         ]},
     ],
     "html_template": """<section class="bg-white py-20 px-8">
@@ -956,12 +985,11 @@ _ZE2 = {
     "layout_type": "photo-full-2",
     "size": "L",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "members", "type": "list", "label": "Czlonkowie", "item_fields": [
-            {"id": "name", "type": "text", "label": "Imie i nazwisko"},
-            {"id": "role", "type": "text", "label": "Stanowisko"},
-            {"id": "photo", "type": "image", "label": "Zdjecie"},
-            {"id": "bio", "type": "text", "label": "Biografia"},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
+        {"id": "points", "type": "list", "label": "Czlonkowie", "item_fields": [
+            {"id": "text", "type": "text", "label": "Imie, stanowisko i opis"},
         ]},
     ],
     "html_template": """<section class="bg-gray-50 py-20 px-8">
@@ -996,12 +1024,16 @@ _CE1 = {
     "layout_type": "text-only",
     "size": "L",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "plans", "type": "list", "label": "Pakiety", "item_fields": [
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "tiers", "type": "list", "label": "Pakiety", "item_fields": [
             {"id": "name", "type": "text", "label": "Nazwa pakietu"},
             {"id": "price", "type": "text", "label": "Cena"},
             {"id": "period", "type": "text", "label": "Okres (np. /msc)"},
-            {"id": "features", "type": "list", "label": "Cechy"},
+            {"id": "desc", "type": "text", "label": "Opis pakietu"},
+            {"id": "items", "type": "list", "label": "Cechy", "item_fields": [
+                {"id": "text", "type": "text", "label": "Cecha"},
+            ]},
             {"id": "cta_text", "type": "text", "label": "Przycisk"},
             {"id": "highlighted", "type": "text", "label": "Wyrozniony (true/false)"},
         ]},
@@ -1037,9 +1069,10 @@ _CT1 = {
     "layout_type": "text-only",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "subtitle", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
-        {"id": "cta_text", "type": "text", "label": "Przycisk", "max_length": 30, "required": True},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
+        {"id": "cta", "type": "text", "label": "Przycisk", "max_length": 30, "required": True},
         {"id": "cta_url", "type": "url", "label": "Link", "required": True},
     ],
     "html_template": """<section class="bg-gray-900 py-20 px-8">
@@ -1060,9 +1093,10 @@ _CT2 = {
     "layout_type": "photo-full-2",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "subtitle", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
-        {"id": "cta_text", "type": "text", "label": "Przycisk", "max_length": 30, "required": True},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
+        {"id": "cta", "type": "text", "label": "Przycisk", "max_length": 30, "required": True},
         {"id": "cta_url", "type": "url", "label": "Link", "required": True},
         {"id": "image", "type": "image", "label": "Grafika", "required": False},
     ],
@@ -1089,8 +1123,9 @@ _CT3 = {
     "layout_type": "text-only",
     "size": "S",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "cta_text", "type": "text", "label": "Przycisk", "max_length": 30, "required": True},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "cta", "type": "text", "label": "Przycisk", "max_length": 30, "required": True},
         {"id": "cta_url", "type": "url", "label": "Link", "required": True},
     ],
     "html_template": """<section class="bg-gray-50 py-16 px-8">
@@ -1114,7 +1149,7 @@ _KO1 = {
     "layout_type": "text-only",
     "size": "L",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
         {"id": "address", "type": "text", "label": "Adres", "required": False},
         {"id": "phone", "type": "text", "label": "Telefon", "required": False},
         {"id": "email", "type": "text", "label": "Email", "required": False},
@@ -1176,7 +1211,9 @@ _FA1 = {
     "layout_type": "text-only",
     "size": "M",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "body", "type": "text", "label": "Podtytul", "max_length": 200, "required": False},
         {"id": "items", "type": "list", "label": "Pytania", "item_fields": [
             {"id": "question", "type": "text", "label": "Pytanie"},
             {"id": "answer", "type": "text", "label": "Odpowiedz"},
@@ -1208,12 +1245,12 @@ _RE1 = {
     "layout_type": "photo-top-3",
     "size": "L",
     "slots_definition": [
-        {"id": "title", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
-        {"id": "cases", "type": "list", "label": "Realizacje", "item_fields": [
-            {"id": "image", "type": "image", "label": "Zdjecie"},
-            {"id": "title", "type": "text", "label": "Nazwa"},
-            {"id": "description", "type": "text", "label": "Opis"},
-            {"id": "results", "type": "text", "label": "Wyniki"},
+        {"id": "eyebrow", "type": "text", "label": "Nad-tytul", "max_length": 60, "required": False},
+        {"id": "heading", "type": "text", "label": "Tytul", "max_length": 80, "required": True},
+        {"id": "testimonials", "type": "list", "label": "Realizacje", "item_fields": [
+            {"id": "quote", "type": "text", "label": "Opis realizacji"},
+            {"id": "author", "type": "text", "label": "Klient / projekt"},
+            {"id": "role", "type": "text", "label": "Wyniki"},
         ]},
     ],
     "html_template": """<section class="bg-white py-20 px-8">
@@ -1303,12 +1340,14 @@ _FO1 = {
     "layout_type": "text-only",
     "size": "M",
     "slots_definition": [
-        {"id": "logo", "type": "image", "label": "Logo", "required": False},
-        {"id": "logo_text", "type": "text", "label": "Nazwa firmy", "required": True},
-        {"id": "description", "type": "text", "label": "Krotki opis", "max_length": 200, "required": False},
-        {"id": "columns", "type": "list", "label": "Kolumny linkow", "item_fields": [
+        {"id": "logo_url", "type": "image", "label": "Logo obrazek", "required": False},
+        {"id": "logo", "type": "text", "label": "Nazwa firmy", "required": True},
+        {"id": "desc", "type": "text", "label": "Krotki opis", "max_length": 200, "required": False},
+        {"id": "cols", "type": "list", "label": "Kolumny linkow", "item_fields": [
             {"id": "title", "type": "text", "label": "Tytul kolumny"},
-            {"id": "links", "type": "list", "label": "Linki"},
+            {"id": "links", "type": "list", "label": "Linki", "item_fields": [
+                {"id": "text", "type": "text", "label": "Tekst linku"},
+            ]},
         ]},
         {"id": "copyright", "type": "text", "label": "Copyright", "required": True},
         {"id": "socials", "type": "list", "label": "Social media", "item_fields": [

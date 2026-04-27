@@ -104,6 +104,6 @@ class ProjectContext:
             f"- Jesli sekcja ma 3 uslugi → grid 3 kolumn z ikonami\n"
             f"- Jesli sekcja ma 5 krokow → infografika 5 krokow\n"
             f"- Jesli sekcja ma 1 cytat → duzy centered cytat\n"
-            f"- Dobierz photo_query do KONTEKSTU tresci (nie generycznie)\n"
+            f"- Dobierz photo_query do KONTEKSTU tresci (nie generycznie) — ZAWSZE po angielsku\n"
         )
         return ctx

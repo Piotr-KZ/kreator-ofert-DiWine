@@ -2,12 +2,17 @@
  * Lab Creator Zustand store — single source of truth for 5-step flow.
  */
 
+import axios from "axios";
 import { create } from "zustand";
 import * as api from "@/api/client";
-import { DEFAULT_BRAND, BLOCK_LIBRARY } from "@/types/lab";
-import type { Brand, Gradient } from "@/types/lab";
 
-export type { Brand, Gradient };
+/** Extract user-friendly message from Axios / generic errors. */
+function extractError(e: unknown, fallback = "Wystąpił błąd"): string {
+  if (axios.isAxiosError(e)) {
+    return e.response?.data?.detail || e.message || fallback;
+  }
+  return e instanceof Error ? e.message : fallback;
+}
 
 export interface Section {
   id: string;
@@ -16,13 +21,6 @@ export interface Section {
   variant: string;
   slots_json: Record<string, unknown> | null;
   is_visible: boolean;
-  // Brief 45 extended fields (stored in variant_config on backend)
-  name?: string;
-  bgColor?: string | Gradient | null;
-  ctaColor?: string | Gradient | null;
-  padding?: { top: number; right: number; bottom: number; left: number };
-  brandWarning?: string;
-  variant_config?: Record<string, unknown> | null;
 }
 
 export interface VisualConceptSection {
@@ -59,7 +57,14 @@ interface LabState {
     primary_color: string;
     secondary_color: string;
   };
-  brand: Brand;
+
+  // Brand (Step 5 visual tweaks)
+  brand: {
+    fontHeading: string;
+    fontBody: string;
+    ctaColor: string;
+    density: string;
+  };
 
   // Step 2: Structure
   sections: Section[];
@@ -92,15 +97,14 @@ interface LabState {
   regenerateSection: (sectionId: string, instruction?: string) => Promise<void>;
 
   analyzeWebsite: () => Promise<Record<string, unknown> | null>;
+  updateSlot: (sectionId: string, key: string, value: string) => Promise<void>;
+  duplicateSection: (sectionId: string) => Promise<void>;
+  updateBrand: (updates: Partial<LabState['brand']>) => Promise<void>;
   setStep: (step: number) => void;
   setBrief: (field: string, value: string) => void;
   setStyle: (field: string, value: string) => void;
   setSiteType: (t: string) => void;
   setError: (e: string | null) => void;
-  setBrand: (patch: Partial<Brand>) => void;
-  updateSectionMeta: (sectionId: string, meta: Partial<Pick<Section, 'name' | 'bgColor' | 'ctaColor' | 'padding' | 'brandWarning'>>) => Promise<void>;
-  duplicateSection: (sectionId: string) => Promise<void>;
-  toggleHideSection: (sectionId: string) => void;
 }
 
 export const useLabStore = create<LabState>((set, get) => ({
@@ -109,7 +113,7 @@ export const useLabStore = create<LabState>((set, get) => ({
   siteType: "company_card",
   brief: { description: "", target_audience: "", usp: "", tone: "profesjonalny", website: "" },
   style: { primary_color: "#4F46E5", secondary_color: "#F59E0B" },
-  brand: { ...DEFAULT_BRAND },
+  brand: { fontHeading: "'Fraunces', serif", fontBody: "'Inter', sans-serif", ctaColor: "#6FAE8C", density: "normal" },
   sections: [],
   visualConcept: null,
   currentStep: 1,
@@ -127,32 +131,13 @@ export const useLabStore = create<LabState>((set, get) => ({
     set({ isLoading: true });
     try {
       const { data } = await api.getProject(id);
-      const styleJson = data.style_json || {};
-      const loadedBrand: Brand = {
-        ...DEFAULT_BRAND,
-        ctaColor: styleJson.primary_color || DEFAULT_BRAND.ctaColor,
-        ctaColor2: styleJson.secondary_color || DEFAULT_BRAND.ctaColor2,
-        ...(styleJson.brand || {}),
-      };
-      // Hydrate section meta from variant_config
-      const sections = (data.sections || []).map((s: Section) => {
-        const vc = (s.variant_config || {}) as Record<string, unknown>;
-        return {
-          ...s,
-          name: (vc.name as string) || BLOCK_LIBRARY.find(b => b.code === s.block_code)?.name || s.block_code,
-          bgColor: (vc.bgColor as string | Gradient | null) ?? null,
-          ctaColor: (vc.ctaColor as string | Gradient | null) ?? null,
-          padding: (vc.padding as Section['padding']) ?? undefined,
-        };
-      });
       set({
         projectId: data.id,
         projectName: data.name,
         siteType: data.site_type || "company_card",
         brief: data.brief_json || { description: "", target_audience: "", usp: "", tone: "profesjonalny", website: "" },
-        style: { primary_color: styleJson.primary_color || "#4F46E5", secondary_color: styleJson.secondary_color || "#F59E0B" },
-        brand: loadedBrand,
-        sections,
+        style: data.style_json || { primary_color: "#4F46E5", secondary_color: "#F59E0B" },
+        sections: data.sections || [],
         visualConcept: data.visual_concept_json || null,
         currentStep: data.current_step || 1,
       });
@@ -162,15 +147,11 @@ export const useLabStore = create<LabState>((set, get) => ({
   },
 
   saveBrief: async () => {
-    const { projectId, brief, brand, siteType } = get();
+    const { projectId, brief, style, siteType } = get();
     if (!projectId) return;
     await api.updateProject(projectId, {
       brief_json: brief,
-      style_json: {
-        primary_color: brand.ctaColor,
-        secondary_color: brand.ctaColor2,
-        brand,                          // full Brand object stored here
-      },
+      style_json: style,
       site_type: siteType,
     });
   },
@@ -183,7 +164,7 @@ export const useLabStore = create<LabState>((set, get) => ({
       const { data } = await api.validateBrief(projectId);
       return data.items || [];
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Blad walidacji";
+      const msg = extractError(e, "Blad walidacji");
       set({ error: msg });
       return [];
     } finally {
@@ -201,7 +182,7 @@ export const useLabStore = create<LabState>((set, get) => ({
       await get().loadProject(projectId);
       set({ currentStep: 3 });
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Blad generowania struktury";
+      const msg = extractError(e, "Blad generowania struktury");
       set({ error: msg });
     } finally {
       set({ isGenerating: false });
@@ -255,7 +236,7 @@ export const useLabStore = create<LabState>((set, get) => ({
       const { data } = await api.generateVisualConcept(projectId);
       set({ visualConcept: data, currentStep: 5 });
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Blad generowania visual concept";
+      const msg = extractError(e, "Blad generowania visual concept");
       set({ error: msg });
     } finally {
       set({ isGenerating: false });
@@ -279,7 +260,7 @@ export const useLabStore = create<LabState>((set, get) => ({
       await get().loadProject(projectId);
       set({ currentStep: 4 });
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Blad generowania tresci";
+      const msg = extractError(e, "Blad generowania tresci");
       set({ error: msg });
     } finally {
       set({ isGenerating: false });
@@ -300,7 +281,7 @@ export const useLabStore = create<LabState>((set, get) => ({
         });
       }
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Błąd regeneracji sekcji";
+      const msg = extractError(e, "Błąd regeneracji sekcji");
       set({ error: msg });
     } finally {
       set({ isGenerating: false });
@@ -319,11 +300,41 @@ export const useLabStore = create<LabState>((set, get) => ({
       }
       return data;
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : "Błąd analizy strony";
+      const msg = extractError(e, "Błąd analizy strony");
       set({ error: msg });
       return null;
     } finally {
       set({ isGenerating: false });
+    }
+  },
+
+  updateSlot: async (sectionId, key, value) => {
+    const { projectId, sections } = get();
+    if (!projectId) return;
+    const section = sections.find((s) => s.id === sectionId);
+    if (!section) return;
+    const newSlots = { ...(section.slots_json || {}), [key]: value };
+    await api.updateSection(projectId, sectionId, { slots_json: newSlots });
+    set({
+      sections: sections.map((s) =>
+        s.id === sectionId ? { ...s, slots_json: newSlots } : s
+      ),
+    });
+  },
+
+  duplicateSection: async (sectionId) => {
+    const { projectId } = get();
+    if (!projectId) return;
+    await api.duplicateSection(projectId, sectionId);
+    await get().loadProject(projectId);
+  },
+
+  updateBrand: async (updates) => {
+    const { projectId } = get();
+    const newBrand = { ...get().brand, ...updates };
+    set({ brand: newBrand });
+    if (projectId) {
+      await api.updateProject(projectId, { brand_json: newBrand });
     }
   },
 
@@ -332,45 +343,4 @@ export const useLabStore = create<LabState>((set, get) => ({
   setStyle: (field, value) => set({ style: { ...get().style, [field]: value } }),
   setSiteType: (t) => set({ siteType: t }),
   setError: (e) => set({ error: e }),
-  setBrand: (patch) => set({ brand: { ...get().brand, ...patch } }),
-
-  updateSectionMeta: async (sectionId, meta) => {
-    const { projectId } = get();
-    if (!projectId) return;
-    // Merge into variant_config on backend
-    const section = get().sections.find(s => s.id === sectionId);
-    const currentVc = (section?.variant_config || {}) as Record<string, unknown>;
-    const newVc = { ...currentVc, ...meta };
-    await api.updateSection(projectId, sectionId, { variant_config: newVc });
-    set({
-      sections: get().sections.map((s) =>
-        s.id === sectionId ? { ...s, ...meta, variant_config: newVc } : s,
-      ),
-    });
-  },
-
-  duplicateSection: async (sectionId) => {
-    const { projectId, sections } = get();
-    if (!projectId) return;
-    const orig = sections.find(s => s.id === sectionId);
-    if (!orig) return;
-    const pos = (orig.position ?? 0) + 1;
-    const { data: resp } = await api.addSection(projectId, orig.block_code, pos);
-    const newId: string | undefined = resp?.id ?? resp?.data?.id;
-    if (orig.slots_json && newId) {
-      await api.updateSection(projectId, newId, { slots_json: orig.slots_json });
-    }
-    await get().loadProject(projectId);
-  },
-
-  toggleHideSection: (sectionId) => {
-    const orig = get().sections.find(s => s.id === sectionId);
-    if (!orig) return;
-    const newVisible = orig.is_visible !== false ? false : true;
-    set({ sections: get().sections.map(s => s.id === sectionId ? { ...s, is_visible: newVisible } : s) });
-    const { projectId } = get();
-    if (projectId) {
-      api.updateSection(projectId, sectionId, { is_visible: newVisible }).catch(() => {});
-    }
-  },
 }));
