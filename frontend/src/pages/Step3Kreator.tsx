@@ -7,6 +7,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { useLabStore } from '@/store/labStore';
 import { BLOCK_LIBRARY, CATEGORIES, BRAND_PALETTE, INITIAL_BRAND } from '@/config/blocks';
 import type { Block } from '@/config/blocks';
+import SectionCard from '@/components/kreator/SectionCard';
 
 // Helper z makiety — kontrast tekstu na tle koloru
 function getContrastColor(hex: string) {
@@ -135,7 +136,6 @@ export default function Step3Kreator() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {sections.map((s, i) => {
             const block = BLOCK_LIBRARY.find(b => b.code === s.block_code);
-            const cat = block ? CATEGORIES[block.cat] : null;
             return (
               <React.Fragment key={s.id}>
                 <div
@@ -155,53 +155,18 @@ export default function Step3Kreator() {
                     transform: dragOverIdx === i && dragIdx !== i ? 'translateY(4px)' : 'none',
                     transition: 'transform .15s, opacity .15s',
                   }}>
-                  {/* Placeholder SectionCard — zostanie zastapiony w KROK 6 */}
-                  <div style={{
-                    padding: '14px 18px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12,
-                    display: 'flex', alignItems: 'center', gap: 14, cursor: 'grab',
-                  }}>
-                    {/* Drag handle */}
-                    <div style={{ color: '#CBD5E1', cursor: 'grab' }}>
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M8 6h.01M8 12h.01M8 18h.01M16 6h.01M16 12h.01M16 18h.01"/></svg>
-                    </div>
-                    {/* Position */}
-                    <div style={{ width: 28, height: 28, borderRadius: '50%', background: cat?.color || '#94A3B8', color: '#fff', display: 'grid', placeItems: 'center', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                      {i + 1}
-                    </div>
-                    {/* Code + Name */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 11, color: cat?.color || '#94A3B8', fontWeight: 700 }}>{s.block_code}</span>
-                        <span style={{ fontSize: 13, fontWeight: 500, color: '#0F172A' }}>{block?.name || s.block_code}</span>
-                      </div>
-                      <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>{block?.desc || ''}</div>
-                    </div>
-                    {/* Category badge */}
-                    <div style={{ padding: '3px 8px', background: cat?.color ? cat.color + '18' : '#F1F5F9', color: cat?.color || '#64748B', borderRadius: 6, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                      {cat?.name || ''}
-                    </div>
-                    {/* Actions */}
-                    <div style={{ display: 'flex', gap: 4 }}>
-                      <button onClick={() => move(s.id, -1)} disabled={i === 0} style={{ width: 28, height: 28, border: '1px solid #E2E8F0', borderRadius: 6, background: '#fff', cursor: 'pointer', display: 'grid', placeItems: 'center', opacity: i === 0 ? 0.3 : 1 }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2"><path d="M18 15l-6-6-6 6"/></svg>
-                      </button>
-                      <button onClick={() => move(s.id, 1)} disabled={i === sections.length - 1} style={{ width: 28, height: 28, border: '1px solid #E2E8F0', borderRadius: 6, background: '#fff', cursor: 'pointer', display: 'grid', placeItems: 'center', opacity: i === sections.length - 1 ? 0.3 : 1 }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2"><path d="M6 9l6 6 6-6"/></svg>
-                      </button>
-                      <button onClick={() => setVariantsModal({ mode: 'swap', targetId: s.id, restrictCat: block?.cat })} style={{ width: 28, height: 28, border: '1px solid #E2E8F0', borderRadius: 6, background: '#fff', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2"><path d="M7 16V4m0 0L3 8m4-4l4 4M17 8v12m0 0l4-4m-4 4l-4-4"/></svg>
-                      </button>
-                      <button onClick={() => duplicate(s.id)} style={{ width: 28, height: 28, border: '1px solid #E2E8F0', borderRadius: 6, background: '#fff', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#475569" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
-                      </button>
-                      <button onClick={() => openAI(s)} style={{ width: 28, height: 28, border: '1px solid #E2E8F0', borderRadius: 6, background: 'linear-gradient(135deg, #6366F1, #EC4899)', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/></svg>
-                      </button>
-                      <button onClick={() => del(s.id)} style={{ width: 28, height: 28, border: '1px solid #FCA5A5', borderRadius: 6, background: '#FEF2F2', cursor: 'pointer', display: 'grid', placeItems: 'center' }}>
-                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#EF4444" strokeWidth="2"><path d="M3 6h18M8 6V4h8v2M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6"/></svg>
-                      </button>
-                    </div>
-                  </div>
+                  <SectionCard
+                    section={s}
+                    index={i}
+                    total={sections.length}
+                    brand={brand}
+                    onUpdate={(patch) => storeUpdateSection(s.id, patch)}
+                    onMove={(dir) => move(s.id, dir)}
+                    onDelete={() => del(s.id)}
+                    onDuplicate={() => duplicate(s.id)}
+                    onAI={() => openAI(s)}
+                    onOpenVariants={() => setVariantsModal({ mode: 'swap', targetId: s.id, restrictCat: block?.cat })}
+                  />
                 </div>
                 {/* Add section button between cards */}
                 {i < sections.length - 1 && (
@@ -236,17 +201,8 @@ export default function Step3Kreator() {
         </div>
       </div>
 
-      {/* AI panel — stub, bedzie w osobnym pliku */}
-      {aiOpen && (
-        <div style={{ position: 'fixed', top: 0, right: 0, width: 380, height: '100vh', background: '#fff', boxShadow: '-4px 0 24px rgba(0,0,0,.1)', zIndex: 50, padding: 20, display: 'flex', flexDirection: 'column' }}>
-          <div style={{ display: 'flex', alignItems: 'center', marginBottom: 16 }}>
-            <h3 style={{ margin: 0, fontSize: 16, fontWeight: 600 }}>Asystent AI</h3>
-            <button onClick={() => setAiOpen(false)} style={{ marginLeft: 'auto', background: 'transparent', border: 'none', cursor: 'pointer', fontSize: 20, color: '#94A3B8' }}>x</button>
-          </div>
-          {aiContext && <p style={{ fontSize: 13, color: '#64748B' }}>Kontekst: {aiContext.label} ({aiContext.code})</p>}
-          <p style={{ fontSize: 13, color: '#94A3B8', marginTop: 'auto' }}>Panel AI — zostanie podlaczony w kolejnych krokach</p>
-        </div>
-      )}
+      {/* AI panel — pełny z makiety ai_panel.jsx */}
+      <AIPanel open={aiOpen} onClose={() => setAiOpen(false)} context={aiContext} onToast={showToast} />
 
       {/* Blocks modal */}
       <BlocksModal
@@ -574,5 +530,173 @@ function ColorPickerModal({ initial, label, onConfirm, onCancel }: {
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── AIPanel (z makiety ai_panel.jsx) ───────────────────
+function AIPanel({ open, onClose, context, onToast }: {
+  open: boolean;
+  onClose: () => void;
+  context: { code: string; label: string; name: string } | null;
+  onToast: (msg: string, icon?: string) => void;
+}) {
+  const [width, setWidth] = React.useState(Math.max(420, Math.round(window.innerWidth / 3)));
+  const [messages, setMessages] = React.useState<Array<{ role: string; text: string }>>([
+    { role: 'assistant', text: 'Czesc! Jestem twoim asystentem AI. Pomoge Ci ze struktura, wyborem klockow lub napisaniem tekstow. O co chcesz zapytac?' }
+  ]);
+  const [input, setInput] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
+  const [dragging, setDragging] = React.useState(false);
+  const scrollRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    if (!dragging) return;
+    const onMove = (e: MouseEvent) => {
+      const w = Math.min(Math.max(window.innerWidth - e.clientX, 360), window.innerWidth * 0.7);
+      setWidth(w);
+    };
+    const onUp = () => setDragging(false);
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+    return () => { document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+  }, [dragging]);
+
+  React.useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages, loading]);
+
+  const send = async (text?: string) => {
+    const msg = (text ?? input).trim();
+    if (!msg || loading) return;
+    setInput('');
+    setMessages(m => [...m, { role: 'user', text: msg }]);
+    setLoading(true);
+    // Stub — w przyszłości podłączymy do backendu
+    setTimeout(() => {
+      setMessages(m => [...m, { role: 'assistant', text: 'To jest wersja demo asystenta AI. Podłączenie do backendu nastąpi w kolejnym kroku integracji.' }]);
+      setLoading(false);
+    }, 800);
+  };
+
+  if (!open) return null;
+
+  return (
+    <>
+      <div style={{
+        position: 'fixed', inset: 0, background: 'rgba(15,23,42,.15)',
+        zIndex: 150, animation: 'fadeIn .2s',
+      }} onClick={onClose} />
+
+      <div style={{
+        position: 'fixed', top: 0, right: 0, bottom: 0,
+        width, background: '#fff',
+        boxShadow: '-8px 0 30px rgba(15,23,42,.1)',
+        zIndex: 151, display: 'flex', flexDirection: 'column',
+      }}>
+        {/* Resize handle */}
+        <div
+          onMouseDown={() => setDragging(true)}
+          style={{
+            position: 'absolute', left: -3, top: 0, bottom: 0, width: 6,
+            cursor: 'ew-resize', zIndex: 2,
+          }}
+          title="Przesun aby zmienic szerokosc"
+        >
+          <div style={{ position: 'absolute', left: 2, top: '50%', transform: 'translateY(-50%)', width: 4, height: 40, borderRadius: 3, background: dragging ? '#6366F1' : '#CBD5E1', transition: 'background .15s' }}/>
+        </div>
+
+        {/* Header */}
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{
+            width: 36, height: 36, borderRadius: 10,
+            background: 'linear-gradient(135deg, #6366F1, #EC4899)',
+            display: 'grid', placeItems: 'center',
+            boxShadow: '0 2px 8px rgba(99,102,241,.3)',
+          }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M18.4 5.6l-2.8 2.8M8.4 15.6l-2.8 2.8"/></svg>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 600 }}>Asystent AI</div>
+            <div style={{ fontSize: 12, color: '#64748B' }}>
+              {context ? <>Kontekst: <span style={{ fontFamily: 'ui-monospace, monospace', background: '#F1F5F9', padding: '1px 6px', borderRadius: 4, fontSize: 11 }}>{context.code}</span> · {context.label}</> : 'Bez kontekstu'}
+            </div>
+          </div>
+          <button onClick={onClose} style={{ width: 34, height: 34, border: '1px solid #E2E8F0', background: '#fff', borderRadius: 8, cursor: 'pointer', display: 'grid', placeItems: 'center', color: '#64748B' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
+
+        {/* Messages */}
+        <div ref={scrollRef} style={{ flex: 1, overflow: 'auto', padding: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {messages.map((m, i) => (
+            <div key={i} style={{ display: 'flex', gap: 10, alignItems: 'flex-start', justifyContent: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
+              {m.role === 'assistant' && <div style={{ width: 26, height: 26, borderRadius: 7, background: 'linear-gradient(135deg, #6366F1, #EC4899)', flexShrink: 0, display: 'grid', placeItems: 'center' }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2.5" strokeLinecap="round"><path d="M12 3v4M12 17v4M3 12h4M17 12h4"/></svg>
+              </div>}
+              <div style={{
+                maxWidth: '78%', padding: '10px 14px', borderRadius: 12,
+                background: m.role === 'user' ? 'linear-gradient(135deg, #6366F1, #7C3AED)' : '#F1F5F9',
+                color: m.role === 'user' ? '#fff' : '#0F172A',
+                fontSize: 13.5, lineHeight: 1.5, whiteSpace: 'pre-wrap',
+              }}>{m.text}</div>
+            </div>
+          ))}
+          {loading && <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+            <div style={{ width: 26, height: 26, borderRadius: 7, background: 'linear-gradient(135deg, #6366F1, #EC4899)', flexShrink: 0 }}/>
+            <div style={{ display: 'flex', gap: 4, padding: '10px 14px', background: '#F1F5F9', borderRadius: 12 }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#94A3B8', animation: 'bounce 1s 0ms infinite' }}/>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#94A3B8', animation: 'bounce 1s 150ms infinite' }}/>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#94A3B8', animation: 'bounce 1s 300ms infinite' }}/>
+            </div>
+          </div>}
+        </div>
+
+        {/* Quick prompts */}
+        {messages.length <= 1 && (
+          <div style={{ padding: '0 20px 8px', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {['Zaproponuj strukture', 'Jaki hero wybrac?', 'Skroc strukture', 'Sekcje pod SEO'].map((p, i) => (
+              <button key={i} onClick={() => send(p)} style={{
+                padding: '6px 10px', background: '#F1F5F9', border: '1px solid #E2E8F0',
+                borderRadius: 14, fontSize: 12, color: '#334155',
+                cursor: 'pointer', fontFamily: 'inherit',
+              }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#EEF2FF'; e.currentTarget.style.color = '#6366F1'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = '#F1F5F9'; e.currentTarget.style.color = '#334155'; }}
+              >{p}</button>
+            ))}
+          </div>
+        )}
+
+        {/* Input */}
+        <div style={{ padding: 16, borderTop: '1px solid #E2E8F0', background: '#FAFBFC' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: 8, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 12, padding: 4 }}>
+            <textarea
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
+              placeholder="Zadaj pytanie... (Enter wysyla, Shift+Enter nowa linia)"
+              rows={1}
+              style={{
+                flex: 1, border: 'none', outline: 'none', background: 'transparent',
+                padding: '8px 10px', fontFamily: 'inherit', fontSize: 13.5, resize: 'none',
+                maxHeight: 120,
+              }}
+            />
+            <button
+              onClick={() => send()}
+              disabled={!input.trim() || loading}
+              style={{
+                width: 34, height: 34, border: 'none', borderRadius: 8,
+                background: (!input.trim() || loading) ? '#CBD5E1' : 'linear-gradient(135deg, #6366F1, #EC4899)',
+                color: '#fff', cursor: (!input.trim() || loading) ? 'not-allowed' : 'pointer',
+                display: 'grid', placeItems: 'center',
+              }}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }
