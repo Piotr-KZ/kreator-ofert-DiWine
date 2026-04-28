@@ -78,14 +78,27 @@ ZASADY PROJEKTOWANIA:
 2. MEDIA PER TYP SEKCJI:
    - Hero → photo_wide (16:9 z overlayem)
    - O firmie → photo_split (4:3 obok tekstu)
-   - Uslugi/oferta → icons (3-6 kart z ikonami)
-   - Proces → infographic_steps
-   - Korzysci → icons lub infographic_numbers
-   - Opinie → avatars (male kolka 1:1)
-   - FAQ → none (czysty tekst)
-   - CTA → none (kolor tla + heading + przycisk)
+   - Uslugi/oferta → icons (3-6 kart z ikonami) lub infographic_features_grid_2x3
+   - Proces → infographic_steps_horizontal lub infographic_steps_vertical lub infographic_funnel
+   - Korzysci → icons lub infographic_features_numbers lub infographic_checklist
+   - Porownanie → infographic_before_after lub infographic_vs_comparison
+   - Cennik → infographic_pricing_table
+   - Opinie → avatars (male kolka 1:1) lub infographic_testimonials_stars
+   - Zespol → infographic_team_cards
+   - FAQ → infographic_faq_visual lub none (czysty tekst)
+   - CTA → infographic_cta_banner lub none (kolor tla + heading + przycisk)
    - Kontakt → icons (telefon, email, adres)
-   - Statystyki → infographic_numbers
+   - Statystyki → infographic_stats_rings lub infographic_stats_cards lub infographic_stats_bars
+   - Timeline/Historia → infographic_timeline_vertical lub infographic_timeline_horizontal
+
+   DOSTEPNE INFOGRAFIKI (wartosc media_type):
+   Proces: infographic_steps_horizontal, infographic_steps_vertical, infographic_steps_circle, infographic_funnel
+   Statystyki: infographic_stats_rings, infographic_stats_cards, infographic_stats_bars
+   Porownania: infographic_before_after, infographic_pricing_table, infographic_vs_comparison
+   Cechy: infographic_features_grid_2x3, infographic_features_grid_1x4, infographic_features_numbers
+   Timeline: infographic_timeline_vertical, infographic_timeline_horizontal
+   Ludzie: infographic_team_cards, infographic_testimonials_stars
+   Specjalne: infographic_checklist, infographic_faq_visual, infographic_cta_banner
 
 3. KOLORYSTYKA:
    - Tlo ciemne: #1a1a2e lub ciemna wersja glownego koloru
@@ -117,7 +130,14 @@ Zwroc JSON:
 }}
 
 bg_type opcje: white, light_gray, dark, brand_color, brand_gradient, dark_photo_overlay
-media_type opcje: photo_wide, photo_split, icons, infographic_steps, infographic_numbers, avatars, none, logo
+media_type opcje: photo_wide, photo_split, icons, avatars, none, logo,
+  infographic_steps_horizontal, infographic_steps_vertical, infographic_steps_circle, infographic_funnel,
+  infographic_stats_rings, infographic_stats_cards, infographic_stats_bars,
+  infographic_before_after, infographic_pricing_table, infographic_vs_comparison,
+  infographic_features_grid_2x3, infographic_features_grid_1x4, infographic_features_numbers,
+  infographic_timeline_vertical, infographic_timeline_horizontal,
+  infographic_team_cards, infographic_testimonials_stars,
+  infographic_checklist, infographic_faq_visual, infographic_cta_banner
 
 WAZNE: Zaprojektuj wyglad DOKLADNIE dla tych sekcji ktore dostalies.
 Nie dodawaj nowych sekcji. Nie usuwaj sekcji.
@@ -155,7 +175,12 @@ ZASADY:
   Lightbulb, Rocket, PieChart, DollarSign, Calendar, MessageSquare, ThumbsUp,
   ArrowRight, ChevronRight, Play, Download, Eye, Lock, Layers, Database, Cpu,
   Wifi, Cloud, Search, Filter, Edit, Trash, Plus, Minus, RefreshCw, Share2
-- NIE uzywaj emoji (🎯, 📊 itp.). Tylko nazwy ikon Lucide.
+- Jesli slot nazywa sie "illustration" — uzyj nazwy z biblioteki ilustracji SVG (64px):
+  target, chart-up, strategy, award, building, briefcase, handshake,
+  clock, refresh, calendar, hourglass, rocket, small-group, user-expert,
+  support, presentation, mail, phone, chat, megaphone, shield, lock,
+  certificate, browser, network, code, cloud, checklist, document, clipboard
+- NIE uzywaj emoji (🎯, 📊 itp.). Tylko nazwy ikon Lucide lub ilustracji.
 
 Zwroc JSON z wartosciami dla kazdego slotu:
 {{
