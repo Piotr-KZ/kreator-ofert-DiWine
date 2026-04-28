@@ -21,7 +21,7 @@ function getContrastColor(hex: string) {
 export default function Step3Kreator() {
   const navigate = useNavigate();
   const { projectId } = useParams<{ projectId: string }>();
-  const { sections, projectName, addSection, removeSection, reorderSections, duplicateSection, updateSection: storeUpdateSection } = useLabStore();
+  const { sections, projectName, addSection, removeSection, reorderSections, duplicateSection, updateSection: storeUpdateSection, generateContent, isGenerating } = useLabStore();
 
   // Brand — local state (kolory bg/cta/gradient, nie ma tego w store)
   const [brand, setBrand] = React.useState(INITIAL_BRAND);
@@ -188,14 +188,15 @@ export default function Step3Kreator() {
 
         {/* Next step button */}
         <div style={{ marginTop: 32, display: 'flex', justifyContent: 'flex-end' }}>
-          <button onClick={() => navigate(`/lab/${projectId}/step/4`)} style={{
+          <button disabled={isGenerating} onClick={async () => { await generateContent(); navigate(`/lab/${projectId}/step/4`); }} style={{
             padding: '10px 20px', background: 'linear-gradient(135deg, #6366F1, #EC4899)',
             color: '#fff', border: 'none', borderRadius: 10,
-            fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: 'pointer',
+            fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: isGenerating ? 'wait' : 'pointer',
             display: 'inline-flex', alignItems: 'center', gap: 6,
             boxShadow: '0 2px 8px rgba(99,102,241,.25)',
+            opacity: isGenerating ? 0.7 : 1,
           }}>
-            Dalej: Tresci
+            {isGenerating ? 'Generuję treści...' : 'Dalej: Tresci'}
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
           </button>
         </div>

@@ -235,6 +235,8 @@ export const useLabStore = create<LabState>((set, get) => ({
     try {
       const { data } = await api.generateVisualConcept(projectId);
       set({ visualConcept: data, currentStep: 5 });
+      // Reload project to get sections with resolved Unsplash image URLs
+      await get().loadProject(projectId);
     } catch (e: unknown) {
       const msg = extractError(e, "Blad generowania visual concept");
       set({ error: msg });

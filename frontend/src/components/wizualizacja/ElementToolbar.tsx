@@ -84,6 +84,9 @@ function resolveClickTarget(el) {
   // 3) Obraz w wrapperze z data-editable-img
   const imgW = el.closest?.('[data-editable-img="true"]');
   if (imgW && el.tagName !== 'IMG') return imgW.querySelector('img') || imgW;
+  // 3b) Klik w hint lub inny element wewnątrz data-img-wrap
+  const imgWrap = el.closest?.('[data-img-wrap="true"]');
+  if (imgWrap) return imgWrap.querySelector('[data-editable-img="true"]') || imgWrap;
   return el;
 }
 export { resolveClickTarget };
@@ -330,7 +333,7 @@ function SubPanelImpl({ children, width = 320, title, el, pos, onClose, onReset,
         Object.keys(node.dataset).forEach(k => { if (!(k in data.dataset)) delete node.dataset[k]; });
         Object.entries(data.dataset).forEach(([k, v]) => { node.dataset[k] = v; });
       });
-    } catch (e) { console.warn('restore failed', e); }
+    } catch (_) { /* restore best-effort */ }
   };
   const onCancel = () => { restore(); onClose?.(); };
   const rect = el.getBoundingClientRect();

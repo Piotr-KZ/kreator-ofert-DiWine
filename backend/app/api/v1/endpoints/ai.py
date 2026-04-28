@@ -16,6 +16,8 @@ from app.models.project import Project
 from app.models.project_section import ProjectSection
 from app.schemas.creator import ChatMessage, GenerateRequest
 from app.services.ai.engine import AIEngine
+from app.services.creator.renderer import PageRenderer
+from app.services.media.unsplash import UnsplashService
 
 router = APIRouter()
 
@@ -141,7 +143,44 @@ async def generate_visual_concept(
     project.current_step = max(project.current_step or 1, 5)
     await db.flush()
 
+    # Resolve media — fetch real Unsplash photos for sections with photo_query
+    unsplash = UnsplashService()
+    if unsplash.enabled:
+        renderer = PageRenderer()
+        await renderer.resolve_media(project, unsplash)
+        await db.flush()
+
+    # Commit before returning — frontend immediately calls loadProject which needs committed data
+    await db.commit()
     return vc
+
+
+@router.post("/projects/{project_id}/resolve-media")
+async def resolve_media(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch real Unsplash photos for all sections with photo_query in visual concept."""
+    project = await _get_project_full(project_id, db)
+    if not project.visual_concept_json:
+        raise HTTPException(status_code=400, detail="Brak visual concept — najpierw wygeneruj")
+
+    unsplash = UnsplashService()
+    if not unsplash.enabled:
+        raise HTTPException(status_code=500, detail="Unsplash API nie skonfigurowane (brak UNSPLASH_ACCESS_KEY)")
+
+    renderer = PageRenderer()
+    await renderer.resolve_media(project, unsplash)
+    await db.flush()
+
+    # Return updated sections with image URLs
+    return {
+        "resolved": True,
+        "sections": [
+            {"id": str(s.id), "block_code": s.block_code, "image": (s.slots_json or {}).get("image") or (s.slots_json or {}).get("hero_image")}
+            for s in project.sections
+        ],
+    }
 
 
 @router.get("/projects/{project_id}/visual-concept")

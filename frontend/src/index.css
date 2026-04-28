@@ -43,3 +43,29 @@ body {
 #root {
   min-height: 100vh;
 }
+
+/* ── WizRender image hint overlay ── */
+.wiz-img-wrap {
+  position: relative;
+}
+.wiz-img-hint {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(15, 23, 42, 0.75);
+  color: #fff;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-family: Inter, sans-serif;
+  display: none;
+  align-items: center;
+  gap: 5px;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 5;
+}
+.wiz-edit-on .wiz-img-wrap:hover .wiz-img-hint {
+  display: inline-flex;
+}

@@ -19,7 +19,7 @@ const FIELD_LABELS: Record<string, string> = {
 export default function Step2Validation() {
   const { projectId } = useParams();
   const navigate = useNavigate();
-  const { validateBrief, analyzeWebsite, brief, setBrief, saveBrief, isGenerating, error, projectId: storeProjectId } = useLabStore();
+  const { validateBrief, analyzeWebsite, brief, setBrief, saveBrief, isGenerating, error, projectId: storeProjectId, generateStructure } = useLabStore();
 
   const [items, setItems] = useState<ValidationItem[]>([]);
   const [dismissed, setDismissed] = useState<Set<number>>(new Set());
@@ -299,11 +299,11 @@ export default function Step2Validation() {
           </button>
           {items.length > 0 && (
             <button
-              onClick={() => navigate(`/lab/${projectId}/step/3`)}
-              disabled={hasUnaddressedErrors}
+              onClick={async () => { await generateStructure(); navigate(`/lab/${projectId}/step/3`); }}
+              disabled={hasUnaddressedErrors || isGenerating}
               className="px-6 py-2.5 bg-emerald-600 text-white rounded-xl text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50 transition-colors"
             >
-              Dalej → Struktura
+              {isGenerating ? 'Generuję strukturę...' : 'Dalej → Struktura'}
             </button>
           )}
         </div>

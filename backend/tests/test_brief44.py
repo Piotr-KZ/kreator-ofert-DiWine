@@ -100,6 +100,14 @@ class TestProjectContext:
 
 class TestUnsplash:
 
+    @pytest.fixture(autouse=True)
+    def _clear_unsplash_cache(self):
+        """Clear persistent cache before each test to avoid cross-contamination."""
+        import app.services.media.unsplash as unsplash_mod
+        unsplash_mod._persistent_cache.clear()
+        yield
+        unsplash_mod._persistent_cache.clear()
+
     def _mock_photo_result(self, photo_id: str, raw_url: str) -> dict:
         return {
             "id": photo_id,
@@ -119,6 +127,8 @@ class TestUnsplash:
         service.api_key = "test_key"
 
         mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {"X-Ratelimit-Remaining": "49"}
         mock_response.json.return_value = {
             "results": [self._mock_photo_result("photo-123", "https://images.unsplash.com/photo-123")]
         }
@@ -147,6 +157,8 @@ class TestUnsplash:
         service.api_key = "test_key"
 
         mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {"X-Ratelimit-Remaining": "48"}
         mock_response.json.return_value = {
             "results": [self._mock_photo_result("photo-456", "https://images.unsplash.com/photo-456")]
         }
@@ -176,6 +188,8 @@ class TestUnsplash:
         service.api_key = "test_key"
 
         mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.headers = {"X-Ratelimit-Remaining": "47"}
         mock_response.json.return_value = {
             "results": [self._mock_photo_result("photo-789", "https://images.unsplash.com/photo-789")]
         }

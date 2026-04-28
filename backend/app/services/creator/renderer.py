@@ -168,42 +168,186 @@ class PageRenderer:
     def __init__(self) -> None:
         self.block_renderer = BlockRenderer()
 
+    @staticmethod
+    def _is_url(val: str) -> bool:
+        """Check if a string looks like a URL (vs. a text description)."""
+        return val.startswith("http://") or val.startswith("https://") or val.startswith("data:")
+
+    @staticmethod
+    def _extract_text(val) -> str:
+        """Unwrap {text:"..."} objects to plain string."""
+        if isinstance(val, dict):
+            return val.get("text") or val.get("name") or val.get("url") or val.get("src") or ""
+        return str(val) if val else ""
+
+    async def _resolve_photo(self, unsplash, query: str, media_type: str = "photo_wide",
+                             trigger_dl: bool = False):
+        """Fetch a single photo from Unsplash and return (url, credit) or None.
+        trigger_dl=False skips download event to conserve API rate limit (50/hr free tier).
+        """
+        photo = await unsplash.get_photo_for_section(query, media_type)
+        if not photo:
+            return None
+        if trigger_dl:
+            await unsplash.trigger_download(photo["photo_id"])
+        credit = {
+            "photographer_name": photo["photographer_name"],
+            "photographer_url": photo["photographer_url"],
+            "photo_page_url": photo["photo_page_url"],
+        }
+        return photo["url"], credit
+
     async def resolve_media(self, project, unsplash) -> None:
-        """Fetch real photos from Unsplash for sections with photo_query."""
+        """Fetch real photos from Unsplash for sections with photo_query
+        AND for sections whose slots contain text descriptions instead of URLs."""
         vc = project.visual_concept_json or {}
         vc_sections_list = vc.get("sections", [])
         vc_sections = {s["block_code"]: s for s in vc_sections_list}
+
+        # Image slot keys to check in slots_json
+        IMAGE_SLOTS = ("hero_image", "image_url", "image", "photo")
 
         for section in project.sections:
             vc_s = vc_sections.get(section.block_code, {})
             photo_query = vc_s.get("photo_query")
             media_type = vc_s.get("media_type", "none")
             bg_type = vc_s.get("bg_type", "white")
+            slots = dict(section.slots_json or {})
+            changed = False
 
-            if photo_query and media_type in ("photo_wide", "photo_split"):
-                photo = await unsplash.get_photo_for_section(photo_query, media_type)
-                if photo:
-                    photo_url = photo["url"]
-                    # Trigger required Unsplash download event (API requirement)
-                    await unsplash.trigger_download(photo["photo_id"])
-
-                    slots = dict(section.slots_json or {})
-                    # Insert URL into the appropriate slot
-                    for slot_key in ("hero_image", "image_url", "image", "photo"):
+            # --- Pass 1: VC-driven resolution (photo_query from visual concept) ---
+            # Skip if slot already has a valid URL (don't overwrite Unsplash with Picsum)
+            existing_url = any(
+                self._is_url(self._extract_text(slots.get(k)))
+                for k in IMAGE_SLOTS
+            )
+            if photo_query and media_type in ("photo_wide", "photo_split", "avatars") and not existing_url:
+                result = await self._resolve_photo(unsplash, photo_query, media_type, trigger_dl=True)
+                if result:
+                    photo_url, credit = result
+                    inserted = False
+                    for slot_key in IMAGE_SLOTS:
                         if slot_key in slots:
                             slots[slot_key] = photo_url
-                            # Store attribution alongside the image
-                            slots["image_credit"] = {
-                                "photographer_name": photo["photographer_name"],
-                                "photographer_url": photo["photographer_url"],
-                                "photo_page_url": photo["photo_page_url"],
-                            }
-                            section.slots_json = slots
+                            slots["image_credit"] = credit
+                            inserted = True
                             break
+                    if not inserted:
+                        slots["image"] = photo_url
+                        slots["image_credit"] = credit
+                    changed = True
 
-                    # Also store in vc_section for background rendering
                     if bg_type == "dark_photo_overlay":
                         vc_s["resolved_photo_url"] = photo_url
+
+            # --- Pass 2: Slot-driven resolution ---
+            # Check for text descriptions in image slots that weren't resolved above
+            for slot_key in IMAGE_SLOTS:
+                val = self._extract_text(slots.get(slot_key))
+                if val and not self._is_url(val) and len(val) > 3:
+                    # This is a text description, not a URL — use it as search query
+                    query = photo_query or val  # prefer VC query if available
+                    result = await self._resolve_photo(unsplash, val, "photo_wide")
+                    if result:
+                        photo_url, credit = result
+                        slots[slot_key] = photo_url
+                        slots["image_credit"] = credit
+                        changed = True
+
+            # --- Pass 3: Resolve images inside nested arrays (features, tiers, testimonials) ---
+            # Use batch query to fetch multiple photos at once instead of 1-by-1
+            _FALLBACK_QUERIES = {
+                "features": "business technology professional",
+                "tiers": "product service pricing",
+                "testimonials": "professional person portrait",
+            }
+
+            for list_key in ("features", "tiers", "testimonials"):
+                items = slots.get(list_key)
+                if not isinstance(items, list):
+                    continue
+
+                # Collect items that need images
+                needs_image: list[tuple[int, dict]] = []
+                for idx, item in enumerate(items):
+                    if not isinstance(item, dict):
+                        continue
+                    # Check if already has a URL image
+                    has_url_img = any(
+                        self._is_url(self._extract_text(item.get(k)))
+                        for k in ("img", "image", "photo", "avatar")
+                    )
+                    if has_url_img:
+                        continue
+                    # Check for text description in image keys
+                    text_desc_key = None
+                    for img_key in ("img", "image", "photo", "avatar"):
+                        val = self._extract_text(item.get(img_key))
+                        if val and not self._is_url(val) and len(val) > 3:
+                            text_desc_key = img_key
+                            break
+                    needs_image.append((idx, item, text_desc_key))
+
+                if not needs_image:
+                    continue
+
+                # Batch: fetch photos for all items needing images using a single broad query
+                # then distribute results. This uses 1 API call instead of N.
+                batch_query = _FALLBACK_QUERIES.get(list_key, "business professional")
+                # Build a richer query from section heading if available
+                heading = self._extract_text(slots.get("heading") or slots.get("title"))
+                if heading and len(heading) > 3:
+                    # Use heading keywords for more relevant results
+                    batch_query = f"{heading} {batch_query}"
+
+                batch_results = await unsplash.search_photos_batch(
+                    batch_query,
+                    count=len(needs_image),
+                    orientation="squarish" if list_key == "testimonials" else "landscape",
+                    width=200 if list_key == "testimonials" else 800,
+                )
+
+                # Also try individual text descriptions if batch didn't return enough
+                for i, (idx, item, text_desc_key) in enumerate(needs_image):
+                    photo = batch_results[i] if i < len(batch_results) else None
+
+                    # If batch didn't cover this item, try individual query from title
+                    if not photo and not unsplash._rate_limited:
+                        title = self._extract_text(item.get("title") or item.get("name"))
+                        if text_desc_key:
+                            title = self._extract_text(item.get(text_desc_key))
+                        if title and len(title) > 2:
+                            result = await self._resolve_photo(unsplash, title, "photo_wide")
+                            if result:
+                                photo_url, credit = result
+                                target_key = text_desc_key or ("avatar" if list_key == "testimonials" else "img")
+                                item[target_key] = photo_url
+                                changed = True
+                                continue
+
+                    if photo:
+                        photo_url = photo["url"]
+                        target_key = text_desc_key or ("avatar" if list_key == "testimonials" else "img")
+                        item[target_key] = photo_url
+                        changed = True
+
+            # --- Pass 4: Top-level image from heading when no image exists ---
+            has_top_img = any(
+                self._is_url(self._extract_text(slots.get(k)))
+                for k in IMAGE_SLOTS
+            )
+            if not has_top_img and section.block_code not in ("NA1", "NA2", "NA3", "FO1", "LO1"):
+                heading = self._extract_text(slots.get("heading"))
+                if heading and len(heading) > 3:
+                    result = await self._resolve_photo(unsplash, heading, "photo_wide")
+                    if result:
+                        photo_url, credit = result
+                        slots["image"] = photo_url
+                        slots["image_credit"] = credit
+                        changed = True
+
+            if changed:
+                section.slots_json = slots
 
         # Persist vc changes back to project
         if vc_sections_list:

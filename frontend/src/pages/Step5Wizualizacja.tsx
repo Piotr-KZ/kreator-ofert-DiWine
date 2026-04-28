@@ -1,6 +1,9 @@
 import React from "react";
 import { useLabStore } from "@/store/labStore";
-import { EditCtx, ImagePicker, MietowaPages } from "@/components/wizualizacja/WizRender";
+import { ImagePicker } from "@/components/wizualizacja/WizRender";
+import { SECTION_RENDERERS, EditCtx as SREditCtx } from "@/components/shared/SectionRenderers";
+import { WIZ_SECTION_RENDERERS, DeviceCtx } from "@/components/wizualizacja/WizRender";
+import { DENSITY_SCALE } from "@/components/tresci/ContentRenderer";
 import { WizBlocksModal, wizInsertBlockAfter } from "@/components/wizualizacja/WizBlocks";
 import { UniToolbar, resolveClickTarget, detectElementType } from "@/components/wizualizacja/ElementToolbar";
 import { WizAIPanel } from "@/components/wizualizacja/AiWizPanel";
@@ -27,7 +30,26 @@ const FONT_PAIRS = {
 };
 
 // Lab Creator: sections from store (single page, no multi-page)
-// PAGES, PAGE_BODIES, SHARED_HEADER/FOOTER removed
+
+function mapFromStore(s) {
+  const slots = s.slots_json || {};
+  return { id: s.id, code: s.block_code, label: slots.label || s.block_code, bg: slots.bg || null, fields: slots };
+}
+
+function makeWizTypo(pair, density) {
+  const d = DENSITY_SCALE[density] || DENSITY_SCALE[3];
+  const bodySize = d.bodySize;
+  const sc = d.scale;
+  return {
+    headingFont: pair.h, bodyFont: pair.b,
+    body: bodySize, lineHeight: d.lineHeight, spacing: d.spacing,
+    eyebrow: Math.round(bodySize * 0.8),
+    h3: Math.round(bodySize * sc * sc),
+    h2: Math.round(bodySize * sc * sc * sc),
+    h1: Math.round(bodySize * sc * sc * sc * sc),
+    heading: pair.h,
+  };
+}
 
 // Device dimensions (scaled down in fit)
 const DEVICES = {
@@ -268,10 +290,79 @@ function _UnusedFormatToolbar({ toolbar, onClose }) {
 
 export default function Step5Wizualizacja() {
   const storeSections = useLabStore(s => s.sections);
+  const updateSection = useLabStore(s => s.updateSection);
   const [tweaks, setTweaks] = React.useState(WIZ_TWEAKS_DEFAULT);
   const [device, setDevice] = React.useState('desktop');
   const [tweaksOpen, setTweaksOpen] = React.useState(false);
   const [liveEdit, setLiveEdit] = React.useState(true);
+
+  // ── Editing state for SectionRenderers ──
+  const [wzSelected, setWzSelected] = React.useState(null);
+  const [wzOverrides, setWzOverrides] = React.useState({});
+  const [wzHovered, setWzHovered] = React.useState(null);
+  const [wzContent, setWzContent] = React.useState(() => storeSections.map(mapFromStore));
+  React.useEffect(() => { setWzContent(storeSections.map(mapFromStore)); }, [storeSections]);
+
+  const wzGetOv = (sectionId, elId) => {
+    const page = wzOverrides[sectionId] || {};
+    return page[elId] || {};
+  };
+  const wzPatchOverride = (sectionId, elId, patch) => {
+    setWzOverrides(prev => {
+      const pageOv = prev[sectionId] || {};
+      const elOv = pageOv[elId] || {};
+      return { ...prev, [sectionId]: { ...pageOv, [elId]: { ...elOv, ...patch } } };
+    });
+  };
+  const wzRemoveOverride = (sectionId, elId) => wzPatchOverride(sectionId, elId, { deleted: true });
+  const wzCopyOverride = () => {};
+  const wzUpdateSection = (id, patch) => {
+    setWzContent(prev => prev.map(s => s.id === id ? { ...s, ...patch } : s));
+  };
+  const wzDuplicateSection = (id) => {
+    setWzContent(prev => {
+      const idx = prev.findIndex(s => s.id === id);
+      if (idx < 0) return prev;
+      const clone = { ...prev[idx], id: prev[idx].id + '-dup-' + Math.random().toString(36).slice(2, 6) };
+      return [...prev.slice(0, idx + 1), clone, ...prev.slice(idx + 1)];
+    });
+  };
+  const wzDeleteSection = (id) => setWzContent(prev => prev.filter(s => s.id !== id));
+  const wzMoveSection = (id, dir) => {
+    setWzContent(prev => {
+      const idx = prev.findIndex(s => s.id === id);
+      if (idx < 0) return prev;
+      const target = dir === 'up' ? idx - 1 : idx + 1;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
+  };
+  const wzPushHistory = () => {};
+
+  const wzHandleImageClick = (info) => {
+    setPicker({
+      current: info.current,
+      category: 'Wnętrze',
+      onPick: (url) => {
+        // Update the section's image field in local state
+        wzUpdateSection(info.sectionId, { fields: { ...(wzContent.find(s => s.id === info.sectionId)?.fields || {}), [info.field]: url } });
+      },
+    });
+  };
+  const wzEditCtx = {
+    selected: wzSelected, select: setWzSelected,
+    overrides: wzOverrides, getOv: wzGetOv,
+    patchOverride: wzPatchOverride, removeOverride: wzRemoveOverride, copyOverride: wzCopyOverride,
+    viewport: device, hoveredSection: wzHovered, setHoveredSection: setWzHovered,
+    duplicateSection: wzDuplicateSection, deleteSection: wzDeleteSection, moveSection: wzMoveSection, pushHistory: wzPushHistory,
+    onImageClick: wzHandleImageClick,
+  };
+  const hoverBtnStyle: React.CSSProperties = {
+    border: 'none', background: 'transparent', color: '#fff', cursor: 'pointer',
+    fontSize: 12, padding: '2px 5px', borderRadius: 4, lineHeight: 1, fontFamily: 'inherit',
+  };
   const [fullscreen, setFullscreen] = React.useState(false);
   React.useEffect(() => {
     if (!fullscreen) return;
@@ -319,6 +410,27 @@ export default function Step5Wizualizacja() {
     if (!liveEdit) return;
     const root = previewRef.current?.previousElementSibling;
     if (!root) return;
+
+    // Expose helpers for ElementToolbar (uses window.* globals)
+    (window as any).applyToSelectionOrEl = (el: HTMLElement, prop: string, val: string): boolean => {
+      const sel = window.getSelection();
+      if (sel && !sel.isCollapsed && el.contains(sel.anchorNode)) {
+        try {
+          const range = sel.getRangeAt(0);
+          const span = document.createElement('span');
+          span.style[prop as any] = val;
+          range.surroundContents(span);
+          return true;
+        } catch { return false; }
+      }
+      return false;
+    };
+    (window as any).moveSection = (el: HTMLElement, dir: 'up' | 'down') => {
+      const sectionEl = el.closest('[data-section-id]') as HTMLElement | null;
+      if (!sectionEl) return;
+      const id = sectionEl.dataset.sectionId;
+      if (id) wzMoveSection(id, dir);
+    };
 
     const EDITABLE_TEXT_TAGS = new Set(['H1','H2','H3','H4','H5','H6','P','SPAN','A','LI','STRONG','EM','DIV','BLOCKQUOTE','Q','CITE','LABEL','SMALL','TIME','DT','DD']);
     const isTextOnly = (el) => {
@@ -372,7 +484,6 @@ export default function Step5Wizualizacja() {
     const onClick = (e) => {
       let t = e.target;
       if (t.closest('[data-no-edit]')) return;
-      if (t.isContentEditable) return;
       t = resolveClickTarget?.(t) || t;
       const kind = detectElementType(t);
       if (!kind) return;
@@ -436,8 +547,10 @@ export default function Step5Wizualizacja() {
       root.removeEventListener('click', onClick, true);
       root.removeEventListener('dblclick', onDbl, true);
       clearHover();
+      delete (window as any).applyToSelectionOrEl;
+      delete (window as any).moveSection;
     };
-  }, [liveEdit, 'home', device, dragMode]);
+  }, [liveEdit, device, dragMode, wzContent]);
 
   // ===== DRAG MODE — dla sekcji: auto-reorder przez DOM swap =====
   React.useEffect(() => {
@@ -531,10 +644,25 @@ export default function Step5Wizualizacja() {
         setUniToolbar(null);
       }
     } else if (action === 'replaceImage') {
+      const imgEl = el.tagName === 'IMG' ? el : el.querySelector('img') || el;
       setPicker({
-        current: el.getAttribute('src'),
-        category: el.dataset?.photoCategory || 'Wnętrze',
-        onPick: (url) => { if (el.tagName === 'IMG') el.src = url; },
+        current: imgEl.getAttribute('src') || '',
+        category: el.dataset?.photoCategory || imgEl.dataset?.photoCategory || 'Wnętrze',
+        onPick: (url) => {
+          if (imgEl.tagName === 'IMG') { imgEl.src = url; }
+          else {
+            // placeholder div → replace with img
+            const img = document.createElement('img');
+            img.src = url;
+            img.alt = '';
+            img.dataset.editableImg = 'true';
+            img.dataset.photoCategory = el.dataset?.photoCategory || 'Wnętrze';
+            if (el.style.cssText) img.style.cssText = el.style.cssText;
+            img.style.background = '';
+            img.style.display = 'block';
+            el.replaceWith(img);
+          }
+        },
       });
     } else if (action === 'addBlockAfter') {
       setBlocksModal({ afterEl: el });
@@ -827,26 +955,39 @@ export default function Step5Wizualizacja() {
               '--font-body': `'${pair.b}', sans-serif`,
             }}>
               {(() => {
-                const Page = MietowaPages?.['home'] || MietowaPages?.home;
-                if (!Page || !EditCtx) return null;
+                const densityIdx = tweaks.density === 'compact' ? 2 : tweaks.density === 'spacious' ? 4 : 3;
+                const typo = makeWizTypo(pair, densityIdx);
+                const brand = { bg: tweaks.headerBg || '#FFFFFF', bg2: '#F1F5F9', cta: tweaks.brandColor, cta2: tweaks.accentColor, ctaGradient: true };
                 return (
-                  <EditCtx.Provider value={{
-                    editMode: liveEdit,
-                    onPickImage: setPicker,
-                    onEditImage: (imgEl) => {
-                      if (!imgEl) return;
-                      // Wyczyść poprzedni
-                      document.querySelectorAll('[data-wiz-selected]').forEach(x => {
-                        x.style.outline = ''; delete x.dataset.wizSelected;
-                      });
-                      imgEl.style.outline = '2px solid #6366F1';
-                      imgEl.style.outlineOffset = '2px';
-                      imgEl.dataset.wizSelected = 'true';
-                      setUniToolbar({ el: imgEl, kind: 'image' });
-                    },
-                  }}>
-                    <Page />
-                  </EditCtx.Provider>
+                  <DeviceCtx.Provider value={device}>
+                  <SREditCtx.Provider value={wzEditCtx}>
+                    {wzContent.map((s, idx) => {
+                      const Renderer = WIZ_SECTION_RENDERERS[s.code] || SECTION_RENDERERS[s.code] || SECTION_RENDERERS.PLACEHOLDER;
+                      if (!Renderer) return null;
+                      return (
+                        <div key={s.id} data-section-id={s.id}
+                          onMouseEnter={() => setWzHovered(s.id)}
+                          onMouseLeave={() => { if (wzHovered === s.id) setWzHovered(null); }}
+                          style={{ position: 'relative' }}>
+                          <Renderer s={s} brand={idx % 2 === 0 ? brand : { ...brand, bg: brand.bg2 }} typo={typo} device={device} update={(p) => wzUpdateSection(s.id, p)}/>
+                          {wzHovered === s.id && liveEdit && !wzSelected && (
+                            <div style={{
+                              position: 'absolute', top: 6, right: 6, display: 'flex', gap: 4, zIndex: 20,
+                              background: 'rgba(15,23,42,.85)', borderRadius: 8, padding: '4px 6px',
+                              alignItems: 'center',
+                            }}>
+                              <span style={{ color: '#fff', fontSize: 10, fontWeight: 600, padding: '2px 6px', opacity: 0.7 }}>{s.label || s.code}</span>
+                              {idx > 0 && <button onClick={() => wzMoveSection(s.id, 'up')} style={hoverBtnStyle} title="W górę">↑</button>}
+                              {idx < wzContent.length - 1 && <button onClick={() => wzMoveSection(s.id, 'down')} style={hoverBtnStyle} title="W dół">↓</button>}
+                              <button onClick={() => wzDuplicateSection(s.id)} style={hoverBtnStyle} title="Duplikuj">⧉</button>
+                              <button onClick={() => wzDeleteSection(s.id)} style={{...hoverBtnStyle, color: '#FCA5A5'}} title="Usuń">✕</button>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </SREditCtx.Provider>
+                  </DeviceCtx.Provider>
                 );
               })()}
             </div>
@@ -1054,16 +1195,19 @@ export default function Step5Wizualizacja() {
               '--font-body': `'${pair.b}', sans-serif`,
             }}>
               {(() => {
-                const Page = MietowaPages?.['home'] || MietowaPages?.home;
-                if (!Page || !EditCtx) return null;
+                const densityIdx = tweaks.density === 'compact' ? 2 : tweaks.density === 'spacious' ? 4 : 3;
+                const typo = makeWizTypo(pair, densityIdx);
+                const brand = { bg: tweaks.headerBg || '#FFFFFF', bg2: '#F1F5F9', cta: tweaks.brandColor, cta2: tweaks.accentColor, ctaGradient: true };
                 return (
-                  <EditCtx.Provider value={{
-                    editMode: false,
-                    onPickImage: () => {},
-                    onEditImage: () => {},
-                  }}>
-                    <Page />
-                  </EditCtx.Provider>
+                  <DeviceCtx.Provider value={device}>
+                  <SREditCtx.Provider value={wzEditCtx}>
+                    {wzContent.map((s, idx) => {
+                      const Renderer = WIZ_SECTION_RENDERERS[s.code] || SECTION_RENDERERS[s.code] || SECTION_RENDERERS.PLACEHOLDER;
+                      if (!Renderer) return null;
+                      return <Renderer key={s.id} s={s} brand={idx % 2 === 0 ? brand : { ...brand, bg: brand.bg2 }} typo={typo} device={device} update={(p) => wzUpdateSection(s.id, p)}/>;
+                    })}
+                  </SREditCtx.Provider>
+                  </DeviceCtx.Provider>
                 );
               })()}
             </div>

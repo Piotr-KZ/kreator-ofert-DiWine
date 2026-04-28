@@ -121,7 +121,17 @@ class ClaudeClient:
         last_error = None
         response = None
         for attempt in range(max_retries):
-            response = await self.complete(system_json, user_message)
+            try:
+                response = await self.complete(system_json, user_message)
+            except RuntimeError as e:
+                logger.warning("complete_json attempt %d/%d API error: %s", attempt + 1, max_retries, e)
+                last_error = str(e)
+                if attempt < max_retries - 1:
+                    import asyncio
+                    await asyncio.sleep(2 ** attempt)  # exponential backoff: 1s, 2s
+                    continue
+                raise  # last attempt — propagate
+
             parsed = self._parse_json(response.text)
             # Lists are valid JSON, dicts with _parse_error are not
             is_error = isinstance(parsed, dict) and parsed.get("_parse_error")

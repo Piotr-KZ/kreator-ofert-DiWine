@@ -1,6 +1,10 @@
 import React from "react";
+// Editable usunięty — WizRender renderuje czysty HTML, edycja przez DOM (UniToolbar)
 // Wizualizacja — prawdziwe wyrenderowane sekcje Kawiarni Miętowa
 // Nie abstrakcyjne paski — prawdziwe nagłówki, paragrafy, zdjęcia, paleta miętowa
+
+// Unwrap {text:"..."} objects from store to plain strings
+function txt(v: unknown): string { return typeof v === 'object' && v !== null ? ((v as any).text || (v as any).name || (v as any).label || '') : (v || '') as string; }
 
 // Paleta Miętowa — z Brand (krok 2)
 const MIETOWA = {
@@ -73,15 +77,24 @@ const PHOTO_LIBRARY = {
   ],
 };
 
+// Device context — mobile/tablet/desktop
+const DeviceCtx = React.createContext<string>('desktop');
+export { DeviceCtx };
+function useDevice() { return React.useContext(DeviceCtx); }
+function isMobile(d: string) { return d === 'mobile'; }
+function isTablet(d: string) { return d === 'tablet'; }
+function isCompact(d: string) { return d === 'mobile' || d === 'tablet'; }
+
 // Edit mode context — przekazany z wiz_app przez window global
 let __editMode = false;
-const EditCtx = React.createContext({ editMode: false, onPickImage: null });
-export { EditCtx };
+const WizEditCtx = React.createContext({ editMode: false, onPickImage: null });
 
 // EditableImg — <img> zapakowany w wrapper z CSS hover-hint "Kliknij, aby edytować".
 // Cały wrapper ma data-editable-img="true" — klik na obraz zaznacza img w globalnym listenerze
 // i otwiera UniToolbar. Overlay to tylko WSKAZÓWKA wizualna (CSS :hover, nie React state).
-function EditableImg({ src, alt, style, defaultCategory = 'Wnętrze' }) {
+function EditableImg({ src: rawSrc, alt: rawAlt, style, defaultCategory = 'Wnętrze' }) {
+  const src = txt(rawSrc);
+  const alt = txt(rawAlt);
   const [currentSrc, setCurrentSrc] = React.useState(src);
   const imgRef = React.useRef(null);
   React.useEffect(() => { setCurrentSrc(src); }, [src]);
@@ -124,9 +137,18 @@ function EditableImg({ src, alt, style, defaultCategory = 'Wnętrze' }) {
         position: 'relative', display, verticalAlign: 'top',
         width: style?.width, maxWidth: style?.maxWidth,
       }}>
-      <img ref={imgRef} src={currentSrc} alt={alt} style={style}
-        data-editable-img="true"
-        data-photo-category={defaultCategory}/>
+      {currentSrc ? (
+        <img ref={imgRef} src={currentSrc} alt={alt} style={style}
+          data-editable-img="true"
+          data-photo-category={defaultCategory}/>
+      ) : (
+        <div ref={imgRef} data-editable-img="true" data-photo-category={defaultCategory}
+          style={{ ...style, background: '#E2E8F0', display: 'grid', placeItems: 'center', color: '#94A3B8' }}>
+          <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/>
+          </svg>
+        </div>
+      )}
       {/* CSS-only hint, pokazuje się tylko na hover wrappera */}
       <span className="wiz-img-hint" aria-hidden="true">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
@@ -149,9 +171,31 @@ export { EditableText };
 
 // Popover do wymiany zdjęć
 function ImagePicker({ picker, onClose }) {
+  const SEARCH_TAB = '🔍 Szukaj';
   const [category, setCategory] = React.useState(picker.category || 'Wnętrze');
   const [uploadedSrc, setUploadedSrc] = React.useState(null);
   const fileInputRef = React.useRef(null);
+  const [searchQuery, setSearchQuery] = React.useState('');
+  const [searchResults, setSearchResults] = React.useState<string[]>([]);
+  const [isSearching, setIsSearching] = React.useState(false);
+  const searchTimerRef = React.useRef<any>(null);
+
+  const doSearch = React.useCallback(async (q: string) => {
+    if (!q.trim()) { setSearchResults([]); return; }
+    setIsSearching(true);
+    try {
+      const { searchUnsplashGallery } = await import('@/api/client');
+      const res = await searchUnsplashGallery(q.trim(), 'landscape', 800, 12);
+      setSearchResults((res.data?.photos || []).map(p => p.url));
+    } catch { setSearchResults([]); }
+    setIsSearching(false);
+  }, []);
+
+  const handleSearchInput = (val: string) => {
+    setSearchQuery(val);
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
+    searchTimerRef.current = setTimeout(() => doSearch(val), 500);
+  };
 
   const handleUpload = (e) => {
     const f = e.target.files?.[0];
@@ -165,6 +209,9 @@ function ImagePicker({ picker, onClose }) {
     };
     reader.readAsDataURL(f);
   };
+
+  const isSearchTab = category === SEARCH_TAB;
+  const gridPhotos = isSearchTab ? searchResults : (PHOTO_LIBRARY[category] || []);
 
   return (
     <div onClick={onClose} style={{
@@ -193,7 +240,7 @@ function ImagePicker({ picker, onClose }) {
         </div>
         {/* Tabs */}
         <div style={{ padding: '12px 22px 0', display: 'flex', gap: 4, borderBottom: '1px solid #E2E8F0' }}>
-          {Object.keys(PHOTO_LIBRARY).map(cat => (
+          {[SEARCH_TAB, ...Object.keys(PHOTO_LIBRARY)].map(cat => (
             <button key={cat} onClick={() => setCategory(cat)} style={{
               padding: '9px 14px', border: 'none', background: 'transparent',
               fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
@@ -214,12 +261,32 @@ function ImagePicker({ picker, onClose }) {
           </button>
           <input ref={fileInputRef} type="file" accept="image/*" onChange={handleUpload} style={{ display: 'none' }}/>
         </div>
+        {/* Search bar */}
+        {isSearchTab && (
+          <div style={{ padding: '14px 22px 0' }}>
+            <input
+              autoFocus
+              value={searchQuery}
+              onChange={e => handleSearchInput(e.target.value)}
+              placeholder="Wpisz po angielsku, np. modern office, coffee shop, team meeting..."
+              style={{
+                width: '100%', padding: '10px 14px', border: '1px solid #CBD5E1', borderRadius: 8,
+                fontSize: 14, fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box',
+              }}
+              onFocus={e => { e.target.style.borderColor = '#6366F1'; }}
+              onBlur={e => { e.target.style.borderColor = '#CBD5E1'; }}
+            />
+          </div>
+        )}
         {/* Grid */}
-        <div style={{ padding: 22, overflow: 'auto', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-          {(PHOTO_LIBRARY[category] || []).map((url, i) => {
+        <div style={{ padding: 22, overflow: 'auto', display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, minHeight: 200 }}>
+          {isSearching && <div style={{ gridColumn: '1/-1', textAlign: 'center', color: '#94A3B8', padding: 40, fontSize: 14 }}>Szukam na Unsplash…</div>}
+          {isSearchTab && !isSearching && !searchQuery && <div style={{ gridColumn: '1/-1', textAlign: 'center', color: '#94A3B8', padding: 40, fontSize: 14 }}>Wpisz frazę aby wyszukać zdjęcia na Unsplash</div>}
+          {isSearchTab && !isSearching && searchQuery && searchResults.length === 0 && <div style={{ gridColumn: '1/-1', textAlign: 'center', color: '#94A3B8', padding: 40, fontSize: 14 }}>Brak wyników dla "{searchQuery}"</div>}
+          {!isSearching && gridPhotos.map((url, i) => {
             const isCurrent = url === picker.current;
             return (
-              <div key={i} onClick={() => { picker.onPick(url); onClose(); }}
+              <div key={url + i} onClick={() => { picker.onPick(url); onClose(); }}
                 style={{
                   position: 'relative', aspectRatio: '1/1',
                   borderRadius: 8, overflow: 'hidden', cursor: 'pointer',
@@ -267,7 +334,8 @@ const B = (extra = {}) => ({
 });
 
 // Button
-function Btn({ children, primary, onWhite, secondary, style = {} }) {
+function Btn({ children, primary, onWhite, secondary, style = {}, accent }: any) {
+  const cta = accent || MIETOWA.mint;
   const base = {
     display: 'inline-flex', alignItems: 'center', gap: 8,
     padding: '13px 22px', borderRadius: 999,
@@ -279,17 +347,18 @@ function Btn({ children, primary, onWhite, secondary, style = {} }) {
   if (secondary) {
     return <span data-cta="true" role="button" style={{ ...base, background: 'transparent', color: onWhite ? '#fff' : MIETOWA.ink, border: `1px solid ${onWhite ? 'rgba(255,255,255,.3)' : MIETOWA.line}`, ...style }}>{children}</span>;
   }
-  return <span data-cta="true" role="button" style={{ ...base, background: MIETOWA.mint, color: MIETOWA.ink, boxShadow: '0 1px 2px rgba(31,41,55,.08)', ...style }}>{children} <span data-no-edit="true">→</span></span>;
+  return <span data-cta="true" role="button" style={{ ...base, background: cta, color: MIETOWA.ink, boxShadow: '0 1px 2px rgba(31,41,55,.08)', ...style }}>{children} <span data-no-edit="true">→</span></span>;
 }
 
 // Chip/eyebrow
-function Eyebrow({ children, onDark }) {
+function Eyebrow({ children, onDark, accent }: any) {
+  const cta = accent || MIETOWA.mint;
   return (
     <div style={{
       display: 'inline-flex', alignItems: 'center', gap: 8,
       padding: '5px 12px',
-      background: onDark ? 'rgba(168,213,186,.15)' : MIETOWA.mint + '30',
-      color: onDark ? MIETOWA.mint : '#2F6F50',
+      background: onDark ? 'rgba(168,213,186,.15)' : cta + '30',
+      color: onDark ? cta : '#2F6F50',
       borderRadius: 999,
       fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.08em',
       fontFamily: 'var(--font-body, Inter, sans-serif)',
@@ -300,71 +369,79 @@ function Eyebrow({ children, onDark }) {
   );
 }
 
-// Container
-const Container = ({ children, style = {} }) => (
-  <div style={{ maxWidth: 1200, margin: '0 auto', padding: '0 48px', ...style }}>{children}</div>
-);
+// Container (responsive padding)
+const Container = ({ children, style = {} }) => {
+  const d = useDevice();
+  const px = isMobile(d) ? '0 16px' : isTablet(d) ? '0 28px' : '0 48px';
+  return <div style={{ maxWidth: 1200, margin: '0 auto', padding: px, ...style }}>{children}</div>;
+};
 
 // ============ SECTIONS ============
 
-function SecNav() {
+function SecNav({ s, update, brand }: any = {}) {
+  const f = s?.fields || {};
+  const d = useDevice();
+  const setField = (k: string, v: string) => update?.({ fields: { ...f, [k]: v } });
+  const cta = brand?.cta || MIETOWA.mint;
+  const brandName = txt(f.brand_name) || 'Miętowa';
   return (
     <nav style={{ background: '#fff', borderBottom: `1px solid ${MIETOWA.line}`, padding: '18px 0' }}>
-      <Container style={{ display: 'flex', alignItems: 'center', gap: 32 }}>
+      <Container style={{ display: 'flex', alignItems: 'center', gap: isMobile(d) ? 12 : 32, flexWrap: isMobile(d) ? 'wrap' as const : undefined }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 34, height: 34, borderRadius: '50%', background: MIETOWA.mint, display: 'grid', placeItems: 'center', color: MIETOWA.ink, fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 18, fontWeight: 500 }}>M</div>
-          <span style={{ fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 22, color: MIETOWA.ink, fontWeight: 500, letterSpacing: '-0.01em' }}>Miętowa</span>
+          <div style={{ width: 34, height: 34, borderRadius: '50%', background: cta, display: 'grid', placeItems: 'center', color: MIETOWA.ink, fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 18, fontWeight: 500 }}>{brandName[0]}</div>
+          <span style={{ fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: isMobile(d) ? 18 : 22, color: MIETOWA.ink, fontWeight: 500, letterSpacing: '-0.01em' }}>{brandName}</span>
         </div>
-        <div style={{ flex: 1, display: 'flex', gap: 28, fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 14, color: MIETOWA.inkSoft }}>
-          {['Menu', 'O nas', 'Wydarzenia', 'Kontakt'].map(l => <a key={l} style={{ color: 'inherit', textDecoration: 'none' }}>{l}</a>)}
-        </div>
-        <Btn>Rezerwuj stolik</Btn>
+        {!isMobile(d) && (
+          <div style={{ flex: 1, display: 'flex', gap: 28, fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 14, color: MIETOWA.inkSoft }}>
+            {(f.nav_items || ['Menu', 'O nas', 'Wydarzenia', 'Kontakt']).map((l: any) => <a key={txt(l)} style={{ color: 'inherit', textDecoration: 'none' }}>{txt(l)}</a>)}
+          </div>
+        )}
+        <Btn accent={cta}>{txt(f.cta) || 'Rezerwuj stolik'}</Btn>
       </Container>
     </nav>
   );
 }
 
-function SecHero() {
+function SecHero({ s, update, brand }: any = {}) {
+  const f = s?.fields || {};
+  const d = useDevice();
+  const setField = (k: string, v: string) => update?.({ fields: { ...f, [k]: v } });
+  const cta = brand?.cta || MIETOWA.mint;
+  const mob = isMobile(d);
+  const tab = isTablet(d);
   return (
     <section style={{ background: MIETOWA.cream, padding: '0', position: 'relative' }}>
-      <Container style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 64, alignItems: 'center', padding: '80px 48px', maxWidth: 1280 }}>
+      <Container style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: mob ? 32 : 64, alignItems: 'center', padding: mob ? '40px 16px' : tab ? '60px 28px' : '80px 48px', maxWidth: 1280 }}>
         <div>
-          <Eyebrow>Kawa palona we Wrocławiu</Eyebrow>
-          <h1 style={H({ fontSize: 64, marginTop: 20, marginBottom: 24 })}>
-            <span data-editable-color="true">Miętowa.</span><br/>
-            <span data-editable-color="true">Twoja codzienna</span><br/>
-            <em data-editable-color="true" style={{ fontStyle: 'italic', color: '#2F6F50' }}>przystań</em>
-            <span data-editable-color="true">.</span>
-          </h1>
-          <p style={B({ fontSize: 17, marginBottom: 32, maxWidth: 480 })}>
-            Palimy kawę świeżo w naszej mikropalarni przy ul. Ruskiej. Serwujemy ją z ciastami, książkami i prawdziwymi rozmowami — codziennie od 8:00.
-          </p>
+          <Eyebrow accent={cta}>{txt(f.eyebrow) || 'Kawa palona we Wrocławiu'}</Eyebrow>
+          <h1 style={H({ fontSize: mob ? 36 : tab ? 48 : 64, marginTop: 20, marginBottom: 24 })}>{txt(f.heading) || 'Miętowa. Twoja codzienna przystań.'}</h1>
+          <p style={B({ fontSize: 17, marginBottom: 32, maxWidth: 480 })}>{txt(f.body) || 'Palimy kawę świeżo w naszej mikropalarni przy ul. Ruskiej. Serwujemy ją z ciastami, książkami i prawdziwymi rozmowami — codziennie od 8:00.'}</p>
           <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <Btn>Sprawdź menu</Btn>
-            <Btn secondary>Znajdź nas na mapie</Btn>
+            <Btn accent={cta}>{txt(f.cta) || 'Sprawdź menu'}</Btn>
+            <Btn secondary accent={cta}>{txt(f.cta_secondary) || 'Znajdź nas na mapie'}</Btn>
           </div>
           <div style={{ display: 'flex', gap: 24, marginTop: 48, paddingTop: 28, borderTop: `1px solid ${MIETOWA.line}` }}>
-            {[['8:00–19:00', 'codziennie'], ['Ruska 12', 'Wrocław'], ['4.9 ★', '312 opinii Google']].map(([k, v], i) => (
+            {(f.stats || [{ value: '8:00–19:00', label: 'codziennie' }, { value: 'Ruska 12', label: 'Wrocław' }, { value: '4.9 ★', label: '312 opinii Google' }]).map((st: any, i: number) => (
               <div key={i}>
-                <div style={{ fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 20, color: MIETOWA.ink }}>{k}</div>
-                <div style={{ fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 12, color: MIETOWA.muted, marginTop: 2 }}>{v}</div>
+                <div style={{ fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 20, color: MIETOWA.ink }}>{txt(st.value) || txt(st.number) || ''}</div>
+                <div style={{ fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 12, color: MIETOWA.muted, marginTop: 2 }}>{txt(st.label) || txt(st.desc) || ''}</div>
               </div>
             ))}
           </div>
         </div>
         <div style={{ position: 'relative' }}>
-          <EditableImg src={PHOTOS.hero} alt="Wnętrze kawiarni Miętowa" defaultCategory="Wnętrze"
-            style={{ width: '100%', height: 560, objectFit: 'cover', borderRadius: 8, display: 'block' }}/>
+          <EditableImg src={f.image || PHOTOS.hero} alt={f.heading || 'Hero'} defaultCategory="Wnętrze"
+            style={{ width: '100%', height: mob ? 280 : tab ? 400 : 560, objectFit: 'cover', borderRadius: 8, display: 'block' }}/>
           <div style={{
             position: 'absolute', bottom: 24, left: 24,
             background: '#fff', padding: '14px 18px', borderRadius: 8,
             boxShadow: '0 10px 30px rgba(0,0,0,.1)',
             display: 'flex', alignItems: 'center', gap: 12,
           }}>
-            <div style={{ width: 40, height: 40, borderRadius: '50%', background: MIETOWA.mint, display: 'grid', placeItems: 'center', fontSize: 18 }}>☕</div>
+            <div style={{ width: 40, height: 40, borderRadius: '50%', background: cta, display: 'grid', placeItems: 'center', fontSize: 18 }}>☕</div>
             <div>
-              <div style={{ fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 15, color: MIETOWA.ink }}>Dzisiejsza kawa</div>
-              <div style={{ fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 12, color: MIETOWA.muted }}>Etiopia Guji · owocowa, lekka</div>
+              <div style={{ fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 15, color: MIETOWA.ink }}>{txt(f.badge_title) || 'Dzisiejsza kawa'}</div>
+              <div style={{ fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 12, color: MIETOWA.muted }}>{txt(f.badge_subtitle) || 'Etiopia Guji · owocowa, lekka'}</div>
             </div>
           </div>
         </div>
@@ -373,13 +450,17 @@ function SecHero() {
   );
 }
 
-function SecLogos() {
+function SecLogos({ s, update, brand }: any = {}) {
+  const f = s?.fields || {};
+  const d = useDevice();
+  const setField = (k: string, v: string) => update?.({ fields: { ...f, [k]: v } });
+  const mob = isMobile(d);
   return (
     <section style={{ background: '#fff', padding: '32px 0', borderBottom: `1px solid ${MIETOWA.line}` }}>
       <Container>
-        <div style={{ textAlign: 'center', fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 11, color: MIETOWA.muted, textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: 20 }}>Piszą o nas</div>
-        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', gap: 48, opacity: 0.55 }}>
-          {['Gazeta Wyborcza', 'Kukbuk', 'Coffee Lovers', 'Wroclove', 'Slow Food'].map(n => (
+        <div style={{ textAlign: 'center', fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 11, color: MIETOWA.muted, textTransform: 'uppercase', letterSpacing: '0.15em', marginBottom: 20 }}>{txt(f.heading) || 'Piszą o nas'}</div>
+        <div style={{ display: 'flex', justifyContent: 'space-around', alignItems: 'center', gap: mob ? 16 : 48, opacity: 0.55, flexWrap: 'wrap' as const }}>
+          {(f.logos || ['Gazeta Wyborcza', 'Kukbuk', 'Coffee Lovers', 'Wroclove', 'Slow Food']).map((n: string) => (
             <div key={n} style={{ fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 17, color: MIETOWA.ink, fontStyle: 'italic', fontWeight: 400 }}>{n}</div>
           ))}
         </div>
@@ -388,77 +469,89 @@ function SecLogos() {
   );
 }
 
-function SecProblem() {
+function SecProblem({ s, update, brand }: any = {}) {
+  const f = s?.fields || {};
+  const d = useDevice();
+  const setField = (k: string, v: string) => update?.({ fields: { ...f, [k]: v } });
+  const cta = brand?.cta || MIETOWA.mint;
+  const mob = isMobile(d);
   return (
-    <section style={{ background: MIETOWA.sand, padding: '100px 0' }}>
+    <section style={{ background: MIETOWA.sand, padding: mob ? '60px 0' : '100px 0' }}>
       <Container style={{ maxWidth: 820, textAlign: 'center' }}>
-        <Eyebrow>Po co kolejna kawiarnia?</Eyebrow>
-        <h2 style={H({ fontSize: 48, marginTop: 20, marginBottom: 20 })}>
-          Bo szybka kawa z sieciówki<br/>to nie to samo.
-        </h2>
-        <p style={B({ fontSize: 17, maxWidth: 620, margin: '0 auto' })}>
-          Każdego ranka mijasz dziesięć miejsc, gdzie kawa jest… po prostu kawą. Tymczasem dobra filiżanka to pretekst do zatrzymania się, rozmowy i doceniania chwili.
-        </p>
+        <Eyebrow accent={cta}>{txt(f.eyebrow) || 'Po co kolejna kawiarnia?'}</Eyebrow>
+        <h2 style={H({ fontSize: mob ? 28 : 48, marginTop: 20, marginBottom: 20 })}>{txt(f.heading) || 'Bo szybka kawa z sieciówki to nie to samo.'}</h2>
+        <p style={B({ fontSize: 17, maxWidth: 620, margin: '0 auto' })}>{txt(f.body) || 'Każdego ranka mijasz dziesięć miejsc, gdzie kawa jest… po prostu kawą. Tymczasem dobra filiżanka to pretekst do zatrzymania się, rozmowy i doceniania chwili.'}</p>
       </Container>
     </section>
   );
 }
 
-function SecSolution() {
-  const features = [
+function SecSolution({ s, update, brand }: any = {}) {
+  const fl = s?.fields || {};
+  const d = useDevice();
+  const setField = (k: string, v: string) => update?.({ fields: { ...fl, [k]: v } });
+  const cta = brand?.cta || MIETOWA.mint;
+  const mob = isMobile(d); const tab = isTablet(d);
+  const defaultFeatures = [
     { title: 'Własna palarnia', body: 'Surowe ziarna z małych farm w Etiopii, Kolumbii i Gwatemali. Palimy co dwa tygodnie, sprzedajemy tylko świeże.', img: PHOTOS.beans },
     { title: 'Ręczne parzenie', body: 'Chemex, V60, aeropress — każda metoda dobrana do profilu ziarna. Baristki znają swoje rzemiosło.', img: PHOTOS.pourover },
     { title: 'Lokalne ciasta', body: 'Codziennie nowe wypieki od pań z piekarni Szelągowska. Marchewkowe, makowiec, sernik krakowski.', img: PHOTOS.cake },
   ];
+  const features = fl.features || defaultFeatures;
+  const cols = mob ? '1fr' : tab ? '1fr 1fr' : 'repeat(3, 1fr)';
   return (
-    <section style={{ background: '#fff', padding: '100px 0' }}>
+    <section style={{ background: '#fff', padding: mob ? '60px 0' : '100px 0' }}>
       <Container>
-        <div style={{ textAlign: 'center', marginBottom: 56 }}>
-          <Eyebrow>Co robimy inaczej</Eyebrow>
-          <h2 style={H({ fontSize: 48, marginTop: 20 })}>Palimy, parzymy, dzielimy się.</h2>
+        <div style={{ textAlign: 'center', marginBottom: mob ? 32 : 56 }}>
+          <Eyebrow accent={cta}>{txt(fl.eyebrow) || 'Co robimy inaczej'}</Eyebrow>
+          <h2 style={H({ fontSize: mob ? 32 : 48, marginTop: 20 })}>{txt(fl.heading) || 'Palimy, parzymy, dzielimy się.'}</h2>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 32 }}>
-          {features.map((f, i) => (
+        <div style={{ display: 'grid', gridTemplateColumns: cols, gap: mob ? 24 : 32 }}>
+          {features.map((f: any, i: number) => {
+            const fImg = txt(f.img) || txt(f.image) || txt(f.photo) || defaultFeatures[i % defaultFeatures.length]?.img || '';
+            return (
             <div key={i}>
-              <EditableImg src={f.img} alt={f.title} defaultCategory={f.title === 'Lokalne ciasta' ? 'Ciasta' : f.title === 'Ręczne parzenie' ? 'Kawa' : 'Kawa'} style={{ width: '100%', height: 280, objectFit: 'cover', borderRadius: 8, display: 'block', marginBottom: 20 }}/>
-              <h3 style={H({ fontSize: 24, marginBottom: 10 })}>{f.title}</h3>
-              <p style={B({ fontSize: 15 })}>{f.body}</p>
+              <EditableImg src={fImg} alt={txt(f.title)} defaultCategory="Kawa" style={{ width: '100%', height: mob ? 200 : 280, objectFit: 'cover', borderRadius: 8, display: 'block', marginBottom: 20 }}/>
+              <h3 style={H({ fontSize: mob ? 20 : 24, marginBottom: 10 })}>{txt(f.title)}</h3>
+              <p style={B({ fontSize: 15 })}>{txt(f.body)}</p>
             </div>
-          ))}
+            );
+          })}
         </div>
       </Container>
     </section>
   );
 }
 
-function SecWhy() {
-  const points = [
+function SecWhy({ s, update, brand }: any = {}) {
+  const f = s?.fields || {};
+  const d = useDevice();
+  const setField = (k: string, v: string) => update?.({ fields: { ...f, [k]: v } });
+  const cta = brand?.cta || MIETOWA.mint;
+  const mob = isMobile(d);
+  const points = f.points || [
     'Kawa z plantacji pod kontrolą fair-trade',
     'Zero plastiku — kubki kompostowalne lub własny termos -2 zł',
     'Pies mile widziany, dostaje miskę wody i gratis uszko',
     'Wi-Fi, książki, ciche godziny 8–11 dla pracujących',
   ];
   return (
-    <section style={{ background: '#EEF6F4', padding: '100px 0' }}>
-      <Container style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 64, alignItems: 'center' }}>
+    <section style={{ background: '#EEF6F4', padding: mob ? '60px 0' : '100px 0' }}>
+      <Container style={{ display: 'grid', gridTemplateColumns: mob ? '1fr' : '1fr 1fr', gap: mob ? 32 : 64, alignItems: 'center' }}>
         <div>
-          <EditableImg src={PHOTOS.interior} alt="Wnętrze" defaultCategory="Wnętrze" style={{ width: '100%', height: 480, objectFit: 'cover', borderRadius: 8, display: 'block' }}/>
+          <EditableImg src={f.image || PHOTOS.interior} alt="Wnętrze" defaultCategory="Wnętrze" style={{ width: '100%', height: mob ? 240 : 480, objectFit: 'cover', borderRadius: 8, display: 'block' }}/>
         </div>
         <div>
-          <Eyebrow>Nasze zasady</Eyebrow>
-          <h2 style={H({ fontSize: 44, marginTop: 20, marginBottom: 20 })}>
-            Nie śpieszymy się.<br/>I tego uczymy.
-          </h2>
-          <p style={B({ fontSize: 16, marginBottom: 28 })}>
-            Kawa to rytuał. Stół, przy którym siedzisz, książka, którą pożyczasz z półki, pies, którego głaszczesz — tu wszystko ma czas.
-          </p>
+          <Eyebrow accent={cta}>{txt(f.eyebrow) || 'Nasze zasady'}</Eyebrow>
+          <h2 style={H({ fontSize: 44, marginTop: 20, marginBottom: 20 })}>{txt(f.heading) || 'Nie śpieszymy się. I tego uczymy.'}</h2>
+          <p style={B({ fontSize: 16, marginBottom: 28 })}>{txt(f.body) || 'Kawa to rytuał. Stół, przy którym siedzisz, książka, którą pożyczasz z półki, pies, którego głaszczesz — tu wszystko ma czas.'}</p>
           <div style={{ display: 'grid', gap: 14 }}>
-            {points.map((p, i) => (
+            {points.map((p: any, i: number) => (
               <div key={i} style={{ display: 'flex', gap: 14, alignItems: 'flex-start' }}>
-                <div style={{ width: 24, height: 24, borderRadius: '50%', background: MIETOWA.mint, display: 'grid', placeItems: 'center', flexShrink: 0, marginTop: 1 }}>
+                <div style={{ width: 24, height: 24, borderRadius: '50%', background: cta, display: 'grid', placeItems: 'center', flexShrink: 0, marginTop: 1 }}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={MIETOWA.ink} strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
                 </div>
-                <p style={B({ fontSize: 15, color: MIETOWA.ink })}>{p}</p>
+                <p style={B({ fontSize: 15, color: MIETOWA.ink })}>{txt(p)}</p>
               </div>
             ))}
           </div>
@@ -468,94 +561,115 @@ function SecWhy() {
   );
 }
 
-function SecOffer() {
-  const tiers = [
+function SecOffer({ s, update, brand }: any = {}) {
+  const fl = s?.fields || {};
+  const d = useDevice();
+  const setField = (k: string, v: string) => update?.({ fields: { ...fl, [k]: v } });
+  const cta = brand?.cta || MIETOWA.mint;
+  const mob = isMobile(d); const tab = isTablet(d);
+  const defaultTiers = [
     { name: 'Kawa', price: 'od 9 zł', desc: 'Espresso, cappuccino, flat white, filtr', items: ['Espresso — 9 zł', 'Cappuccino — 14 zł', 'Flat white — 16 zł', 'Chemex / V60 — 18 zł', 'Mrożona — 17 zł'], img: PHOTOS.pourover },
     { name: 'Śniadania', price: 'od 18 zł', desc: 'Do 13:00, codziennie', items: ['Jajecznica z feta — 22 zł', 'Owsianka z orzechami — 18 zł', 'Kanapka z serem kozim — 24 zł', 'Naleśniki z twarogiem — 21 zł'], img: PHOTOS.barista },
     { name: 'Ciasta', price: 'od 12 zł', desc: 'Codzienne wypieki', items: ['Sernik krakowski — 14 zł', 'Makowiec — 12 zł', 'Marchewkowe — 13 zł', 'Brownie wegańskie — 15 zł', 'Szarlotka — 12 zł'], img: PHOTOS.cake },
   ];
+  const tiers = fl.tiers || defaultTiers;
+  const cols = mob ? '1fr' : tab ? '1fr 1fr' : 'repeat(3, 1fr)';
   return (
-    <section style={{ background: '#fff', padding: '100px 0' }}>
+    <section style={{ background: '#fff', padding: mob ? '60px 0' : '100px 0' }}>
       <Container>
-        <div style={{ textAlign: 'center', marginBottom: 56 }}>
-          <Eyebrow>Nasze menu</Eyebrow>
-          <h2 style={H({ fontSize: 48, marginTop: 20 })}>Proste, dobre, bez ściemy.</h2>
+        <div style={{ textAlign: 'center', marginBottom: mob ? 32 : 56 }}>
+          <Eyebrow accent={cta}>{txt(fl.eyebrow) || 'Nasze menu'}</Eyebrow>
+          <h2 style={H({ fontSize: mob ? 32 : 48, marginTop: 20 })}>{txt(fl.heading) || 'Proste, dobre, bez ściemy.'}</h2>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 24 }}>
-          {tiers.map((t, i) => (
+        <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 24 }}>
+          {tiers.map((t: any, i: number) => {
+            const tImg = txt(t.img) || txt(t.image) || txt(t.photo) || defaultTiers[i % defaultTiers.length]?.img || '';
+            return (
             <div key={i} style={{ border: `1px solid ${MIETOWA.line}`, borderRadius: 12, overflow: 'hidden', background: '#fff' }}>
-              <EditableImg src={t.img} alt={t.name} defaultCategory={t.name === 'Ciasta' ? 'Ciasta' : t.name === 'Śniadania' ? 'Wnętrze' : 'Kawa'} style={{ width: '100%', height: 180, objectFit: 'cover', display: 'block' }}/>
+              <EditableImg src={tImg} alt={t.name} defaultCategory="Kawa" style={{ width: '100%', height: mob ? 160 : 180, objectFit: 'cover', display: 'block' }}/>
               <div style={{ padding: 28 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 }}>
-                  <h3 style={H({ fontSize: 28 })}>{t.name}</h3>
-                  <span style={{ fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 16, color: '#2F6F50', fontStyle: 'italic' }}>{t.price}</span>
+                  <h3 style={H({ fontSize: 28 })}>{txt(t.name)}</h3>
+                  <span style={{ fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 16, color: '#2F6F50', fontStyle: 'italic' }}>{txt(t.price)}</span>
                 </div>
-                <p style={B({ fontSize: 13, marginBottom: 16, color: MIETOWA.muted })}>{t.desc}</p>
+                <p style={B({ fontSize: 13, marginBottom: 16, color: MIETOWA.muted })}>{txt(t.desc)}</p>
                 <div style={{ borderTop: `1px solid ${MIETOWA.line}`, paddingTop: 14, display: 'grid', gap: 8 }}>
-                  {t.items.map((it, j) => <div key={j} style={{ fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 14, color: MIETOWA.inkSoft }}>{it}</div>)}
+                  {(t.items || []).map((it: any, j: number) => <div key={j} style={{ fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 14, color: MIETOWA.inkSoft }}>{txt(it)}</div>)}
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </Container>
     </section>
   );
 }
 
-function SecTestimonials() {
-  const ts = [
+function SecTestimonials({ s, update, brand }: any = {}) {
+  const fl = s?.fields || {};
+  const d = useDevice();
+  const setField = (k: string, v: string) => update?.({ fields: { ...fl, [k]: v } });
+  const cta = brand?.cta || MIETOWA.mint;
+  const mob = isMobile(d); const tab = isTablet(d);
+  const defaultTestimonials = [
     { quote: 'Najlepszy flat white jaki piłam we Wrocławiu. A cisza rano — bezcenna.', author: 'Kasia W.', role: 'Dziennikarka', img: PHOTOS.people2 },
     { quote: 'Zabrałem tu rodziców z Warszawy. Mama zamówiła makowiec trzy razy.', author: 'Marcin K.', role: 'Klient od 2022', img: PHOTOS.people1 },
     { quote: 'Właściciele wiedzą jak mi na imię, jak mój pies ma na imię i jaka kawa mi smakuje. Tego nie ma nigdzie indziej.', author: 'Ania P.', role: 'Stała bywalczyni', img: PHOTOS.people3 },
   ];
+  const testimonials = fl.testimonials || defaultTestimonials;
+  const cols = mob ? '1fr' : tab ? '1fr 1fr' : 'repeat(3, 1fr)';
   return (
-    <section style={{ background: MIETOWA.cream, padding: '100px 0' }}>
+    <section style={{ background: MIETOWA.cream, padding: mob ? '60px 0' : '100px 0' }}>
       <Container>
-        <div style={{ textAlign: 'center', marginBottom: 56 }}>
-          <Eyebrow>Co mówią goście</Eyebrow>
-          <h2 style={H({ fontSize: 48, marginTop: 20 })}>Nasze najlepsze recenzje.</h2>
+        <div style={{ textAlign: 'center', marginBottom: mob ? 32 : 56 }}>
+          <Eyebrow accent={cta}>{txt(fl.eyebrow) || 'Co mówią goście'}</Eyebrow>
+          <h2 style={H({ fontSize: mob ? 32 : 48, marginTop: 20 })}>{txt(fl.heading) || 'Nasze najlepsze recenzje.'}</h2>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 28 }}>
-          {ts.map((t, i) => (
-            <div key={i} data-component="testimonial" style={{ background: '#fff', padding: 32, borderRadius: 12, border: `1px solid ${MIETOWA.line}` }}>
+        <div style={{ display: 'grid', gridTemplateColumns: cols, gap: mob ? 20 : 28 }}>
+          {testimonials.map((t: any, i: number) => {
+            const tImg = txt(t.img) || txt(t.avatar) || txt(t.image) || txt(t.photo) || defaultTestimonials[i % defaultTestimonials.length]?.img || '';
+            return (
+            <div key={i} data-component={"testimonial"} style={{ background: '#fff', padding: 32, borderRadius: 12, border: `1px solid ${MIETOWA.line}` }}>
               <div style={{ display: 'flex', gap: 2, marginBottom: 16, color: '#E0A84F' }}>
-                {[1,2,3,4,5].map(s => <svg key={s} width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>)}
+                {[1,2,3,4,5].map(st => <svg key={st} width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>)}
               </div>
-              <div style={{ fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 46, color: MIETOWA.mint, lineHeight: 0.5, marginBottom: 4 }}>“</div>
-              <p style={{ ...B({ fontSize: 16, color: MIETOWA.ink, marginBottom: 24 }), fontStyle: 'normal' }}>{t.quote}</p>
+              <div style={{ fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 46, color: cta, lineHeight: 0.5, marginBottom: 4 }}>"</div>
+              <p style={{ ...B({ fontSize: 16, color: MIETOWA.ink, marginBottom: 24 }), fontStyle: 'normal' }}>{txt(t.quote)}</p>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <EditableImg src={t.img} alt={t.author} defaultCategory="Ludzie" style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover' }}/>
+                <EditableImg src={tImg} alt={txt(t.author)} defaultCategory="Ludzie" style={{ width: 44, height: 44, borderRadius: '50%', objectFit: 'cover' }}/>
                 <div>
-                  <div style={{ fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 14, fontWeight: 600, color: MIETOWA.ink }}>{t.author}</div>
-                  <div style={{ fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 12, color: MIETOWA.muted }}>{t.role}</div>
+                  <div style={{ fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 14, fontWeight: 600, color: MIETOWA.ink }}>{txt(t.author)}</div>
+                  <div style={{ fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 12, color: MIETOWA.muted }}>{txt(t.role)}</div>
                 </div>
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </Container>
     </section>
   );
 }
 
-function SecCTA() {
+function SecCTA({ s, update, brand }: any = {}) {
+  const f = s?.fields || {};
+  const d = useDevice();
+  const setField = (k: string, v: string) => update?.({ fields: { ...f, [k]: v } });
+  const cta = brand?.cta || MIETOWA.mint;
+  const mob = isMobile(d);
   return (
-    <section style={{ background: MIETOWA.ink, padding: '100px 0', position: 'relative', overflow: 'hidden' }}>
-      <EditableImg src={PHOTOS.couple} alt="" defaultCategory="Wnętrze" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.25 }}/>
+    <section style={{ background: MIETOWA.ink, padding: mob ? '60px 0' : '100px 0', position: 'relative', overflow: 'hidden' }}>
+      <EditableImg src={f.image || PHOTOS.couple} alt="" defaultCategory="Wnętrze" style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.25 }}/>
       <Container style={{ position: 'relative', textAlign: 'center', maxWidth: 760 }}>
-        <Eyebrow onDark>Zapraszamy</Eyebrow>
-        <h2 style={H({ fontSize: 56, marginTop: 20, marginBottom: 20, color: '#fff' })}>
-          Wpadnij dziś<br/>na filiżankę.
-        </h2>
-        <p style={B({ fontSize: 17, color: 'rgba(255,255,255,.8)', marginBottom: 32, maxWidth: 520, margin: '0 auto 32px' })}>
-          Codziennie 8:00–19:00. Rezerwacja nie jest potrzebna, ale miło wiedzieć, że będziesz.
-        </p>
+        <Eyebrow onDark accent={cta}>{txt(f.eyebrow) || 'Zapraszamy'}</Eyebrow>
+        <h2 style={H({ fontSize: mob ? 32 : 56, marginTop: 20, marginBottom: 20, color: '#fff' })}>{txt(f.heading) || 'Wpadnij dziś na filiżankę.'}</h2>
+        <p style={B({ fontSize: 17, color: 'rgba(255,255,255,.8)', marginBottom: 32, maxWidth: 520, margin: '0 auto 32px' })}>{txt(f.body) || 'Codziennie 8:00–19:00. Rezerwacja nie jest potrzebna, ale miło wiedzieć, że będziesz.'}</p>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center' }}>
-          <Btn>Zarezerwuj stolik</Btn>
-          <Btn secondary onWhite>
+          <Btn accent={cta}>{txt(f.cta) || 'Zarezerwuj stolik'}</Btn>
+          <Btn secondary onWhite accent={cta}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" style={{ marginRight: 6, verticalAlign: '-2px' }}><path d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.12.96.37 1.9.72 2.78a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.3-1.29a2 2 0 012.11-.45c.88.35 1.82.6 2.78.72A2 2 0 0122 16.92z"/></svg>
-            71 123 45 67
+            {txt(f.cta_secondary) || '71 123 45 67'}
           </Btn>
         </div>
       </Container>
@@ -563,43 +677,94 @@ function SecCTA() {
   );
 }
 
-function SecFooter() {
+function SecFooter({ s, update, brand }: any = {}) {
+  const f = s?.fields || {};
+  const d = useDevice();
+  const setField = (k: string, v: string) => update?.({ fields: { ...f, [k]: v } });
+  const cta = brand?.cta || MIETOWA.mint;
+  const mob = isMobile(d); const tab = isTablet(d);
+  const brandName = txt(f.brand_name) || 'Miętowa';
+  const defaultColumns = [
+    { title: 'Menu', links: ['Kawa', 'Śniadania', 'Ciasta', 'Lunch'] },
+    { title: 'O nas', links: ['Historia', 'Palarnia', 'Zespół', 'Kariera'] },
+    { title: 'Kontakt', links: ['Ruska 12, Wrocław', '71 123 45 67', 'hej@mietowa.pl', 'Mapa'] },
+  ];
+  const columns = f.columns || defaultColumns;
+  const footCols = mob ? '1fr' : tab ? '1fr 1fr' : '1.4fr 1fr 1fr 1fr';
   return (
-    <footer style={{ background: '#0B1120', color: 'rgba(255,255,255,.7)', padding: '64px 0 32px' }}>
+    <footer style={{ background: '#0B1120', color: 'rgba(255,255,255,.7)', padding: mob ? '40px 0 24px' : '64px 0 32px' }}>
       <Container>
-        <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1fr 1fr', gap: 48, marginBottom: 48 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: footCols, gap: mob ? 32 : 48, marginBottom: mob ? 32 : 48 }}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-              <div style={{ width: 34, height: 34, borderRadius: '50%', background: MIETOWA.mint, display: 'grid', placeItems: 'center', color: MIETOWA.ink, fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 18, fontWeight: 500 }}>M</div>
-              <span style={{ fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 22, color: '#fff', fontWeight: 500 }}>Miętowa</span>
+              <div style={{ width: 34, height: 34, borderRadius: '50%', background: cta, display: 'grid', placeItems: 'center', color: MIETOWA.ink, fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 18, fontWeight: 500 }}>{brandName[0]}</div>
+              <span style={{ fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 22, color: '#fff', fontWeight: 500 }}>{brandName}</span>
             </div>
-            <p style={{ fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 14, lineHeight: 1.6, maxWidth: 320 }}>
-              Kawiarnia z własną palarnią. Wrocław, Ruska 12. Codziennie 8:00–19:00.
-            </p>
+            <p style={{ fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 14, lineHeight: 1.6, maxWidth: 320, color: 'inherit', margin: 0 }}>{txt(f.body) || 'Kawiarnia z własną palarnią. Wrocław, Ruska 12. Codziennie 8:00–19:00.'}</p>
             <div style={{ display: 'flex', gap: 10, marginTop: 20 }}>
-              {['FB', 'IG', 'TT'].map(s => <div key={s} style={{ width: 32, height: 32, borderRadius: '50%', border: '1px solid rgba(255,255,255,.2)', display: 'grid', placeItems: 'center', fontSize: 10, fontFamily: 'var(--font-body, Inter, sans-serif)', fontWeight: 600 }}>{s}</div>)}
+              {(f.socials || ['FB', 'IG', 'TT']).map((sc: any) => <div key={txt(sc)} style={{ width: 32, height: 32, borderRadius: '50%', border: '1px solid rgba(255,255,255,.2)', display: 'grid', placeItems: 'center', fontSize: 10, fontFamily: 'var(--font-body, Inter, sans-serif)', fontWeight: 600 }}>{txt(sc)}</div>)}
             </div>
           </div>
-          {[
-            { title: 'Menu', links: ['Kawa', 'Śniadania', 'Ciasta', 'Lunch'] },
-            { title: 'O nas', links: ['Historia', 'Palarnia', 'Zespół', 'Kariera'] },
-            { title: 'Kontakt', links: ['Ruska 12, Wrocław', '71 123 45 67', 'hej@mietowa.pl', 'Mapa'] },
-          ].map(col => (
+          {columns.map((col: any) => (
             <div key={col.title}>
-              <div style={{ fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 15, color: '#fff', marginBottom: 14 }}>{col.title}</div>
+              <div style={{ fontFamily: 'var(--font-heading, Fraunces, serif)', fontSize: 15, color: '#fff', marginBottom: 14 }}>{txt(col.title)}</div>
               <div style={{ display: 'grid', gap: 8, fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 13 }}>
-                {col.links.map(l => <a key={l} style={{ color: 'inherit', textDecoration: 'none' }}>{l}</a>)}
+                {(col.links || []).map((l: any) => <a key={txt(l)} style={{ color: 'inherit', textDecoration: 'none' }}>{txt(l)}</a>)}
               </div>
             </div>
           ))}
         </div>
         <div style={{ paddingTop: 24, borderTop: '1px solid rgba(255,255,255,.1)', fontFamily: 'var(--font-body, Inter, sans-serif)', fontSize: 12, color: 'rgba(255,255,255,.5)', textAlign: 'center' }}>
-          © 2024 Miętowa. Palimy kawę i spędzamy czas. Zrobione z miłości.
+          {txt(f.copyright) || `© 2024 ${brandName}. Palimy kawę i spędzamy czas. Zrobione z miłości.`}
         </div>
       </Container>
     </footer>
   );
 }
+
+// ============ WIZ_SECTION_RENDERERS — block codes → Sec* ============
+export const WIZ_SECTION_RENDERERS: Record<string, any> = {
+  // Navigation
+  NA1: SecNav, NA2: SecNav, NA3: SecNav,
+  // Hero
+  HE1: SecHero, HE2: SecHero, HE3: SecHero, HE4: SecHero, HE5: SecHero,
+  // Problem
+  PB1: SecProblem, PB2: SecProblem, PB3: SecProblem,
+  // Solution
+  RO1: SecSolution, RO2: SecSolution,
+  // Benefits / Why us
+  KR1: SecWhy, KR2: SecWhy,
+  // Features → alias do SecSolution (3-card layout)
+  CF1: SecSolution, CF2: SecSolution,
+  // Objections → alias do SecProblem (centered text)
+  OB1: SecProblem,
+  // About → alias do SecWhy (image + text)
+  FI1: SecWhy, FI2: SecWhy, FI3: SecWhy, FI4: SecWhy,
+  // Offer
+  OF1: SecOffer, OF2: SecOffer,
+  // Process → alias do SecSolution (cards)
+  PR1: SecSolution, PR2: SecSolution,
+  // Opinions / Testimonials
+  OP1: SecTestimonials, OP2: SecTestimonials,
+  // Team → alias do SecTestimonials (people cards)
+  ZE1: SecTestimonials, ZE2: SecTestimonials,
+  // Pricing → alias do SecOffer (tiers)
+  CE1: SecOffer,
+  // CTA
+  CT1: SecCTA, CT2: SecCTA, CT3: SecCTA,
+  // Contact → alias do SecCTA
+  KO1: SecCTA,
+  // FAQ → alias do SecProblem
+  FA1: SecProblem,
+  // Portfolio → alias do SecSolution
+  RE1: SecSolution,
+  // Logos
+  LO1: SecLogos,
+  // Stats → alias do SecLogos
+  ST1: SecLogos,
+  // Footer
+  FO1: SecFooter,
+};
 
 // ============ PAGE: HOME ============
 function PageHome() {

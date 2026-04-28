@@ -1,4 +1,5 @@
 import React from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { SECTION_RENDERERS, EditCtx } from "@/components/shared/SectionRenderers";
 import { DENSITY_SCALE, FONT_OPTIONS } from "@/components/tresci/ContentRenderer";
 import { useLabStore } from "@/store/labStore";
@@ -30,12 +31,17 @@ function makeTypo({ density, headingFont, bodyFont }) {
 
 // Map store section → renderer format (code/fields/bg)
 function mapFromStore(s) {
-  return { id: s.id, code: s.block_code, label: s.slots_json?.label || s.block_code, bg: s.slots_json?.bg || null, fields: s.slots_json || {} };
+  const slots = s.slots_json || {};
+  return { id: s.id, code: s.block_code, label: slots.label || s.block_code, bg: slots.bg || null, fields: slots };
 }
 
 export default function Step4Tresci() {
+  const navigate = useNavigate();
+  const { projectId } = useParams<{ projectId: string }>();
   const storeSections = useLabStore(s => s.sections);
   const storeUpdateSlot = useLabStore(s => s.updateSlot);
+  const generateVisualConcept = useLabStore(s => s.generateVisualConcept);
+  const [isGeneratingVC, setIsGeneratingVC] = React.useState(false);
   const [content, setContent] = React.useState(() => storeSections.map(mapFromStore));
   React.useEffect(() => { setContent(storeSections.map(mapFromStore)); }, [storeSections]);
 
@@ -208,6 +214,7 @@ export default function Step4Tresci() {
     deleteSection,
     moveSection,
     pushHistory,
+    hideImages: true,
   };
 
   return (
@@ -243,6 +250,22 @@ export default function Step4Tresci() {
         <DeviceSwitcher viewport={viewport} setViewport={setViewport}/>
 
         <div style={{ flex: 1 }}/>
+
+        <button disabled={isGeneratingVC} onClick={async () => {
+          setIsGeneratingVC(true);
+          try { await generateVisualConcept(); } catch(_) { /* handled by store */ } finally { setIsGeneratingVC(false); }
+          navigate(`/lab/${projectId}/step/5`);
+        }} style={{
+          padding: '8px 18px', background: isGeneratingVC ? '#94A3B8' : 'linear-gradient(135deg, #6366F1, #EC4899)',
+          color: '#fff', border: 'none', borderRadius: 8,
+          fontFamily: 'inherit', fontSize: 13, fontWeight: 600, cursor: isGeneratingVC ? 'wait' : 'pointer',
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          boxShadow: '0 2px 8px rgba(99,102,241,.25)',
+          opacity: isGeneratingVC ? 0.7 : 1,
+        }}>
+          {isGeneratingVC ? 'Generuję wizualizację…' : 'Dalej: Wizualizacja'}
+          {!isGeneratingVC && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><path d="M5 12h14M13 5l7 7-7 7"/></svg>}
+        </button>
       </div>
 
       {/* Canvas */}

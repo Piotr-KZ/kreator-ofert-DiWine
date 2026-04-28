@@ -65,3 +65,7 @@ alembic/versions/*.pyc
 # Secrets
 API-key.txt
 *.key
+
+# Dev reference (makiety, test pages)
+_makieta_src/
+test_page.html
