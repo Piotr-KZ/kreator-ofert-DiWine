@@ -1,5 +1,6 @@
 """
 AI Prompts for Lab Creator — structure, visual concept, content generation.
+Brief 47: Added infographic template list, illustration names, better photo query rules.
 """
 
 STRUCTURE_PROMPT = """Jestes architektem stron www.
@@ -75,23 +76,23 @@ ZASADY PROJEKTOWANIA:
    - CTA ZAWSZE wizualnie wyroznionym (kolor brandowy lub kontrast)
    - NIGDY 4+ sekcji wygladajacych identycznie pod rzad
 
-2. MEDIA PER TYP SEKCJI:
+2. MEDIA PER TYP SEKCJI — UZYWAJ INFOGRAFIK:
    - Hero → photo_wide (16:9 z overlayem)
    - O firmie → photo_split (4:3 obok tekstu)
-   - Uslugi/oferta → icons (3-6 kart z ikonami) lub infographic_features_grid_2x3
-   - Proces → infographic_steps_horizontal lub infographic_steps_vertical lub infographic_funnel
-   - Korzysci → icons lub infographic_features_numbers lub infographic_checklist
+   - Uslugi/oferta → icons (3-6 kart z ikonami)
+   - Proces/Jak pracujemy → infographic_steps_horizontal lub infographic_steps_vertical
+   - Korzysci/Efekty → infographic_stats_cards lub infographic_features_numbers
+   - Statystyki → infographic_stats_rings
    - Porownanie → infographic_before_after lub infographic_vs_comparison
    - Cennik → infographic_pricing_table
-   - Opinie → avatars (male kolka 1:1) lub infographic_testimonials_stars
-   - Zespol → infographic_team_cards
-   - FAQ → infographic_faq_visual lub none (czysty tekst)
-   - CTA → infographic_cta_banner lub none (kolor tla + heading + przycisk)
+   - Opinie → avatars (male kolka 1:1)
+   - FAQ → infographic_faq_visual
+   - CTA → infographic_cta_banner (kolor tla + heading + statystyki + przycisk)
    - Kontakt → icons (telefon, email, adres)
-   - Statystyki → infographic_stats_rings lub infographic_stats_cards lub infographic_stats_bars
-   - Timeline/Historia → infographic_timeline_vertical lub infographic_timeline_horizontal
+   - Checklist → infographic_checklist
+   - Timeline → infographic_timeline_vertical
 
-   DOSTEPNE INFOGRAFIKI (wartosc media_type):
+   DOSTEPNE INFOGRAFIKI (media_type):
    Proces: infographic_steps_horizontal, infographic_steps_vertical, infographic_steps_circle, infographic_funnel
    Statystyki: infographic_stats_rings, infographic_stats_cards, infographic_stats_bars
    Porownania: infographic_before_after, infographic_pricing_table, infographic_vs_comparison
@@ -108,10 +109,14 @@ ZASADY PROJEKTOWANIA:
    - Tlo gradient: z glownego do drugorzednego
    - Overlay na zdjeciu hero: glowny kolor 70% opacity
 
-4. ZDJECIA STOCKOWE — precyzyjne query (ZAWSZE po angielsku!):
-   - NIE: "szkolenia" (generyczne, po polsku)
-   - TAK: "business team workshop whiteboard candid professional"
-   - photo_query MUSI byc po angielsku — Unsplash API nie obsluguje polskiego
+4. ZDJECIA STOCKOWE — PRECYZYJNE QUERY:
+   - ZAWSZE po angielsku — Unsplash API nie obsluguje polskiego
+   - NIE: "business" (za ogolne)
+   - TAK: "sales team workshop modern office whiteboard candid"
+   - Dodaj kontekst branzy: "dental clinic interior modern" zamiast "office"
+   - Dodaj styl: "candid" "professional" "bright" "modern"
+   - Dodaj orientacje: "portrait" dla osob, "landscape" dla biur/budynkow
+   - 5-10 slow per query — im bardziej precyzyjne, tym lepszy wynik
 
 Zwroc JSON:
 {{
@@ -130,17 +135,13 @@ Zwroc JSON:
 }}
 
 bg_type opcje: white, light_gray, dark, brand_color, brand_gradient, dark_photo_overlay
-media_type opcje: photo_wide, photo_split, icons, avatars, none, logo,
-  infographic_steps_horizontal, infographic_steps_vertical, infographic_steps_circle, infographic_funnel,
-  infographic_stats_rings, infographic_stats_cards, infographic_stats_bars,
-  infographic_before_after, infographic_pricing_table, infographic_vs_comparison,
-  infographic_features_grid_2x3, infographic_features_grid_1x4, infographic_features_numbers,
-  infographic_timeline_vertical, infographic_timeline_horizontal,
-  infographic_team_cards, infographic_testimonials_stars,
-  infographic_checklist, infographic_faq_visual, infographic_cta_banner
+media_type opcje: photo_wide, photo_split, icons, avatars, none, logo, + wszystkie infographic_* z listy powyzej
 
-WAZNE: Zaprojektuj wyglad DOKLADNIE dla tych sekcji ktore dostalies.
-Nie dodawaj nowych sekcji. Nie usuwaj sekcji.
+WAZNE:
+- Zaprojektuj wyglad DOKLADNIE dla tych sekcji ktore dostalies
+- Nie dodawaj nowych sekcji. Nie usuwaj sekcji.
+- UZYWAJ INFOGRAFIK — sekcje procesu, statystyk, porownania, FAQ powinny miec odpowiedni szablon
+- Sekcja typu "Jak pracujemy" z 4 krokami → infographic_steps_horizontal (NIE zwykle karty z ikonami)
 """
 
 
@@ -164,23 +165,43 @@ ZASADY:
 - Opisy: 1-3 zdania, zwiezle
 - Jesli slot to lista (menu_items, features, steps itd.) — podaj 3-6 elementow
 - Jesli slot to URL (cta_url, link itp.) — uzyj "#" jako placeholder
-- ZDJECIA/OBRAZY — WAZNE: Jesli slot nazywa sie "image", "image_url", "hero_image", "photo", "logo_url" lub zawiera slowo "image"/"photo":
+
+ZDJECIA/OBRAZY — WAZNE:
+Jesli slot nazywa sie "image", "image_url", "hero_image", "photo", "logo_url" lub zawiera slowo "image"/"photo":
   * NIGDY nie wpisuj "/placeholder.jpg" ani zadnego URL
-  * Zamiast tego wpisz OPIS zdjecia PO ANGIELSKU, np. "professional business team in modern training room with whiteboard"
-  * Opis powinien byc 5-10 slow, konkretny dla branzy z briefu
-  * System automatycznie znajdzie pasujace zdjecie stockowe na podstawie opisu
-- Jesli sekcja wymaga ikon, uzyj NAZW z biblioteki Lucide (nie emoji!):
-  Target, Users, BarChart, Shield, Clock, CheckCircle, Star, Heart, Zap, Globe,
-  Mail, Phone, MapPin, Award, TrendingUp, Settings, Code, Briefcase, BookOpen,
-  Lightbulb, Rocket, PieChart, DollarSign, Calendar, MessageSquare, ThumbsUp,
-  ArrowRight, ChevronRight, Play, Download, Eye, Lock, Layers, Database, Cpu,
-  Wifi, Cloud, Search, Filter, Edit, Trash, Plus, Minus, RefreshCw, Share2
-- Jesli slot nazywa sie "illustration" — uzyj nazwy z biblioteki ilustracji SVG (64px):
-  target, chart-up, strategy, award, building, briefcase, handshake,
-  clock, refresh, calendar, hourglass, rocket, small-group, user-expert,
-  support, presentation, mail, phone, chat, megaphone, shield, lock,
-  certificate, browser, network, code, cloud, checklist, document, clipboard
-- NIE uzywaj emoji (🎯, 📊 itp.). Tylko nazwy ikon Lucide lub ilustracji.
+  * Zamiast tego wpisz OPIS zdjecia PO ANGIELSKU (5-10 slow, precyzyjny)
+  * NIE: "business team" (za ogolne)
+  * TAK: "professional sales team brainstorming in bright modern office with whiteboard"
+  * Dodaj kontekst branzy i stylu z briefu
+
+IKONY — UZYJ NAZW LUCIDE (nie emoji!):
+Target, Users, BarChart, Shield, Clock, CheckCircle, Star, Heart, Zap, Globe,
+Mail, Phone, MapPin, Award, TrendingUp, Settings, Code, Briefcase, BookOpen,
+Lightbulb, Rocket, PieChart, DollarSign, Calendar, MessageSquare, ThumbsUp,
+ArrowRight, ChevronRight, Play, Download, Eye, Lock, Layers, Database, Cpu,
+Wifi, Cloud, Search, Edit, RefreshCw, Share2
+NIE uzywaj emoji (🎯, 📊 itp.). System automatycznie zamienia nazwy ikon na SVG.
+
+ILUSTRACJE SEKCJI — dla slotow "illustration":
+target, chart-up, strategy, award, building, briefcase, handshake,
+clock, refresh, calendar, hourglass, rocket, small-group, user-expert,
+support, presentation, mail, phone, chat, megaphone, shield, lock,
+certificate, browser, network, code, cloud, checklist, document, clipboard
+Ilustracje sa wieksze (64px) i bardziej szczegolowe niz ikony.
+Uzywaj ich jako glownej grafiki sekcji gdy brak zdjecia.
+
+DANE DO INFOGRAFIK — WAZNE:
+Jesli sekcja ma typ infographic_steps_* — generuj pole "steps" z elementami:
+  {{"number": "1", "title": "Diagnoza", "description": "Opis kroku", "timeline": "Tydzien 1"}}
+Jesli sekcja ma typ infographic_stats_* — generuj pole "stats" z elementami:
+  {{"value": "98%", "unit": "klientow", "title": "Poleca", "description": "...", "label": "...", "percent": "98"}}
+Jesli sekcja ma typ infographic_before_after — generuj pola:
+  "before_title", "after_title", "before_items": [{{"title": "...", "description": "..."}}],
+  "after_items": [{{"title": "...", "description": "..."}}]
+Jesli sekcja ma typ infographic_checklist — generuj pole "items":
+  [{{"text": "Punkt 1"}}, {{"text": "Punkt 2"}}]
+Jesli sekcja ma typ infographic_faq_visual — generuj pole "questions":
+  [{{"question": "Pytanie?", "answer": "Odpowiedz"}}]
 
 Zwroc JSON z wartosciami dla kazdego slotu:
 {{
@@ -214,6 +235,9 @@ INSTRUKCJA UZYTKOWNIKA:
 {instruction}
 
 Zwroc JSON z nowymi wartosciami dla kazdego slotu (taki sam format jak obecna tresc, ale z zastosowana instrukcja).
+IKONY: uzywaj nazw Lucide (Target, Shield, Clock itd.), NIE emoji.
+ILUSTRACJE: uzywaj nazw (target, shield, clock itd.) dla slotow "illustration".
+ZDJECIA: opis po angielsku, 5-10 slow, precyzyjny dla branzy.
 """
 
 

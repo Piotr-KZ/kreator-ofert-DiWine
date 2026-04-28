@@ -3,6 +3,7 @@ Block & Page renderer — template + slot data + visual concept → HTML.
 Brief 33: slot-based templating with loops, conditions, HTML escape.
 Brief 43: Visual Concept support — backgrounds, stock photos.
 Brief 44: Design tokens CSS, separators disabled, Unsplash integration.
+Brief 47: Icon resolution (Lucide SVG), infographic rendering, better photo queries.
 """
 
 import re
@@ -13,9 +14,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.block_template import BlockTemplate
-from app.services.creator.infographics import get_infographic_template
-from app.services.creator.illustrations import get_illustration_svg
 from app.services.creator.icons import get_icon_svg
+from app.services.creator.illustrations import get_illustration_svg
+from app.services.creator.infographics import get_infographic_template
 
 
 # ─── Background helpers ───
@@ -55,11 +56,8 @@ def _build_section_style(vc_section: dict) -> str:
     if bg_type == "brand_color" and bg_value:
         base += f"background-color:{bg_value};"
     elif bg_type == "brand_gradient" and bg_value:
-        # bg_value should be primary color; we create gradient with opacity
         base += f"background:linear-gradient(135deg, {bg_value}, {bg_value}cc);"
     elif bg_type == "dark_photo_overlay":
-        # Real photo URL is injected by resolve_media() before rendering.
-        # Here we use photo_url from vc_section if already resolved, else dark fallback.
         resolved_url = vc_section.get("resolved_photo_url")
         if resolved_url:
             base += (
@@ -70,6 +68,17 @@ def _build_section_style(vc_section: dict) -> str:
             base += "background-color:#1a1a2e;"
 
     return base
+
+
+# ─── Icon resolution patterns ───
+
+# Matches icon references in rendered HTML: text content that is a known icon name
+# inside small containers (48px divs, icon wrappers etc.)
+_EMOJI_PATTERN = re.compile(
+    r'([\U0001F300-\U0001F9FF\U00002600-\U000027BF\U0001FA00-\U0001FA6F'
+    r'\U0001FA70-\U0001FAFF\U00002702-\U000027B0\U0000FE00-\U0000FE0F'
+    r'\U0000200D\U00002640\U00002642]+)'
+)
 
 
 class BlockRenderer:
@@ -118,12 +127,10 @@ class BlockRenderer:
             for item in items:
                 item_html = template
                 if isinstance(item, dict):
-                    # Replace {{this.field}} with values
                     for k, v in item.items():
                         item_html = item_html.replace(
                             f"{{{{this.{k}}}}}", self._escape_html(str(v))
                         )
-                    # Conditions inside loop
                     item_html = self._render_conditions(
                         item_html, {f"this.{k}": v for k, v in item.items()}
                     )
@@ -169,39 +176,6 @@ class PageRenderer:
     def __init__(self) -> None:
         self.block_renderer = BlockRenderer()
 
-    async def resolve_infographic(self, section, vc_section: dict) -> str:
-        """Resolve infographic template for a section if applicable."""
-        media_type = vc_section.get("media_type", "none")
-        if not media_type.startswith("infographic_"):
-            return ""
-
-        template_name = media_type.replace("infographic_", "")
-        template = get_infographic_template(template_name)
-        if not template:
-            return ""
-
-        return self.block_renderer.render_block(template, section.slots_json or {})
-
-    def _resolve_icons(self, html: str, slots: dict, brand_color: str) -> str:
-        """Replace icon slot values with SVG — illustration (64px) or Lucide (24px)."""
-        for key, value in slots.items():
-            if not isinstance(value, str) or key not in ("icon", "illustration"):
-                continue
-
-            # Try illustration first (larger, detailed)
-            if key == "illustration":
-                svg = get_illustration_svg(value, size=64, color=brand_color)
-                if svg:
-                    html = html.replace(f"{{{{{key}}}}}", svg)
-                    continue
-
-            # Try Lucide icon (smaller, line-style)
-            svg = get_icon_svg(value, size=24, color=brand_color)
-            if svg:
-                html = html.replace(f"{{{{{key}}}}}", svg)
-
-        return html
-
     @staticmethod
     def _is_url(val: str) -> bool:
         """Check if a string looks like a URL (vs. a text description)."""
@@ -216,9 +190,7 @@ class PageRenderer:
 
     async def _resolve_photo(self, unsplash, query: str, media_type: str = "photo_wide",
                              trigger_dl: bool = False):
-        """Fetch a single photo from Unsplash and return (url, credit) or None.
-        trigger_dl=False skips download event to conserve API rate limit (50/hr free tier).
-        """
+        """Fetch a single photo from Unsplash and return (url, credit) or None."""
         photo = await unsplash.get_photo_for_section(query, media_type)
         if not photo:
             return None
@@ -231,14 +203,165 @@ class PageRenderer:
         }
         return photo["url"], credit
 
+    # ─── NEW: Icon resolution (Brief 47 — Problem 1) ───
+
+    def resolve_icons_in_html(self, html: str, brand_color: str = "#4F46E5") -> str:
+        """Replace Lucide icon names and emoji with SVG in rendered HTML.
+
+        Detects icon name patterns inside small containers (48px icon wrappers)
+        and replaces them with proper SVG icons from the Lucide library.
+
+        Also replaces stray emoji characters with a generic icon SVG.
+        """
+        # Step 1: Replace known Lucide icon names (case-insensitive)
+        # Pattern: icon name appears as escaped text inside a div
+        # After render_block, icon names are HTML-escaped text like "Target" or "Shield"
+        from app.services.creator.icons import _ICON_LOOKUP
+
+        for name_lower, canonical in _ICON_LOOKUP.items():
+            # Match the icon name as standalone text (word boundaries)
+            # It appears as plain text after slot replacement
+            escaped_name = canonical
+            if escaped_name in html:
+                svg = get_icon_svg(canonical, size=24, color=brand_color)
+                html = html.replace(escaped_name, svg, 1)
+
+        # Step 2: Replace any remaining emoji with a generic circle icon
+        def _replace_emoji(match):
+            return get_icon_svg("Circle", size=24, color=brand_color)
+
+        html = _EMOJI_PATTERN.sub(_replace_emoji, html)
+
+        return html
+
+    def resolve_icons_in_slots(self, slots: dict, brand_color: str = "#4F46E5") -> dict:
+        """Pre-process slots: replace icon names with SVG BEFORE template rendering.
+
+        This handles nested items (features, services) where icon is a list item field.
+        """
+        for key, value in slots.items():
+            # Direct icon slots
+            if key == "icon" and isinstance(value, str) and not value.startswith("<"):
+                svg = get_icon_svg(value, size=24, color=brand_color)
+                if svg and "Circle" not in svg:
+                    slots[key] = svg
+                continue
+
+            # Direct illustration slots
+            if key == "illustration" and isinstance(value, str) and not value.startswith("<"):
+                svg = get_illustration_svg(value, size=64, color=brand_color)
+                if svg:
+                    slots[key] = svg
+                continue
+
+            # Nested lists (features, services, steps, items, etc.)
+            if isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict) and "icon" in item:
+                        icon_val = item["icon"]
+                        if isinstance(icon_val, str) and not icon_val.startswith("<"):
+                            svg = get_icon_svg(icon_val, size=24, color=brand_color)
+                            if svg:
+                                item["icon"] = svg
+                    if isinstance(item, dict) and "illustration" in item:
+                        ill_val = item["illustration"]
+                        if isinstance(ill_val, str) and not ill_val.startswith("<"):
+                            svg = get_illustration_svg(ill_val, size=64, color=brand_color)
+                            if svg:
+                                item["illustration"] = svg
+
+        return slots
+
+    # ─── NEW: Infographic resolution (Brief 47 — Problem 3) ───
+
+    def resolve_infographic(self, section, vc_section: dict) -> str:
+        """Render infographic HTML for a section if media_type is infographic_*.
+
+        Args:
+            section: ProjectSection with slots_json
+            vc_section: visual concept data for this section
+
+        Returns:
+            Rendered infographic HTML or empty string
+        """
+        media_type = vc_section.get("media_type", "none")
+        if not media_type.startswith("infographic_"):
+            return ""
+
+        template_name = media_type.replace("infographic_", "")
+        template = get_infographic_template(template_name)
+        if not template:
+            return ""
+
+        return self.block_renderer.render_block(template, section.slots_json or {})
+
+    # ─── IMPROVED: Photo query building (Brief 47 — Problem 2) ───
+
+    @staticmethod
+    def _build_smart_query(
+        photo_query: str | None,
+        slots: dict,
+        block_code: str,
+        description: str = "",
+    ) -> str:
+        """Build a more relevant Unsplash query from context.
+
+        Instead of generic "business team", uses section heading + brief description
+        to create targeted queries like "sales training workshop whiteboard".
+        """
+        # If VC already provided a good query, use it
+        if photo_query and len(photo_query) > 10:
+            return photo_query
+
+        parts = []
+
+        # Extract heading keywords (most relevant)
+        heading = slots.get("heading") or slots.get("title") or ""
+        if isinstance(heading, dict):
+            heading = heading.get("text", "")
+        if heading and len(heading) > 3:
+            # Take first 4-5 meaningful words
+            words = [w for w in heading.split() if len(w) > 2][:4]
+            parts.extend(words)
+
+        # Add context from block type
+        _BLOCK_CONTEXT = {
+            "HE": "professional hero banner",
+            "FI": "company team office",
+            "OF": "business services professional",
+            "RO": "solution product professional",
+            "PR": "process workflow team collaboration",
+            "KR": "results achievement success",
+            "OP": "professional person portrait headshot",
+            "CT": "motivation call to action professional",
+            "PB": "business challenge problem",
+            "ST": "statistics data results",
+            "CF": "benefits features modern",
+        }
+        prefix = block_code[:2] if block_code else ""
+        if prefix in _BLOCK_CONTEXT:
+            parts.append(_BLOCK_CONTEXT[prefix])
+
+        # Use photo_query as supplement
+        if photo_query:
+            parts.append(photo_query)
+
+        query = " ".join(parts).strip()
+        return query if query else "professional business modern"
+
+    # ─── resolve_media with improvements ───
+
     async def resolve_media(self, project, unsplash) -> None:
         """Fetch real photos from Unsplash for sections with photo_query
-        AND for sections whose slots contain text descriptions instead of URLs."""
+        AND for sections whose slots contain text descriptions instead of URLs.
+        Also resolves icons and infographics."""
         vc = project.visual_concept_json or {}
         vc_sections_list = vc.get("sections", [])
         vc_sections = {s["block_code"]: s for s in vc_sections_list}
+        brief = project.brief_json or {}
+        style = project.style_json or {}
+        brand_color = style.get("primary_color", style.get("color_primary", "#4F46E5"))
 
-        # Image slot keys to check in slots_json
         IMAGE_SLOTS = ("hero_image", "image_url", "image", "photo")
 
         for section in project.sections:
@@ -249,14 +372,25 @@ class PageRenderer:
             slots = dict(section.slots_json or {})
             changed = False
 
-            # --- Pass 1: VC-driven resolution (photo_query from visual concept) ---
-            # Skip if slot already has a valid URL (don't overwrite Unsplash with Picsum)
+            # ─── NEW: Resolve icons in slots before anything else ───
+            slots = self.resolve_icons_in_slots(slots, brand_color)
+            if slots != (section.slots_json or {}):
+                changed = True
+
+            # ─── Pass 1: VC-driven photo resolution ───
             existing_url = any(
                 self._is_url(self._extract_text(slots.get(k)))
                 for k in IMAGE_SLOTS
             )
-            if photo_query and media_type in ("photo_wide", "photo_split", "avatars") and not existing_url:
-                result = await self._resolve_photo(unsplash, photo_query, media_type, trigger_dl=True)
+
+            # IMPROVED: build smarter query
+            smart_query = self._build_smart_query(
+                photo_query, slots, section.block_code,
+                brief.get("description", ""),
+            )
+
+            if smart_query and media_type in ("photo_wide", "photo_split", "avatars") and not existing_url:
+                result = await self._resolve_photo(unsplash, smart_query, media_type, trigger_dl=True)
                 if result:
                     photo_url, credit = result
                     inserted = False
@@ -274,13 +408,10 @@ class PageRenderer:
                     if bg_type == "dark_photo_overlay":
                         vc_s["resolved_photo_url"] = photo_url
 
-            # --- Pass 2: Slot-driven resolution ---
-            # Check for text descriptions in image slots that weren't resolved above
+            # ─── Pass 2: Slot-driven resolution ───
             for slot_key in IMAGE_SLOTS:
                 val = self._extract_text(slots.get(slot_key))
                 if val and not self._is_url(val) and len(val) > 3:
-                    # This is a text description, not a URL — use it as search query
-                    query = photo_query or val  # prefer VC query if available
                     result = await self._resolve_photo(unsplash, val, "photo_wide")
                     if result:
                         photo_url, credit = result
@@ -288,8 +419,7 @@ class PageRenderer:
                         slots["image_credit"] = credit
                         changed = True
 
-            # --- Pass 3: Resolve images inside nested arrays (features, tiers, testimonials) ---
-            # Use batch query to fetch multiple photos at once instead of 1-by-1
+            # ─── Pass 3: Nested array images ───
             _FALLBACK_QUERIES = {
                 "features": "business technology professional",
                 "tiers": "product service pricing",
@@ -301,19 +431,16 @@ class PageRenderer:
                 if not isinstance(items, list):
                     continue
 
-                # Collect items that need images
-                needs_image: list[tuple[int, dict]] = []
+                needs_image: list[tuple[int, dict, str | None]] = []
                 for idx, item in enumerate(items):
                     if not isinstance(item, dict):
                         continue
-                    # Check if already has a URL image
                     has_url_img = any(
                         self._is_url(self._extract_text(item.get(k)))
                         for k in ("img", "image", "photo", "avatar")
                     )
                     if has_url_img:
                         continue
-                    # Check for text description in image keys
                     text_desc_key = None
                     for img_key in ("img", "image", "photo", "avatar"):
                         val = self._extract_text(item.get(img_key))
@@ -325,13 +452,10 @@ class PageRenderer:
                 if not needs_image:
                     continue
 
-                # Batch: fetch photos for all items needing images using a single broad query
-                # then distribute results. This uses 1 API call instead of N.
+                # IMPROVED: smarter batch query using heading
                 batch_query = _FALLBACK_QUERIES.get(list_key, "business professional")
-                # Build a richer query from section heading if available
                 heading = self._extract_text(slots.get("heading") or slots.get("title"))
                 if heading and len(heading) > 3:
-                    # Use heading keywords for more relevant results
                     batch_query = f"{heading} {batch_query}"
 
                 batch_results = await unsplash.search_photos_batch(
@@ -341,11 +465,9 @@ class PageRenderer:
                     width=200 if list_key == "testimonials" else 800,
                 )
 
-                # Also try individual text descriptions if batch didn't return enough
                 for i, (idx, item, text_desc_key) in enumerate(needs_image):
                     photo = batch_results[i] if i < len(batch_results) else None
 
-                    # If batch didn't cover this item, try individual query from title
                     if not photo and not unsplash._rate_limited:
                         title = self._extract_text(item.get("title") or item.get("name"))
                         if text_desc_key:
@@ -365,7 +487,7 @@ class PageRenderer:
                         item[target_key] = photo_url
                         changed = True
 
-            # --- Pass 4: Top-level image from heading when no image exists ---
+            # ─── Pass 4: Top-level image from heading ───
             has_top_img = any(
                 self._is_url(self._extract_text(slots.get(k)))
                 for k in IMAGE_SLOTS
@@ -383,7 +505,6 @@ class PageRenderer:
             if changed:
                 section.slots_json = slots
 
-        # Persist vc changes back to project
         if vc_sections_list:
             project.visual_concept_json = vc
 
@@ -395,11 +516,6 @@ class PageRenderer:
     ) -> tuple[str, str]:
         """Render full page from project sections.
 
-        Args:
-            db: database session (to fetch block templates)
-            project: Project with sections, style, and visual_concept_json
-            fixes: optional CSS fixes from Vision loop
-
         Returns:
             (html_body, css) — ready for <body> and <style>
         """
@@ -408,6 +524,8 @@ class PageRenderer:
             s["block_code"]: s
             for s in visual_concept.get("sections", [])
         }
+        style = project.style_json or {}
+        brand_color = style.get("primary_color", style.get("color_primary", "#4F46E5"))
         sorted_sections = sorted(project.sections, key=lambda s: s.position)
         sections_html = []
 
@@ -415,7 +533,6 @@ class PageRenderer:
             if not section.is_visible:
                 continue
 
-            # Fetch block template
             result = await db.execute(
                 select(BlockTemplate).where(BlockTemplate.code == section.block_code)
             )
@@ -429,11 +546,18 @@ class PageRenderer:
                 section.slots_json or {},
             )
 
-            # Apply visual concept styling
+            # ─── NEW: Post-process icons in rendered HTML ───
+            html = self.resolve_icons_in_html(html, brand_color)
+
+            # ─── NEW: Append infographic if applicable ───
             vc_section = vc_sections.get(section.block_code, {})
+            infographic_html = self.resolve_infographic(section, vc_section)
+            if infographic_html:
+                html += f'\n<div class="infographic-container" style="margin-top:1.5rem;">{infographic_html}</div>'
+
+            # Apply visual concept styling
             section_style = _build_section_style(vc_section) if vc_section else ""
 
-            # Wrap with section styling and data attributes
             style_attr = f' style="{section_style}padding:3rem 0;"' if section_style else ' style="padding:3rem 0;"'
             sections_html.append(
                 f'<div data-section-id="{section.id}" '
@@ -442,15 +566,10 @@ class PageRenderer:
                 f'  <div style="max-width:1200px;margin:0 auto;padding:0 1.5rem;">\n{html}\n  </div>\n</div>'
             )
 
-            # Separators disabled — they look amateurish (Brief 44)
-            # Logic preserved as dead code in separators/__init__.py if needed later
-
         html_body = "\n".join(sections_html)
 
-        # Generate CSS from project style
         css = self._generate_css(project.style_json or {}, visual_concept)
 
-        # Apply Vision fixes if any
         if fixes:
             css = self._apply_fixes(css, fixes)
 
@@ -463,18 +582,15 @@ class PageRenderer:
         heading_font = style.get("heading_font", "Inter")
         body_font = style.get("body_font", "Inter")
 
-        # Load base design tokens
         tokens_path = Path(__file__).parent / "design_tokens.css"
         base_css = tokens_path.read_text(encoding="utf-8") if tokens_path.exists() else ""
 
-        # Google Fonts import
         fonts_css = (
             f"@import url('https://fonts.googleapis.com/css2?"
             f"family={heading_font.replace(' ', '+')}:wght@400;500;600;700;800"
             f"&family={body_font.replace(' ', '+')}:wght@300;400;500;600&display=swap');\n\n"
         )
 
-        # Override colors from user's brief
         overrides = (
             f":root {{\n"
             f"  --color-primary: {primary};\n"
@@ -486,7 +602,6 @@ class PageRenderer:
             f"}}\n\n"
         )
 
-        # CSS reset + normalization using design tokens
         reset = (
             "*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }\n"
             "body { font-family: var(--font-family); color: var(--color-text); line-height: var(--line-height); }\n"
@@ -494,7 +609,7 @@ class PageRenderer:
             "img { max-width: 100%; height: auto; border-radius: var(--radius-image); }\n"
             "a { color: var(--color-primary); text-decoration: none; }\n"
             "a:hover { text-decoration: underline; }\n\n"
-            # Scroll animations
+            "svg { vertical-align: middle; }\n\n"
             "@keyframes fadeInUp { from { opacity:0; transform:translateY(20px); } to { opacity:1; transform:translateY(0); } }\n"
             "[data-section-id] { animation: fadeInUp 0.6s ease-out both; }\n"
             "[data-section-id]:nth-child(2) { animation-delay: 0.1s; }\n"
