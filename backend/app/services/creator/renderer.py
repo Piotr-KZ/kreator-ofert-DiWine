@@ -13,8 +13,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.block_template import BlockTemplate
-# Separators disabled (Brief 44) — import kept for potential future use
-# from app.services.creator.separators import get_separator_svg
+from app.services.creator.infographics import get_infographic_template
+from app.services.creator.illustrations import get_illustration_svg
+from app.services.creator.icons import get_icon_svg
 
 
 # ─── Background helpers ───
@@ -167,6 +168,39 @@ class PageRenderer:
 
     def __init__(self) -> None:
         self.block_renderer = BlockRenderer()
+
+    async def resolve_infographic(self, section, vc_section: dict) -> str:
+        """Resolve infographic template for a section if applicable."""
+        media_type = vc_section.get("media_type", "none")
+        if not media_type.startswith("infographic_"):
+            return ""
+
+        template_name = media_type.replace("infographic_", "")
+        template = get_infographic_template(template_name)
+        if not template:
+            return ""
+
+        return self.block_renderer.render_block(template, section.slots_json or {})
+
+    def _resolve_icons(self, html: str, slots: dict, brand_color: str) -> str:
+        """Replace icon slot values with SVG — illustration (64px) or Lucide (24px)."""
+        for key, value in slots.items():
+            if not isinstance(value, str) or key not in ("icon", "illustration"):
+                continue
+
+            # Try illustration first (larger, detailed)
+            if key == "illustration":
+                svg = get_illustration_svg(value, size=64, color=brand_color)
+                if svg:
+                    html = html.replace(f"{{{{{key}}}}}", svg)
+                    continue
+
+            # Try Lucide icon (smaller, line-style)
+            svg = get_icon_svg(value, size=24, color=brand_color)
+            if svg:
+                html = html.replace(f"{{{{{key}}}}}", svg)
+
+        return html
 
     @staticmethod
     def _is_url(val: str) -> bool:

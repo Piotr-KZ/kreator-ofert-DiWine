@@ -156,11 +156,15 @@ class TestInfographics:
 
     def test_all_templates_available(self):
         templates = get_available_templates()
+        assert len(templates) == 20
         expected = [
-            "steps_horizontal", "steps_vertical",
-            "numbers_row", "numbers_cards",
-            "before_after", "timeline",
-            "icons_grid", "process_circle",
+            "steps_horizontal", "steps_vertical", "steps_circle", "funnel",
+            "stats_rings", "stats_cards", "stats_bars",
+            "before_after", "pricing_table", "vs_comparison",
+            "features_grid_2x3", "features_grid_1x4", "features_numbers",
+            "timeline_vertical", "timeline_horizontal",
+            "team_cards", "testimonials_stars",
+            "checklist", "faq_visual", "cta_banner",
         ]
         for t in expected:
             assert t in templates, f"Brak template: {t}"
@@ -173,8 +177,8 @@ class TestInfographics:
     def test_get_template_unknown(self):
         assert get_infographic_template("nonexistent") == ""
 
-    def test_numbers_row_has_slots(self):
-        html = get_infographic_template("numbers_row")
+    def test_stats_cards_has_slots(self):
+        html = get_infographic_template("stats_cards")
         assert "{{this.value}}" in html
         assert "{{this.label}}" in html
 
@@ -183,8 +187,8 @@ class TestInfographics:
         assert "{{before_title}}" in html
         assert "{{after_title}}" in html
 
-    def test_timeline_has_slots(self):
-        html = get_infographic_template("timeline")
+    def test_timeline_vertical_has_slots(self):
+        html = get_infographic_template("timeline_vertical")
         assert "{{this.year}}" in html
         assert "{{this.title}}" in html
 
