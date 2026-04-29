@@ -1,4 +1,5 @@
 import React from "react";
+import { ShapeSelector, DecorationPicker, LayoutPicker } from "./ToolbarPickers";
 // Wiz — uniwersalny toolbar kontekstowy dla elementów
 // Typy: text | input | button | section | image | formField
 
@@ -725,6 +726,14 @@ function UniToolbar({ target, kind, onClose, onAction }) {
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="1" strokeDasharray="2 2"/><rect x="7" y="7" width="10" height="10"/></svg>
             <span style={{ fontSize: 11 }}>Odstępy</span>
           </Btn>
+          <Btn wide onClick={() => setExpanded(expanded === 'decoration' ? null : 'decoration')} active={expanded === 'decoration'}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="12" cy="12" r="9" strokeDasharray="2 2"/></svg>
+            <span style={{ fontSize: 11 }}>Dekoracja</span>
+          </Btn>
+          <Btn wide onClick={() => setExpanded(expanded === 'layout' ? null : 'layout')} active={expanded === 'layout'}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="18" height="7"/></svg>
+            <span style={{ fontSize: 11 }}>Układ</span>
+          </Btn>
         </>
       )}
 
@@ -1394,9 +1403,19 @@ function UniToolbar({ target, kind, onClose, onAction }) {
         { id: 'hex', label: 'Sześciokąt', cp: 'polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)', lockRatio: 1, icon: <polygon points="7 3 17 3 22 12 17 21 7 21 2 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/> },
         { id: 'diamond', label: 'Romb', cp: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)', lockRatio: 1, icon: <polygon points="12 2 22 12 12 22 2 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/> },
         { id: 'arch', label: 'Łuk', cp: 'path("M 0 400 L 0 160 Q 0 0 200 0 Q 400 0 400 160 L 400 400 Z")', lockRatio: null, icon: <path d="M3 21V10a9 9 0 0118 0v11" fill="none" stroke="currentColor" strokeWidth="1.8"/> },
+        { id: 'blob1', label: 'Blob 1', cp: '', lockRatio: null, radius: '30% 70% 70% 30% / 30% 30% 70% 70%', icon: <ellipse cx="13" cy="11" rx="10" ry="8" fill="none" stroke="currentColor" strokeWidth="1.8"/> },
+        { id: 'blob2', label: 'Blob 2', cp: '', lockRatio: null, radius: '50% 30% 60% 40% / 40% 60% 30% 50%', icon: <ellipse cx="11" cy="13" rx="8" ry="10" fill="none" stroke="currentColor" strokeWidth="1.8"/> },
+        { id: 'blob3', label: 'Blob 3', cp: '', lockRatio: null, radius: '60% 40% 30% 70% / 60% 30% 70% 40%', icon: <ellipse cx="12" cy="12" rx="9" ry="10" fill="none" stroke="currentColor" strokeWidth="1.8"/> },
       ];
       const setShape = (s) => {
         el.style.clipPath = s.cp;
+        // Blob shapes use border-radius instead of clip-path
+        if (s.radius) {
+          el.style.clipPath = '';
+          el.style.borderRadius = s.radius;
+        } else {
+          el.style.borderRadius = '';
+        }
         // Zarządzaj aspect-ratio — nie wymuszaj width/height na sztywno
         if (s.lockRatio === 1) {
           el.style.aspectRatio = '1 / 1';
@@ -1413,7 +1432,11 @@ function UniToolbar({ target, kind, onClose, onAction }) {
         }
         force();
       };
-      const isCurr = (cp) => curr === cp;
+      const currRadius = el.style.borderRadius || '';
+      const isCurr = (s) => {
+        if (s.radius) return currRadius === s.radius;
+        return curr === s.cp;
+      };
       return (
         <SubPanelImpl el={el} pos={pos} onClose={() => setExpanded(null)} width={320} title="Kształt obrazu" onReset={() => { el.style.clipPath=''; el.style.borderRadius=''; el.style.aspectRatio=''; delete el.dataset.lockRatio; const w=el.closest('[data-img-wrap]'); if(w){w.style.aspectRatio='';} force(); }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, marginBottom: 14 }}>
@@ -1422,7 +1445,7 @@ function UniToolbar({ target, kind, onClose, onAction }) {
                 onClick={() => setShape(s)}
                 title={s.label}
                 style={{
-                  aspectRatio: '1', border: isCurr(s.cp) ? '2px solid #0F172A' : '1px solid #E2E8F0',
+                  aspectRatio: '1', border: isCurr(s) ? '2px solid #0F172A' : '1px solid #E2E8F0',
                   background: '#F8FAFC', cursor: 'pointer', borderRadius: 8,
                   display: 'grid', placeItems: 'center', color: '#334155',
                 }}>
@@ -1719,6 +1742,18 @@ function UniToolbar({ target, kind, onClose, onAction }) {
           <SliderV2 value={parseInt(cs.gap) || 0} min={0} max={80} step={2} onChange={v => { el.style.gap = v + 'px'; force(); }}/>
           <NumberInputV2 value={parseInt(cs.gap) || 0} min={0} max={80} step={2} width={80} onChange={v => { el.style.gap = v + 'px'; force(); }}/>
         </div>
+      </SubPanelImpl>
+    )}
+
+    {expanded === 'decoration' && (
+      <SubPanelImpl el={el} pos={pos} onClose={() => setExpanded(null)} width={260} title="Dekoracja tła">
+        <DecorationPicker el={el} onApply={() => force()} />
+      </SubPanelImpl>
+    )}
+
+    {expanded === 'layout' && (
+      <SubPanelImpl el={el} pos={pos} onClose={() => setExpanded(null)} width={280} title="Układ zdjęć">
+        <LayoutPicker el={el} onApply={() => force()} />
       </SubPanelImpl>
     )}
 

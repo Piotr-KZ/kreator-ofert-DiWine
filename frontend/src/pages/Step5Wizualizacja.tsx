@@ -8,15 +8,12 @@ import { WizBlocksModal, wizInsertBlockAfter } from "@/components/wizualizacja/W
 import { UniToolbar, resolveClickTarget, detectElementType } from "@/components/wizualizacja/ElementToolbar";
 import { WizAIPanel } from "@/components/wizualizacja/AiWizPanel";
 import { openInfographicGallery } from "@/components/wizualizacja/UnsplashGallery";
+import { TweakPanel, TWEAKS_DEFAULT } from "@/components/wizualizacja/TweakPanel";
 // Wizualizacja — ekran 5. Pełny podgląd strony z device switcher, Tweaki.
 
 // Tweaks (domyślne) — persist via __edit_mode_set_keys
 const WIZ_TWEAKS_DEFAULT = /*EDITMODE-BEGIN*/{
-  "brandColor": "#0F766E",
-  "accentColor": "#F59E0B",
-  "fontPair": "Fraunces + Inter",
-  "density": "comfortable",
-  "headerBg": "#FFFFFF"
+  ...TWEAKS_DEFAULT,
 }/*EDITMODE-END*/;
 
 // Font pairs
@@ -1214,92 +1211,6 @@ export default function Step5Wizualizacja() {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function TweakPanel({ tweaks, onPatch }) {
-  const colors = ['#0F766E', '#065F46', '#7C3AED', '#6366F1', '#EC4899', '#DC2626', '#F59E0B', '#0F172A'];
-  return (
-    <div>
-      <h3 style={{ margin: '0 0 3px', fontSize: 15, fontWeight: 600 }}>Tweaki</h3>
-      <p style={{ margin: '0 0 18px', fontSize: 12, color: '#64748B' }}>Dostrój globalne style całej strony</p>
-
-      {/* Brand color */}
-      <TweakRow label="Kolor brandu">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 4 }}>
-          {colors.map(c => (
-            <button key={c} onClick={() => onPatch('brandColor', c)} style={{
-              aspectRatio: '1', border: tweaks.brandColor === c ? '2.5px solid #0F172A' : '1.5px solid #E2E8F0',
-              borderRadius: 6, background: c, cursor: 'pointer', padding: 0,
-            }}/>
-          ))}
-        </div>
-      </TweakRow>
-
-      <TweakRow label="Kolor akcentu">
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 4 }}>
-          {colors.map(c => (
-            <button key={c} onClick={() => onPatch('accentColor', c)} style={{
-              aspectRatio: '1', border: tweaks.accentColor === c ? '2.5px solid #0F172A' : '1.5px solid #E2E8F0',
-              borderRadius: 6, background: c, cursor: 'pointer', padding: 0,
-            }}/>
-          ))}
-        </div>
-      </TweakRow>
-
-      {/* Font pair */}
-      <TweakRow label="Typografia">
-        <div style={{ display: 'grid', gap: 5 }}>
-          {Object.keys(FONT_PAIRS).map(k => {
-            const p = FONT_PAIRS[k];
-            const active = tweaks.fontPair === k;
-            return (
-              <button key={k} onClick={() => onPatch('fontPair', k)}
-                style={{
-                  padding: '9px 11px',
-                  border: active ? '1.5px solid #6366F1' : '1px solid #E2E8F0',
-                  background: active ? '#EEF2FF' : '#fff',
-                  borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
-                  textAlign: 'left', display: 'flex', alignItems: 'center', gap: 10,
-                }}>
-                <span style={{ fontFamily: `'${p.h}', serif`, fontSize: 18, fontWeight: 600, color: '#0F172A' }}>Aa</span>
-                <span style={{ fontFamily: `'${p.b}', sans-serif`, fontSize: 11, color: '#64748B', flex: 1 }}>{k}</span>
-                {active && <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#6366F1" strokeWidth="3" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>}
-              </button>
-            );
-          })}
-        </div>
-      </TweakRow>
-
-      {/* Density */}
-      <TweakRow label="Gęstość">
-        <div style={{ display: 'inline-flex', background: '#F1F5F9', padding: 2, borderRadius: 7, gap: 1, width: '100%' }}>
-          {[
-            { k: 'compact', l: 'Kompakt' },
-            { k: 'comfortable', l: 'Komfort' },
-            { k: 'spacious', l: 'Luźna' },
-          ].map(o => (
-            <button key={o.k} onClick={() => onPatch('density', o.k)} style={{
-              flex: 1, padding: '7px 6px', border: 'none',
-              background: tweaks.density === o.k ? '#fff' : 'transparent',
-              borderRadius: 5, cursor: 'pointer',
-              fontFamily: 'inherit', fontSize: 11.5, fontWeight: tweaks.density === o.k ? 600 : 500,
-              color: tweaks.density === o.k ? '#0F172A' : '#64748B',
-              boxShadow: tweaks.density === o.k ? '0 1px 2px rgba(0,0,0,.06)' : 'none',
-            }}>{o.l}</button>
-          ))}
-        </div>
-      </TweakRow>
-    </div>
-  );
-}
-
-function TweakRow({ label, children }) {
-  return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ fontSize: 11, fontWeight: 600, color: '#475569', textTransform: 'uppercase', letterSpacing: 0.4, marginBottom: 8 }}>{label}</div>
-      {children}
     </div>
   );
 }
