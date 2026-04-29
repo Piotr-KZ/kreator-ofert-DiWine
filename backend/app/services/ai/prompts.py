@@ -122,13 +122,19 @@ Zwroc JSON:
 {{
   "style": "modern_minimal",
   "bg_approach": "alternating",
+  "brand_motif": "diamond",
+  "brand_motif_usage": ["hero_bg", "separator", "cta_overlay"],
+  "brand_motif_opacity": 0.08,
   "sections": [
     {{
       "block_code": "NA2",
       "bg_type": "white",
       "bg_value": "#ffffff",
       "media_type": "logo",
-      "photo_query": null
+      "photo_query": null,
+      "photo_shape": "rounded_sm",
+      "photo_layout": "single",
+      "bg_decoration": "none"
     }},
     ...
   ]
@@ -136,12 +142,52 @@ Zwroc JSON:
 
 bg_type opcje: white, light_gray, dark, brand_color, brand_gradient, dark_photo_overlay
 media_type opcje: photo_wide, photo_split, icons, avatars, none, logo, + wszystkie infographic_* z listy powyzej
+photo_shape opcje: rect, rounded_sm (domyslne), rounded_lg, circle, blob_1, blob_2, blob_3, hexagon, diamond, slant_right, arch_top
+photo_layout opcje: single (domyslne), duo_overlap, trio_mosaic, scattered, grid_2x2
+bg_decoration opcje: none (domyslne), dot_grid, circles, blob, diagonal_lines, brand_shape
+brand_motif opcje (globalne): none, diamond, circle_ring, triangle, hexagon, slash, dot_cluster
+
+5. KSZTALTY ZDJEC (photo_shape) — DOBIERZ DO TONU I BRANZY:
+   Premium/luksus → arch_top lub diamond
+   Tech/IT → hexagon lub rect
+   Kreatywny/wellness → blob_1, blob_2, blob_3
+   Dynamiczny/sport → slant_right
+   Przyjazny/edukacja → rounded_lg
+   Profesjonalny (domyslne) → rounded_sm
+   Avatary w opiniach → ZAWSZE circle
+
+6. UKLADY ZDJEC (photo_layout):
+   Hero → single
+   O firmie → duo_overlap (2 zdjecia nachodzace, eleganckie)
+   Portfolio/realizacje → trio_mosaic lub grid_2x2
+   Eventy/kreatywne → scattered (3-4 losowo rozrzucone)
+   Gdy layout != single → generuj photo_queries (lista) zamiast photo_query
+
+7. DEKORACJE TLA (bg_decoration) — max 3 sekcje per strona:
+   Hero ciemny → circles lub brand_shape
+   Sekcja jasna z kartami → dot_grid
+   CTA → brand_shape
+   Reszta → none
+   Ton premium → diagonal_lines
+   Ton tech → dot_grid
+
+8. MOTYW MARKI (brand_motif) — JEDEN na cala strone:
+   Premium/elegancja → diamond
+   Tech/IT → circle_ring
+   Sport/dynamika → triangle
+   Nauka/systematycznosc → hexagon
+   Nowoczesnosc → slash
+   Kreatywnosc → dot_cluster
+   Tradycyjny/formalny → none
 
 WAZNE:
 - Zaprojektuj wyglad DOKLADNIE dla tych sekcji ktore dostalies
 - Nie dodawaj nowych sekcji. Nie usuwaj sekcji.
 - UZYWAJ INFOGRAFIK — sekcje procesu, statystyk, porownania, FAQ powinny miec odpowiedni szablon
 - Sekcja typu "Jak pracujemy" z 4 krokami → infographic_steps_horizontal (NIE zwykle karty z ikonami)
+- UZYWAJ KSZTALTOW — dobierz photo_shape do tonu marki (NIE zostawiaj rounded_sm wszedzie)
+- MOTYW MARKI — dobierz jeden i uzyj konsekwentnie (hero + separatory + CTA)
+- Max 3 sekcje z bg_decoration. Nie przesadzaj z dekoracjami.
 """
 
 
