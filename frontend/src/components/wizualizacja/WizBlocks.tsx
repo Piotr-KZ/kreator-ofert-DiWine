@@ -231,7 +231,7 @@ function WizBlocksModal({ open, onClose, onPick }) {
     <div onClick={onClose} data-no-edit
       style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.5)', backdropFilter: 'blur(4px)', zIndex: 10000, display: 'grid', placeItems: 'center', padding: 32 }}>
       <div onClick={e => e.stopPropagation()}
-        style={{ background: '#fff', borderRadius: 16, maxWidth: 1000, width: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'Inter, sans-serif' }}>
+        style={{ background: '#fff', borderRadius: 16, maxWidth: 1000, width: '100%', maxHeight: '90vh', display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'Inter, sans-serif' }}>
         <div style={{ padding: '20px 28px', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
           <div>
             <h2 style={{ margin: 0, fontSize: 20, fontWeight: 600, color: '#0F172A' }}>Dodaj sekcję</h2>
@@ -251,7 +251,7 @@ function WizBlocksModal({ open, onClose, onPick }) {
               }}>{c === 'all' ? 'Wszystkie' : c}</button>
           ))}
         </div>
-        <div style={{ padding: 28, overflowY: 'auto', flex: 1, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+        <div style={{ padding: '20px 20px 40px', overflowY: 'auto', flex: 1, display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16, alignContent: 'start' }}>
           {filtered.map(b => (
             <button key={b.id} onClick={() => { onPick(b); onClose(); }}
               style={{

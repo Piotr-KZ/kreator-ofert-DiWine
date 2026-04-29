@@ -283,7 +283,7 @@ function BlocksModal({ open, onClose, onPick, restrictCat, title }: {
 
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,.45)', zIndex: 60, display: 'grid', placeItems: 'center' }} onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} style={{ width: 640, maxHeight: '80vh', background: '#fff', borderRadius: 16, boxShadow: '0 24px 60px rgba(15,23,42,.3)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div onClick={e => e.stopPropagation()} style={{ width: 820, maxHeight: '85vh', background: '#fff', borderRadius: 16, boxShadow: '0 24px 60px rgba(15,23,42,.3)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         {/* Header */}
         <div style={{ padding: '18px 20px 14px', borderBottom: '1px solid #E2E8F0' }}>
           <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
@@ -322,22 +322,29 @@ function BlocksModal({ open, onClose, onPick, restrictCat, title }: {
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={cat?.color || '#64748B'} strokeWidth="2"><path d={cat?.icon || ''}/></svg>
                   {cat?.name || catKey}
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
                   {blocks.map(b => (
                     <button key={b.code} onClick={() => onPick(b)} style={{
-                      padding: '10px 14px', background: '#fff', border: '1px solid #E2E8F0', borderRadius: 10,
+                      padding: 0, background: '#fff', border: '1px solid #E2E8F0', borderRadius: 10,
                       cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
-                      transition: 'border-color .15s, box-shadow .15s',
+                      transition: 'border-color .15s, box-shadow .15s', overflow: 'hidden',
                     }}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = cat?.color || '#6366F1'; (e.currentTarget as HTMLElement).style.boxShadow = `0 2px 8px ${cat?.color || '#6366F1'}22`; }}
                     onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#E2E8F0'; (e.currentTarget as HTMLElement).style.boxShadow = 'none'; }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-                        <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 10, color: cat?.color || '#94A3B8', fontWeight: 700 }}>{b.code}</span>
-                        <span style={{ fontSize: 12.5, fontWeight: 600, color: '#0F172A' }}>{b.name}</span>
-                        <span style={{ marginLeft: 'auto', fontSize: 9, color: '#94A3B8', fontWeight: 700, border: '1px solid #E2E8F0', padding: '1px 5px', borderRadius: 4 }}>{b.size}</span>
+                      {b.thumb && (
+                        <div style={{ height: 80, background: '#F8FAFC', borderBottom: '1px solid #E2E8F0', display: 'grid', placeItems: 'center' }}>
+                          <svg width="140" height="60" viewBox="0 0 80 56" xmlns="http://www.w3.org/2000/svg" dangerouslySetInnerHTML={{ __html: b.thumb }}/>
+                        </div>
+                      )}
+                      <div style={{ padding: '10px 12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                          <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 9, color: cat?.color || '#94A3B8', fontWeight: 700 }}>{b.code}</span>
+                          <span style={{ marginLeft: 'auto', fontSize: 9, color: '#94A3B8', fontWeight: 700, border: '1px solid #E2E8F0', padding: '1px 5px', borderRadius: 4 }}>{b.size}</span>
+                        </div>
+                        <div style={{ fontSize: 11.5, fontWeight: 700, color: '#0F172A', textTransform: 'uppercase', letterSpacing: 0.3, marginBottom: 3 }}>{b.name}</div>
+                        <div style={{ fontSize: 10.5, color: '#64748B', lineHeight: 1.3 }}>{b.desc}</div>
                       </div>
-                      <div style={{ fontSize: 11, color: '#64748B', lineHeight: 1.4 }}>{b.desc}</div>
                     </button>
                   ))}
                 </div>

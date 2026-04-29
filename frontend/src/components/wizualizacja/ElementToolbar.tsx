@@ -1003,7 +1003,7 @@ function UniToolbar({ target, kind, onClose, onAction }) {
           {FONT_FAMILIES.map(f => (
             <button key={f.val}
               onMouseDown={e => e.preventDefault()}
-              onClick={() => { setStyleSmart('fontFamily', f.val); closeExpanded(); }}
+              onClick={() => { el.style.setProperty('font-family', f.val, 'important'); force(); closeExpanded(); }}
               style={{
                 padding: '8px 10px', border: 'none',
                 background: currentFontFamily.includes(f.label) ? '#F1F5F9' : '#fff',
@@ -1400,9 +1400,9 @@ function UniToolbar({ target, kind, onClose, onAction }) {
         { id: 'ellipse', label: 'Elipsa', cp: 'ellipse(50% 40% at 50% 50%)', lockRatio: null, icon: <ellipse cx="12" cy="12" rx="10" ry="7" fill="none" stroke="currentColor" strokeWidth="1.8"/> },
         { id: 'triangle', label: 'Trójkąt', cp: 'polygon(50% 0%, 100% 100%, 0% 100%)', lockRatio: null, icon: <polygon points="12 3 22 21 2 21" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/> },
         { id: 'trapezoid', label: 'Trapez', cp: 'polygon(20% 0%, 80% 0%, 100% 100%, 0% 100%)', lockRatio: null, icon: <polygon points="6 3 18 3 22 21 2 21" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/> },
-        { id: 'hex', label: 'Sześciokąt', cp: 'polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)', lockRatio: 1, icon: <polygon points="7 3 17 3 22 12 17 21 7 21 2 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/> },
+        { id: 'hex', label: 'Sześciokąt', cp: 'polygon(50% 0%, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%)', lockRatio: 1, icon: <polygon points="12 2 21 7 21 17 12 22 3 17 3 7" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/> },
         { id: 'diamond', label: 'Romb', cp: 'polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)', lockRatio: 1, icon: <polygon points="12 2 22 12 12 22 2 12" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/> },
-        { id: 'arch', label: 'Łuk', cp: 'path("M 0 400 L 0 160 Q 0 0 200 0 Q 400 0 400 160 L 400 400 Z")', lockRatio: null, icon: <path d="M3 21V10a9 9 0 0118 0v11" fill="none" stroke="currentColor" strokeWidth="1.8"/> },
+        { id: 'arch', label: 'Łuk', cp: 'path("M 0 400 L 0 200 C 0 0 400 0 400 200 L 400 400 Z")', lockRatio: null, icon: <path d="M3 21V10a9 9 0 0118 0v11" fill="none" stroke="currentColor" strokeWidth="1.8"/> },
         { id: 'blob1', label: 'Blob 1', cp: '', lockRatio: null, radius: '30% 70% 70% 30% / 30% 30% 70% 70%', icon: <ellipse cx="13" cy="11" rx="10" ry="8" fill="none" stroke="currentColor" strokeWidth="1.8"/> },
         { id: 'blob2', label: 'Blob 2', cp: '', lockRatio: null, radius: '50% 30% 60% 40% / 40% 60% 30% 50%', icon: <ellipse cx="11" cy="13" rx="8" ry="10" fill="none" stroke="currentColor" strokeWidth="1.8"/> },
         { id: 'blob3', label: 'Blob 3', cp: '', lockRatio: null, radius: '60% 40% 30% 70% / 60% 30% 70% 40%', icon: <ellipse cx="12" cy="12" rx="9" ry="10" fill="none" stroke="currentColor" strokeWidth="1.8"/> },

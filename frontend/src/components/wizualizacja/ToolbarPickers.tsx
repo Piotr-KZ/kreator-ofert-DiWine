@@ -86,13 +86,13 @@ export function ShapeSelector({ el, brandColor = '#6366F1', accentColor = '#F59E
 
 // ─── DECORATIONS (per-section background decoration) ───
 
-const DECORATION_PRESETS = [
-  { id: 'none', label: 'Brak', icon: '—' },
-  { id: 'dot_grid', label: 'Kropki', icon: '⠿' },
-  { id: 'circles', label: 'Kółka', icon: '◯' },
-  { id: 'blob', label: 'Blob', icon: '◐' },
-  { id: 'diagonal_lines', label: 'Linie', icon: '╱' },
-  { id: 'brand_shape', label: 'Motyw', icon: '◇' },
+const DECORATION_PRESETS: { id: string; label: string; desc: string; svg: string }[] = [
+  { id: 'none', label: 'Brak', desc: 'Bez dekoracji', svg: '' },
+  { id: 'dot_grid', label: 'Kropki', desc: 'Siatka kropek w tle', svg: '<circle cx="6" cy="6" r="1.2" fill="CL"/><circle cx="16" cy="6" r="1.2" fill="CL"/><circle cx="26" cy="6" r="1.2" fill="CL"/><circle cx="6" cy="14" r="1.2" fill="CL"/><circle cx="16" cy="14" r="1.2" fill="CL"/><circle cx="26" cy="14" r="1.2" fill="CL"/><circle cx="6" cy="22" r="1.2" fill="CL"/><circle cx="16" cy="22" r="1.2" fill="CL"/><circle cx="26" cy="22" r="1.2" fill="CL"/>' },
+  { id: 'circles', label: 'Kółka', desc: 'Dekoracyjne kółka', svg: '<circle cx="8" cy="10" r="6" fill="none" stroke="CL" stroke-width=".8"/><circle cx="22" cy="16" r="8" fill="none" stroke="CL" stroke-width=".8"/><circle cx="14" cy="6" r="4" fill="none" stroke="CL" stroke-width=".8"/>' },
+  { id: 'blob', label: 'Blob', desc: 'Organiczny kształt', svg: '<ellipse cx="16" cy="13" rx="12" ry="9" fill="CL" opacity=".25" style="transform:rotate(-10deg);transform-origin:16px 13px"/><ellipse cx="20" cy="11" rx="8" ry="6" fill="CL" opacity=".15" style="transform:rotate(15deg);transform-origin:20px 11px"/>' },
+  { id: 'diagonal_lines', label: 'Linie', desc: 'Ukośne linie w tle', svg: '<line x1="0" y1="0" x2="8" y2="26" stroke="CL" stroke-width=".7"/><line x1="8" y1="0" x2="16" y2="26" stroke="CL" stroke-width=".7"/><line x1="16" y1="0" x2="24" y2="26" stroke="CL" stroke-width=".7"/><line x1="24" y1="0" x2="32" y2="26" stroke="CL" stroke-width=".7"/>' },
+  { id: 'brand_shape', label: 'Motyw', desc: 'Geometria marki', svg: '<polygon points="16,2 20,10 28,10 22,16 24,24 16,20 8,24 10,16 4,10 12,10" fill="none" stroke="CL" stroke-width=".8"/>' },
 ];
 
 export function DecorationPicker({ el, brandColor = '#6366F1', onApply }: any) {
@@ -110,24 +110,30 @@ export function DecorationPicker({ el, brandColor = '#6366F1', onApply }: any) {
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 4 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 6 }}>
       {DECORATION_PRESETS.map(d => {
         const active = current === d.id;
+        const cl = active ? brandColor : '#94A3B8';
         return (
           <button key={d.id} onClick={() => apply(d.id)}
             style={{
-              padding: '8px 4px', cursor: 'pointer',
+              padding: '6px 4px 8px', cursor: 'pointer',
               border: active ? '2px solid #0F172A' : '1px solid #E2E8F0',
               borderRadius: 7,
               background: active ? '#F1F5F9' : '#fff',
-              fontFamily: 'inherit', fontSize: 11, fontWeight: 500,
+              fontFamily: 'inherit', fontSize: 10, fontWeight: 500,
               color: active ? '#0F172A' : '#64748B',
               textAlign: 'center' as const,
             }}>
-            <div style={{ fontSize: 16, marginBottom: 2, color: active ? brandColor : '#94A3B8' }}>
-              {d.icon}
-            </div>
-            {d.label}
+            {d.svg ? (
+              <div style={{ height: 28, display: 'grid', placeItems: 'center', marginBottom: 3 }}>
+                <svg width="32" height="26" viewBox="0 0 32 26" dangerouslySetInnerHTML={{ __html: d.svg.replace(/CL/g, cl) }}/>
+              </div>
+            ) : (
+              <div style={{ height: 28, display: 'grid', placeItems: 'center', marginBottom: 3, fontSize: 18, color: cl }}>—</div>
+            )}
+            <div style={{ fontWeight: 600, marginBottom: 1 }}>{d.label}</div>
+            <div style={{ fontSize: 9, color: '#94A3B8', lineHeight: 1.2 }}>{d.desc}</div>
           </button>
         );
       })}
