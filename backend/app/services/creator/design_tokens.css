@@ -1,15 +1,18 @@
-/* ===== DESIGN SYSTEM — Lab Creator ===== */
-/* UWAGA: Wartości zostaną zaktualizowane z makiety Claude Design */
+/* ===== DESIGN SYSTEM — Lab Creator v2 ===== */
+/* Nadpisywane per projekt z briefu + TweakPanel */
 
 :root {
-  /* --- Kolory (nadpisywane per projekt z briefu) --- */
+  /* --- Kolory (nadpisywane z tweaks) --- */
   --color-primary: #4F46E5;
   --color-secondary: #F59E0B;
   --color-primary-light: #EEF2FF;
   --color-primary-dark: #312E81;
+  --color-cta: var(--color-primary);
+  --color-cta-text: #ffffff;
 
   --color-text: #1f2937;
   --color-text-muted: #6b7280;
+  --color-text-heading: var(--color-text);
   --color-text-on-dark: #f9fafb;
   --color-text-on-primary: #ffffff;
 
@@ -20,12 +23,12 @@
   --color-border: #e5e7eb;
   --color-border-light: #f3f4f6;
 
-  /* --- Typografia --- */
+  /* --- Typografia (nadpisywane z tweaks) --- */
   --font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
   --font-family-heading: var(--font-family);
 
-  --font-size-h1: 3rem;
-  --font-size-h2: 2rem;
+  --font-size-h1: 2.5rem;
+  --font-size-h2: 1.75rem;
   --font-size-h3: 1.25rem;
   --font-size-body: 1rem;
   --font-size-small: 0.875rem;
@@ -47,14 +50,23 @@
   --space-heading-mb: 1rem;
   --space-subheading-mb: 2rem;
 
-  /* --- Zaokrąglenia --- */
+  /* --- Zaokrąglenia (nadpisywane z tweaks) --- */
   --radius-card: 0.75rem;
   --radius-button: 0.5rem;
   --radius-image: 0.5rem;
   --radius-avatar: 50%;
   --radius-input: 0.375rem;
 
-  /* --- Cienie --- */
+  /* --- CTA (nadpisywane z tweaks) --- */
+  --button-padding: 0.75rem 1.5rem;
+  --button-font-size: 0.875rem;
+  --button-font-weight: 600;
+  --button-radius: var(--radius-button);
+  --button-bg: var(--color-cta);
+  --button-color: var(--color-cta-text);
+  --button-border: none;
+
+  /* --- Cienie (nadpisywane z tweaks) --- */
   --shadow-card: 0 1px 3px rgba(0,0,0,0.1);
   --shadow-card-hover: 0 4px 12px rgba(0,0,0,0.1);
   --shadow-button: none;
@@ -64,18 +76,19 @@
   --grid-columns: 3;
   --grid-gap: 1.5rem;
 
-  /* --- Przycisk CTA --- */
-  --button-padding: 0.75rem 1.5rem;
-  --button-font-size: 0.875rem;
-  --button-font-weight: 600;
-  --button-radius: var(--radius-button);
-  --button-bg: var(--color-primary);
-  --button-color: var(--color-text-on-primary);
-
   /* --- Ikony --- */
   --icon-size: 24px;
   --icon-size-lg: 32px;
   --icon-color: var(--color-primary);
+
+  /* --- Zdjęcia (nadpisywane z tweaks) --- */
+  --photo-shape: rounded_sm;
+  --photo-corner-radius: 8px;
+  --photo-filter: none;
+
+  /* --- Motyw marki (nadpisywane z tweaks) --- */
+  --brand-motif: none;
+  --brand-motif-opacity: 0.08;
 }
 
 /* --- Responsywność --- */

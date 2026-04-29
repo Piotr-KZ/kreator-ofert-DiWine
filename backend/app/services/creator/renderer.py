@@ -4,6 +4,7 @@ Brief 33: slot-based templating with loops, conditions, HTML escape.
 Brief 43: Visual Concept support — backgrounds, stock photos.
 Brief 44: Design tokens CSS, separators disabled, Unsplash integration.
 Brief 47: Icon resolution (Lucide SVG), infographic rendering, better photo queries.
+Brief 48: Photo shapes, bg decorations, brand motifs, photo layouts.
 """
 
 import re
@@ -17,6 +18,10 @@ from app.models.block_template import BlockTemplate
 from app.services.creator.icons import get_icon_svg
 from app.services.creator.illustrations import get_illustration_svg
 from app.services.creator.infographics import get_infographic_template
+from app.services.creator.photo_shapes import get_photo_shape_css
+from app.services.creator.bg_decorations import generate_decoration_html
+from app.services.creator.brand_motifs import get_motif_html
+from app.services.creator.photo_layouts import get_photo_layout_html
 
 
 # ─── Background helpers ───
@@ -295,6 +300,67 @@ class PageRenderer:
 
         return self.block_renderer.render_block(template, section.slots_json or {})
 
+    # ─── NEW: Photo shapes, decorations, motifs, layouts (Brief 48) ───
+
+    @staticmethod
+    def _apply_photo_shape(html: str, shape_id: str) -> str:
+        """Apply photo shape CSS to all <img> tags in rendered HTML."""
+        if not shape_id or shape_id == "rounded_sm":
+            return html  # default — no change needed
+        css = get_photo_shape_css(shape_id)
+        # Add shape CSS to img style attributes
+        html = re.sub(
+            r'(<img\b[^>]*style=")',
+            rf'\1{css}',
+            html,
+        )
+        # imgs without style attr
+        html = re.sub(
+            r'(<img\b(?![^>]*style=)[^>]*)(\/?>)',
+            rf'\1 style="{css}overflow:hidden;"\2',
+            html,
+        )
+        return html
+
+    @staticmethod
+    def _apply_bg_decoration(
+        inner_html: str,
+        decoration_id: str,
+        color: str,
+        section_id: str,
+    ) -> str:
+        """Inject background decoration SVG into section content."""
+        if not decoration_id or decoration_id == "none":
+            return inner_html
+        deco_html = generate_decoration_html(decoration_id, color, section_id)
+        if deco_html:
+            return deco_html + inner_html
+        return inner_html
+
+    @staticmethod
+    def _apply_brand_motif(
+        motif_id: str,
+        placement: str,
+        color: str,
+        motif_opacity: float = 0.08,
+    ) -> str:
+        """Generate brand motif HTML for a specific placement."""
+        if not motif_id or motif_id == "none":
+            return ""
+        return get_motif_html(motif_id, placement, color, motif_opacity)
+
+    @staticmethod
+    def _apply_photo_layout(
+        image_urls: list[str],
+        layout_id: str,
+        shape_id: str = "rounded_sm",
+    ) -> str:
+        """Arrange multiple images in a creative layout."""
+        if not layout_id or layout_id == "single":
+            return ""
+        shape_css = get_photo_shape_css(shape_id)
+        return get_photo_layout_html(layout_id, image_urls, shape_css)
+
     # ─── IMPROVED: Photo query building (Brief 47 — Problem 2) ───
 
     @staticmethod
@@ -526,8 +592,12 @@ class PageRenderer:
         }
         style = project.style_json or {}
         brand_color = style.get("primary_color", style.get("color_primary", "#4F46E5"))
+        brand_motif = visual_concept.get("brand_motif", "none")
+        motif_usage = visual_concept.get("brand_motif_usage", [])
+        motif_opacity = visual_concept.get("brand_motif_opacity", 0.08)
         sorted_sections = sorted(project.sections, key=lambda s: s.position)
         sections_html = []
+        prev_section_code = None
 
         for i, section in enumerate(sorted_sections):
             if not section.is_visible:
@@ -540,31 +610,79 @@ class PageRenderer:
             if not block:
                 continue
 
+            vc_section = vc_sections.get(section.block_code, {})
+
             # Render block with data
             html = self.block_renderer.render_block(
                 block.html_template,
                 section.slots_json or {},
             )
 
-            # ─── NEW: Post-process icons in rendered HTML ───
+            # ─── Post-process icons in rendered HTML ───
             html = self.resolve_icons_in_html(html, brand_color)
 
-            # ─── NEW: Append infographic if applicable ───
-            vc_section = vc_sections.get(section.block_code, {})
+            # ─── Apply photo shape to images ───
+            photo_shape = vc_section.get("photo_shape")
+            if photo_shape:
+                html = self._apply_photo_shape(html, photo_shape)
+
+            # ─── Append infographic if applicable ───
             infographic_html = self.resolve_infographic(section, vc_section)
             if infographic_html:
                 html += f'\n<div class="infographic-container" style="margin-top:1.5rem;">{infographic_html}</div>'
 
+            # ─── Apply photo layout for multi-image sections ───
+            photo_layout = vc_section.get("photo_layout")
+            if photo_layout and photo_layout != "single":
+                slots = section.slots_json or {}
+                image_urls = []
+                for key in ("image", "image_url", "hero_image", "photo"):
+                    val = self._extract_text(slots.get(key))
+                    if val and self._is_url(val):
+                        image_urls.append(val)
+                photo_queries = vc_section.get("photo_queries", [])
+                for pq_url in photo_queries:
+                    if isinstance(pq_url, str) and self._is_url(pq_url):
+                        image_urls.append(pq_url)
+                if len(image_urls) >= 2:
+                    layout_html = self._apply_photo_layout(
+                        image_urls, photo_layout, photo_shape or "rounded_sm"
+                    )
+                    if layout_html:
+                        html += f'\n<div class="photo-layout" style="margin-top:1.5rem;">{layout_html}</div>'
+
+            # ─── Brand motif: separator between sections ───
+            if prev_section_code and "separator" in motif_usage:
+                sep_html = self._apply_brand_motif(brand_motif, "separator", brand_color, motif_opacity)
+                if sep_html:
+                    sections_html.append(sep_html)
+
+            # ─── Apply bg decoration ───
+            bg_decoration = vc_section.get("bg_decoration")
+            section_uid = str(section.id) if hasattr(section, "id") else f"s{i}"
+            html = self._apply_bg_decoration(html, bg_decoration or "none", brand_color, section_uid)
+
+            # ─── Brand motif: hero_bg or cta_overlay ───
+            prefix = section.block_code[:2] if section.block_code else ""
+            motif_extra = ""
+            if prefix == "HE" and "hero_bg" in motif_usage:
+                motif_extra = self._apply_brand_motif(brand_motif, "hero_bg", brand_color, motif_opacity)
+            elif prefix == "CT" and "cta_overlay" in motif_usage:
+                motif_extra = self._apply_brand_motif(brand_motif, "cta_overlay", brand_color, motif_opacity)
+            if motif_extra:
+                html = motif_extra + html
+
             # Apply visual concept styling
             section_style = _build_section_style(vc_section) if vc_section else ""
 
-            style_attr = f' style="{section_style}padding:3rem 0;"' if section_style else ' style="padding:3rem 0;"'
+            style_attr = f' style="{section_style}padding:3rem 0;position:relative;overflow:hidden;"' if section_style else ' style="padding:3rem 0;position:relative;overflow:hidden;"'
             sections_html.append(
                 f'<div data-section-id="{section.id}" '
                 f'data-block-code="{section.block_code}" '
                 f'data-position="{section.position}"{style_attr}>\n'
-                f'  <div style="max-width:1200px;margin:0 auto;padding:0 1.5rem;">\n{html}\n  </div>\n</div>'
+                f'  <div style="max-width:1200px;margin:0 auto;padding:0 1.5rem;position:relative;z-index:1;">\n{html}\n  </div>\n</div>'
             )
+            prev_section_code = section.block_code
 
         html_body = "\n".join(sections_html)
 
