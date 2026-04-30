@@ -43,6 +43,18 @@ async def lifespan(app: FastAPI):
         offer_counts = await seed_offer_data(db)
         logger.info(f"Seeded offer data: {offer_counts}")
 
+    # Seed offer text templates
+    async with async_session_local() as db:
+        from app.services.offer.seed_offer_texts import seed_offer_texts
+        text_count = await seed_offer_texts(db)
+        logger.info(f"Seeded {text_count} offer text templates")
+
+    # Seed offer block templates
+    async with async_session_local() as db:
+        from app.services.offer.seed_offer_blocks import seed_offer_blocks
+        offer_block_counts = await seed_offer_blocks(db)
+        logger.info(f"Seeded offer blocks: {offer_block_counts}")
+
     yield
     logger.info("Shutting down Lab Creator")
 

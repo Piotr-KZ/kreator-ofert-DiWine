@@ -7,9 +7,11 @@ from app.models.offer import (
     Client, Supplier, Occasion, Product, Packaging,
     DiscountRule, Color, Offer, OfferSet, OfferSetItem,
 )
+from app.models.offer_text import OfferTextTemplate
 
 __all__ = [
     "Project", "ProjectSection", "ProjectMaterial", "BlockCategory", "BlockTemplate",
     "Client", "Supplier", "Occasion", "Product", "Packaging",
     "DiscountRule", "Color", "Offer", "OfferSet", "OfferSetItem",
+    "OfferTextTemplate",
 ]

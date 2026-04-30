@@ -500,9 +500,10 @@ async def add_item_to_set(
         unit_price=unit_price,
     )
     db.add(item)
+    offer_set.items.append(item)
+    await db.flush()
 
     # Recalculate set totals
-    await db.flush()
     await _recalculate_set(offer_set, offer.quantity, db)
 
     return {"id": item.id, "unit_price": item.unit_price, "set_unit_price": offer_set.unit_price}

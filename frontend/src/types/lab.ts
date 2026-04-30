@@ -111,6 +111,10 @@ export const CATEGORIES: Record<string, Category> = {
   LO: { name: 'Loga', color: '#64748B', icon: 'layout' },
   ST: { name: 'Statystyki', color: '#14B8A6', icon: 'bar-chart' },
   FO: { name: 'Stopka', color: '#475569', icon: 'layout' },
+  OG: { name: 'Oferta Nagłówek', color: '#7C3AED', icon: 'file-text' },
+  OZ: { name: 'Oferta Zestaw', color: '#059669', icon: 'package' },
+  OT: { name: 'Oferta Tekst', color: '#0284C7', icon: 'type' },
+  OA: { name: 'Oferta Akcja', color: '#DC2626', icon: 'check-circle' },
 };
 
 export const BLOCK_LIBRARY: Block[] = [
@@ -154,6 +158,14 @@ export const BLOCK_LIBRARY: Block[] = [
   { code: 'LO1', cat: 'LO', name: 'Loga klientów — rząd', desc: 'Loga w jednym rzędzie', size: 'S' },
   { code: 'ST1', cat: 'ST', name: 'Statystyki — 4 liczby', desc: 'Duże liczby z opisami', size: 'S' },
   { code: 'FO1', cat: 'FO', name: 'Stopka — 4 kolumny', desc: 'Logo + linki + copyright', size: 'M' },
+  { code: 'OG1', cat: 'OG', name: 'Nagłówek oferty — standard', desc: 'Nr oferty, data, logo, zdjęcie w tle', size: 'L' },
+  { code: 'OG2', cat: 'OG', name: 'Nagłówek oferty — pełnoekranowy', desc: 'Duże zdjęcie, minimalistyczny', size: 'L' },
+  { code: 'OZ1', cat: 'OZ', name: 'Zestaw — tabela', desc: 'Tabela składników z cenami', size: 'M' },
+  { code: 'OZ2', cat: 'OZ', name: 'Zestaw — karty', desc: 'Wizualne karty produktów', size: 'L' },
+  { code: 'OT1', cat: 'OT', name: 'Tekst — jasny', desc: 'Blok tekstowy, jasne tło', size: 'S' },
+  { code: 'OT2', cat: 'OT', name: 'Tekst — kolorowy', desc: 'Blok tekstowy, kolorowe tło', size: 'S' },
+  { code: 'OT3', cat: 'OT', name: 'Tekst — cytat', desc: 'Wyróżniony cytat/ciekawostka', size: 'S' },
+  { code: 'OA1', cat: 'OA', name: 'CTA — akceptacja', desc: 'Przycisk akceptacji + kontakt', size: 'M' },
 ];
 
 export const BRAND_PALETTE = [
