@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup: create tables + seed blocks."""
+    """Startup: create tables + seed blocks + seed offer data."""
     logger.info("Starting Lab Creator...")
 
     # Create tables
@@ -35,6 +35,13 @@ async def lifespan(app: FastAPI):
         cats = await seed_block_categories(db)
         blocks = await seed_block_templates(db)
         logger.info(f"Seeded {cats} categories, {blocks} blocks")
+
+    # Seed offer data (products, packagings, colors, occasions, discounts)
+    async with async_session_local() as db:
+        from app.services.offer.seed_offer_data import seed_offer_data
+
+        offer_counts = await seed_offer_data(db)
+        logger.info(f"Seeded offer data: {offer_counts}")
 
     yield
     logger.info("Shutting down Lab Creator")
