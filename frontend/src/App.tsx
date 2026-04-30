@@ -8,6 +8,8 @@ import Step3Kreator from "@/pages/Step3Kreator";
 import Step4Tresci from "@/pages/Step4Tresci";
 import Step5Wizualizacja from "@/pages/Step5Wizualizacja";
 
+import OfferConfigurator from "@/pages/OfferConfigurator";
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -21,6 +23,7 @@ export default function App() {
           <Route path="step/4" element={<Step4Tresci />} />
           <Route path="step/5" element={<Step5Wizualizacja />} />
         </Route>
+        <Route path="/offer/:offerId" element={<OfferConfigurator />} />
       </Routes>
     </BrowserRouter>
   );
