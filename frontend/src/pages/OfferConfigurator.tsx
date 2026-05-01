@@ -4,9 +4,11 @@
  */
 
 import { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import { useOfferStore } from '@/store/offerStore';
 import NewSetModal from '@/components/offer/NewSetModal';
+import OfferStepper from '@/components/offer/OfferStepper';
+import OfferNavButtons from '@/components/offer/OfferNavButtons';
 import type { Product, PackagingItem, SetItemData } from '@/types/offer';
 import { WINE_COLORS } from '@/types/offer';
 
@@ -66,19 +68,23 @@ function ErrorModal({ message, onClose }: { message: string; onClose: () => void
 
 export default function OfferConfigurator() {
   const { offerId } = useParams<{ offerId: string }>();
+  const navigate = useNavigate();
   const store = useOfferStore();
   const {
     offer, products, packagings, colors, occasions,
-    activeSetId, error, isLoading, catalogLoaded,
+    activeSetId, error, isLoading, busy, catalogLoaded,
   } = store;
 
   const [showModal, setShowModal] = useState(false);
   const [openSection, setOpenSection] = useState<string>('wine');
+  const [saved, setSaved] = useState(false);
 
-  // Load catalog + offer on mount
+  // Reset old state, load fresh offer — version guard prevents stale fetches
   useEffect(() => {
+    store.resetOffer();
     store.loadCatalog();
     if (offerId) store.loadOffer(offerId);
+    return () => store.resetOffer();
   }, [offerId]);
 
   if (!catalogLoaded || isLoading) {
@@ -125,12 +131,12 @@ export default function OfferConfigurator() {
     activeSet?.items.some(i => i.product_id === productId && i.color_code === colorCode) || false;
 
   const handleAddItem = async (productId: string, itemType: string, colorCode?: string) => {
-    if (!activeSet) return;
+    if (!activeSet || busy) return;
     await store.addItem(activeSet.id!, productId, itemType, colorCode);
   };
 
   const handleRemoveItem = async (productId: string, colorCode?: string) => {
-    if (!activeSet) return;
+    if (!activeSet || busy) return;
     const item = activeSet.items.find(
       i => i.product_id === productId && i.color_code === (colorCode || null)
     );
@@ -151,6 +157,11 @@ export default function OfferConfigurator() {
       {/* New set modal */}
       <NewSetModal open={showModal} onClose={() => setShowModal(false)} defaultBudget={budget} />
 
+      {/* Busy overlay */}
+      {busy && (
+        <div className="fixed inset-0 z-40 bg-white/30 pointer-events-auto" />
+      )}
+
       {/* Top nav */}
       <nav className="bg-gray-950 px-6 py-2.5 flex items-center gap-3 flex-shrink-0">
         <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600" />
@@ -159,6 +170,10 @@ export default function OfferConfigurator() {
           / {offer.client_name || 'Klient'} / {offer.quantity} szt. / {offer.offer_number}
         </span>
       </nav>
+      <OfferStepper current={3} maxReached={3} onNavigate={s => {
+        if (s === 1) navigate('/offer/create');
+        if (s === 4 && offerId) navigate(`/offer/${offerId}/content`);
+      }} />
 
       {/* Set tabs */}
       <div className="bg-white border-b px-4 py-2 flex items-center gap-2 flex-shrink-0">
@@ -177,8 +192,9 @@ export default function OfferConfigurator() {
           </button>
         ))}
         <button
-          onClick={() => setShowModal(true)}
-          className="px-3 py-1.5 rounded-lg text-xs font-semibold border-2 border-dashed border-gray-300 text-gray-400 hover:border-indigo-400"
+          onClick={() => !busy && setShowModal(true)}
+          disabled={busy}
+          className="px-3 py-1.5 rounded-lg text-xs font-semibold border-2 border-dashed border-gray-300 text-gray-400 hover:border-indigo-400 disabled:opacity-50"
         >
           + Nowy zestaw
         </button>
@@ -260,8 +276,9 @@ export default function OfferConfigurator() {
                               {item?.unit_price.toFixed(2)} zł
                             </div>
                             <button
-                              onClick={() => item?.id && store.removeItem(activeSet.id!, item.id)}
-                              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/30 text-white text-[10px] flex items-center justify-center hover:bg-black/50"
+                              onClick={() => !busy && item?.id && store.removeItem(activeSet.id!, item.id)}
+                              disabled={busy}
+                              className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/30 text-white text-[10px] flex items-center justify-center hover:bg-black/50 disabled:opacity-50"
                             >
                               x
                             </button>
@@ -294,38 +311,51 @@ export default function OfferConfigurator() {
                 <div className="grid gap-1.5" style={{
                   gridTemplateColumns: `repeat(${Math.min(Math.ceil(maxSlots / 2), 4)}, 1fr)`,
                 }}>
-                  {Array.from({ length: maxSlots }, (_, i) => {
+                  {(() => {
                     const sweetItems = activeSet.items.filter(it =>
                       it.item_type === 'sweet' || it.item_type === 'decoration'
                     );
-                    const item = sweetItems[i];
-                    const sweet = item ? products.find(p => p.id === item.product_id) : null;
-                    const col = item?.color_code ? colors.find(c => c.code === item.color_code) : null;
-
-                    if (sweet && col) {
-                      return (
+                    // Build slot grid: each product fills slot_size cells
+                    const cells: React.ReactNode[] = [];
+                    let slotIdx = 0;
+                    for (const item of sweetItems) {
+                      const sweet = products.find(p => p.id === item.product_id);
+                      const col = item.color_code ? colors.find(c => c.code === item.color_code) : null;
+                      const size = sweet?.slot_size || 1;
+                      const cols = Math.min(Math.ceil(maxSlots / 2), 4);
+                      cells.push(
                         <div
-                          key={i}
+                          key={item.id || slotIdx}
                           className="rounded-lg px-2 py-1.5 relative border-2 border-blue-400"
-                          style={{ background: col.hex_value, minHeight: 36 }}
+                          style={{
+                            background: col?.hex_value || '#94A3B8',
+                            minHeight: 36,
+                            gridColumn: size > 1 ? `span ${Math.min(size, cols)}` : undefined,
+                          }}
                         >
                           <div className="text-[9px] font-bold text-white leading-tight drop-shadow-sm">
-                            {sweet.name}
+                            {sweet?.name || '?'}{size > 1 ? ` (${size} sloty)` : ''}
                           </div>
-                          <div className="text-[8px] text-white/80">{sweet.base_price} zł</div>
+                          <div className="text-[8px] text-white/80">{sweet?.base_price || 0} zł</div>
                           <button
-                            onClick={() => item?.id && store.removeItem(activeSet.id!, item.id)}
-                            className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/30 text-white text-[7px] flex items-center justify-center hover:bg-black/50"
+                            onClick={() => !busy && item.id && store.removeItem(activeSet.id!, item.id!)}
+                            disabled={busy}
+                            className="absolute top-0.5 right-0.5 w-4 h-4 rounded-full bg-black/30 text-white text-[7px] flex items-center justify-center hover:bg-black/50 disabled:opacity-50"
                           >
                             x
                           </button>
                         </div>
                       );
+                      slotIdx += size;
                     }
-                    return (
-                      <div key={i} className="rounded-lg border-2 border-dashed border-gray-300" style={{ background: '#EFF6FF', minHeight: 36 }} />
-                    );
-                  })}
+                    // Fill remaining empty slots
+                    for (let i = slotIdx; i < maxSlots; i++) {
+                      cells.push(
+                        <div key={`empty-${i}`} className="rounded-lg border-2 border-dashed border-gray-300" style={{ background: '#EFF6FF', minHeight: 36 }} />
+                      );
+                    }
+                    return cells;
+                  })()}
                 </div>
               </div>
 
@@ -335,6 +365,20 @@ export default function OfferConfigurator() {
                 <span>Wina: {activeSet.items.filter(i => i.item_type === 'wine').reduce((s, i) => s + i.unit_price, 0).toFixed(0)} zł</span>
                 <span>Słodycze: {activeSet.items.filter(i => i.item_type !== 'wine' && i.item_type !== 'personalization').reduce((s, i) => s + i.unit_price, 0).toFixed(0)} zł</span>
                 <span className="font-bold text-gray-400">x{offer.quantity} = {activeSet.total_price.toFixed(0)} zł</span>
+              </div>
+
+              {/* Per-set save button */}
+              <div className="mt-4 flex items-center gap-3">
+                <button
+                  onClick={() => {
+                    setSaved(true);
+                    setTimeout(() => setSaved(false), 2000);
+                  }}
+                  disabled={busy}
+                  className="flex-1 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg text-sm font-semibold hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {saved ? '✓ Zapisano' : `Zapisz zestaw ${activeSet.name}`}
+                </button>
               </div>
             </div>
           </div>
@@ -349,7 +393,7 @@ export default function OfferConfigurator() {
                   {wines.map(w => {
                     const wineColors = w.wine_color ? [w.wine_color] : [];
                     return (
-                      <div key={w.id} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-xs">
+                      <div key={w.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-xs ${busy ? 'opacity-60 pointer-events-none' : ''}`}>
                         <div className="flex gap-1 flex-shrink-0">
                           {wineColors.map(c => {
                             const sel = hasItemColor(w.id, c);
@@ -359,8 +403,9 @@ export default function OfferConfigurator() {
                                 key={c}
                                 color={wc?.bg || '#ccc'}
                                 selected={sel}
-                                enabled={true}
+                                enabled={!busy}
                                 onClick={() => {
+                                  if (busy) return;
                                   if (sel) handleRemoveItem(w.id, c);
                                   else handleAddItem(w.id, 'wine', c);
                                 }}
@@ -384,12 +429,12 @@ export default function OfferConfigurator() {
               <Section title="SŁODYCZE" open={openSection === 'sweet'} onToggle={() => setOpenSection(openSection === 'sweet' ? '' : 'sweet')}>
                 <div className="space-y-1">
                   {sweets.map(sw => (
-                    <div key={sw.id} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-xs">
+                    <div key={sw.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-xs ${busy ? 'opacity-60 pointer-events-none' : ''}`}>
                       <div className="flex gap-1 flex-shrink-0">
                         {(sw.available_colors_json || []).map(c => {
                           const col = colors.find(x => x.code === c);
                           const sel = hasItemColor(sw.id, c);
-                          const ok = isColorOk(c);
+                          const ok = isColorOk(c) && !busy;
                           return col ? (
                             <Dot
                               key={c}
@@ -397,6 +442,7 @@ export default function OfferConfigurator() {
                               selected={sel}
                               enabled={ok}
                               onClick={() => {
+                                if (busy) return;
                                 if (sel) handleRemoveItem(sw.id, c);
                                 else handleAddItem(sw.id, 'sweet', c);
                               }}
@@ -417,12 +463,12 @@ export default function OfferConfigurator() {
               <Section title="DODATKI" open={openSection === 'deco'} onToggle={() => setOpenSection(openSection === 'deco' ? '' : 'deco')}>
                 <div className="space-y-1">
                   {decorations.map(dec => (
-                    <div key={dec.id} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-xs">
+                    <div key={dec.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 bg-white text-xs ${busy ? 'opacity-60 pointer-events-none' : ''}`}>
                       <div className="flex gap-1 flex-shrink-0">
                         {(dec.available_colors_json || []).map(c => {
                           const col = colors.find(x => x.code === c);
                           const sel = hasItemColor(dec.id, c);
-                          const ok = isColorOk(c);
+                          const ok = isColorOk(c) && !busy;
                           return col ? (
                             <Dot
                               key={c}
@@ -430,6 +476,7 @@ export default function OfferConfigurator() {
                               selected={sel}
                               enabled={ok}
                               onClick={() => {
+                                if (busy) return;
                                 if (sel) handleRemoveItem(dec.id, c);
                                 else handleAddItem(dec.id, 'decoration', c);
                               }}
@@ -461,6 +508,17 @@ export default function OfferConfigurator() {
           </div>
         </div>
       )}
+
+      {/* Bottom nav */}
+      <div className="max-w-6xl mx-auto px-6 pb-6">
+        <OfferNavButtons
+          onBack={() => navigate('/offer/create')}
+          backLabel="← Nowa oferta"
+          onNext={() => navigate(`/offer/${offerId}/content`)}
+          nextLabel="Dalej — treść oferty"
+          nextDisabled={!offer || offer.sets.length === 0}
+        />
+      </div>
     </div>
   );
 }

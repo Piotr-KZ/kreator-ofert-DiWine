@@ -10,11 +10,30 @@ from typing import Optional
 
 class ClientCreate(BaseModel):
     company_name: str
+    legal_form: Optional[str] = None
     nip: Optional[str] = None
+    regon: Optional[str] = None
+    # Rejestrowy
+    reg_street: Optional[str] = None
+    reg_number: Optional[str] = None
+    reg_postal_code: Optional[str] = None
+    reg_city: Optional[str] = None
+    # Adresowy
+    addr_same_as_reg: bool = True
+    addr_street: Optional[str] = None
+    addr_number: Optional[str] = None
+    addr_postal_code: Optional[str] = None
+    addr_city: Optional[str] = None
+    # Kontakt firmy
+    company_phone: Optional[str] = None
+    company_email: Optional[str] = None
+    company_www: Optional[str] = None
+    # Osoba
     contact_person: Optional[str] = None
     contact_role: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    # Legacy
     address: Optional[str] = None
     delivery_address: Optional[str] = None
 
@@ -22,7 +41,13 @@ class ClientCreate(BaseModel):
 class ClientOut(BaseModel):
     id: str
     company_name: str
+    legal_form: Optional[str] = None
     nip: Optional[str] = None
+    regon: Optional[str] = None
+    reg_street: Optional[str] = None
+    reg_number: Optional[str] = None
+    reg_postal_code: Optional[str] = None
+    reg_city: Optional[str] = None
     contact_person: Optional[str] = None
     contact_role: Optional[str] = None
     email: Optional[str] = None

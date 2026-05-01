@@ -8,10 +8,12 @@ from app.models.offer import (
     DiscountRule, Color, Offer, OfferSet, OfferSetItem,
 )
 from app.models.offer_text import OfferTextTemplate
+from app.models.offer_photo import OfferPhoto
+from app.models.company_settings import CompanySettings
 
 __all__ = [
     "Project", "ProjectSection", "ProjectMaterial", "BlockCategory", "BlockTemplate",
     "Client", "Supplier", "Occasion", "Product", "Packaging",
     "DiscountRule", "Color", "Offer", "OfferSet", "OfferSetItem",
-    "OfferTextTemplate",
+    "OfferTextTemplate", "OfferPhoto", "CompanySettings",
 ]

@@ -20,6 +20,29 @@ class Client(BaseModel):
     contact_role = Column(String(100))
     email = Column(String(255))
     phone = Column(String(50))
+
+    # Forma prawna
+    legal_form = Column(String(50))  # Sp. z o.o., S.A., etc.
+
+    # Adres rejestrowy
+    reg_street = Column(String(255))
+    reg_number = Column(String(20))
+    reg_postal_code = Column(String(10))
+    reg_city = Column(String(100))
+
+    # Adres korespondencyjny (jeśli inny)
+    addr_same_as_reg = Column(Boolean, default=True)
+    addr_street = Column(String(255))
+    addr_number = Column(String(20))
+    addr_postal_code = Column(String(10))
+    addr_city = Column(String(100))
+
+    # Kontakt firmy
+    company_phone = Column(String(50))
+    company_email = Column(String(255))
+    company_www = Column(String(500))
+
+    # Legacy (combined address for backward compatibility)
     address = Column(Text)
     delivery_address = Column(Text)
 
