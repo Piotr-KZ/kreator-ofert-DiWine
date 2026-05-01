@@ -57,7 +57,52 @@ class ClientOut(BaseModel):
         from_attributes = True
 
 
+# ─── Supplier ───
+
+class SupplierCreate(BaseModel):
+    name: str
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    delivery_days: int = 5
+    address_street: Optional[str] = None
+    address_number: Optional[str] = None
+    address_postal_code: Optional[str] = None
+    address_city: Optional[str] = None
+    nip: Optional[str] = None
+    www: Optional[str] = None
+
+
+class SupplierOut(BaseModel):
+    id: str
+    name: str
+    contact_email: Optional[str] = None
+    contact_phone: Optional[str] = None
+    delivery_days: int = 5
+    address_street: Optional[str] = None
+    address_number: Optional[str] = None
+    address_postal_code: Optional[str] = None
+    address_city: Optional[str] = None
+    nip: Optional[str] = None
+    www: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
 # ─── Product ───
+
+class ProductCreate(BaseModel):
+    name: str
+    category: str
+    base_price: float
+    wine_color: Optional[str] = None
+    wine_type: Optional[str] = None
+    slot_size: int = 1
+    available_colors_json: Optional[list] = None
+    stock_quantity: int = 0
+    supplier_id: Optional[str] = None
+    description: Optional[str] = None
+
 
 class ProductOut(BaseModel):
     id: str
@@ -77,6 +122,15 @@ class ProductOut(BaseModel):
 
 
 # ─── Packaging ───
+
+class PackagingCreate(BaseModel):
+    name: str
+    packaging_type: str
+    bottles: int = 1
+    sweet_slots: int = 5
+    price: float
+    stock_quantity: int = 0
+
 
 class PackagingOut(BaseModel):
     id: str
@@ -161,6 +215,15 @@ class OfferOut(BaseModel):
 
 
 # ─── Discount ───
+
+class DiscountRuleCreate(BaseModel):
+    rule_type: str
+    product_id: Optional[str] = None
+    min_quantity: int
+    max_quantity: int
+    discount_percent: Optional[float] = None
+    fixed_price: Optional[float] = None
+
 
 class DiscountRuleOut(BaseModel):
     id: str

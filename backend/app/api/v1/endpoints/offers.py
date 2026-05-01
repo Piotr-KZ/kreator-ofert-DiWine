@@ -18,6 +18,7 @@ from app.models.offer import (
 from app.schemas.offer import (
     ClientCreate, ClientOut, OfferCreate, OfferSetCreate,
     OfferOut, OfferSetOut,
+    ProductCreate, PackagingCreate, SupplierCreate, DiscountRuleCreate,
 )
 from app.services.offer.calculator import (
     calc_set_price, generate_offer_number, validate_set_capacity,
@@ -128,10 +129,147 @@ async def list_discounts(db: AsyncSession = Depends(get_db)):
 async def list_suppliers(db: AsyncSession = Depends(get_db)):
     """List all suppliers."""
     result = await db.execute(select(Supplier).order_by(Supplier.name))
-    return [
-        {"id": s.id, "name": s.name, "contact_email": s.contact_email, "delivery_days": s.delivery_days}
-        for s in result.scalars().all()
-    ]
+    return [_serialize_supplier(s) for s in result.scalars().all()]
+
+
+def _serialize_supplier(s: Supplier) -> dict:
+    return {
+        "id": s.id, "name": s.name,
+        "contact_email": s.contact_email, "contact_phone": s.contact_phone,
+        "delivery_days": s.delivery_days,
+        "address_street": s.address_street, "address_number": s.address_number,
+        "address_postal_code": s.address_postal_code, "address_city": s.address_city,
+        "nip": s.nip, "www": s.www,
+    }
+
+
+@router.post("/catalog/suppliers")
+async def create_supplier(data: SupplierCreate, db: AsyncSession = Depends(get_db)):
+    obj = Supplier(id=str(uuid4()), **data.model_dump())
+    db.add(obj)
+    await db.flush()
+    return _serialize_supplier(obj)
+
+
+@router.get("/catalog/suppliers/{supplier_id}")
+async def get_supplier(supplier_id: str, db: AsyncSession = Depends(get_db)):
+    s = (await db.execute(select(Supplier).where(Supplier.id == supplier_id))).scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="Dostawca nie znaleziony")
+    return _serialize_supplier(s)
+
+
+@router.put("/catalog/suppliers/{supplier_id}")
+async def update_supplier(supplier_id: str, data: SupplierCreate, db: AsyncSession = Depends(get_db)):
+    s = (await db.execute(select(Supplier).where(Supplier.id == supplier_id))).scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="Dostawca nie znaleziony")
+    for k, v in data.model_dump().items():
+        setattr(s, k, v)
+    await db.flush()
+    return _serialize_supplier(s)
+
+
+@router.delete("/catalog/suppliers/{supplier_id}")
+async def delete_supplier(supplier_id: str, db: AsyncSession = Depends(get_db)):
+    s = (await db.execute(select(Supplier).where(Supplier.id == supplier_id))).scalar_one_or_none()
+    if not s:
+        raise HTTPException(status_code=404, detail="Dostawca nie znaleziony")
+    count = await db.scalar(select(func.count(Product.id)).where(Product.supplier_id == supplier_id))
+    if count and count > 0:
+        raise HTTPException(status_code=400, detail=f"Dostawca ma {count} produktów. Zmień ich dostawcę przed usunięciem.")
+    await db.delete(s)
+    return {"ok": True}
+
+
+# ════════════════════════════════════════════════════════════
+# CATALOG CRUD — products, packagings, discounts
+# ════════════════════════════════════════════════════════════
+
+@router.post("/catalog/products")
+async def create_product(data: ProductCreate, db: AsyncSession = Depends(get_db)):
+    obj = Product(id=str(uuid4()), **data.model_dump())
+    db.add(obj)
+    await db.flush()
+    return {"id": obj.id, "name": obj.name}
+
+
+@router.put("/catalog/products/{product_id}")
+async def update_product(product_id: str, data: ProductCreate, db: AsyncSession = Depends(get_db)):
+    p = (await db.execute(select(Product).where(Product.id == product_id))).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="Produkt nie znaleziony")
+    for k, v in data.model_dump().items():
+        setattr(p, k, v)
+    await db.flush()
+    return {"id": p.id, "name": p.name}
+
+
+@router.delete("/catalog/products/{product_id}")
+async def delete_product(product_id: str, db: AsyncSession = Depends(get_db)):
+    p = (await db.execute(select(Product).where(Product.id == product_id))).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="Produkt nie znaleziony")
+    p.is_active = False
+    await db.flush()
+    return {"ok": True}
+
+
+@router.post("/catalog/packagings")
+async def create_packaging(data: PackagingCreate, db: AsyncSession = Depends(get_db)):
+    obj = Packaging(id=str(uuid4()), **data.model_dump())
+    db.add(obj)
+    await db.flush()
+    return {"id": obj.id, "name": obj.name}
+
+
+@router.put("/catalog/packagings/{packaging_id}")
+async def update_packaging(packaging_id: str, data: PackagingCreate, db: AsyncSession = Depends(get_db)):
+    p = (await db.execute(select(Packaging).where(Packaging.id == packaging_id))).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="Opakowanie nie znalezione")
+    for k, v in data.model_dump().items():
+        setattr(p, k, v)
+    await db.flush()
+    return {"id": p.id, "name": p.name}
+
+
+@router.delete("/catalog/packagings/{packaging_id}")
+async def delete_packaging(packaging_id: str, db: AsyncSession = Depends(get_db)):
+    p = (await db.execute(select(Packaging).where(Packaging.id == packaging_id))).scalar_one_or_none()
+    if not p:
+        raise HTTPException(status_code=404, detail="Opakowanie nie znalezione")
+    p.is_active = False
+    await db.flush()
+    return {"ok": True}
+
+
+@router.post("/catalog/discounts")
+async def create_discount(data: DiscountRuleCreate, db: AsyncSession = Depends(get_db)):
+    obj = DiscountRule(id=str(uuid4()), **data.model_dump())
+    db.add(obj)
+    await db.flush()
+    return {"id": obj.id}
+
+
+@router.put("/catalog/discounts/{discount_id}")
+async def update_discount(discount_id: str, data: DiscountRuleCreate, db: AsyncSession = Depends(get_db)):
+    d = (await db.execute(select(DiscountRule).where(DiscountRule.id == discount_id))).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Rabat nie znaleziony")
+    for k, v in data.model_dump().items():
+        setattr(d, k, v)
+    await db.flush()
+    return {"id": d.id}
+
+
+@router.delete("/catalog/discounts/{discount_id}")
+async def delete_discount(discount_id: str, db: AsyncSession = Depends(get_db)):
+    d = (await db.execute(select(DiscountRule).where(DiscountRule.id == discount_id))).scalar_one_or_none()
+    if not d:
+        raise HTTPException(status_code=404, detail="Rabat nie znaleziony")
+    await db.delete(d)
+    return {"ok": True}
 
 
 # ════════════════════════════════════════════════════════════

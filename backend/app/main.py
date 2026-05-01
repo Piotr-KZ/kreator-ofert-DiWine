@@ -55,6 +55,12 @@ async def lifespan(app: FastAPI):
         offer_block_counts = await seed_offer_blocks(db)
         logger.info(f"Seeded offer blocks: {offer_block_counts}")
 
+    # Seed lifestyle photos from Unsplash (one-time download)
+    async with async_session_local() as db:
+        from app.services.offer.photo_library import seed_lifestyle_photos
+        photo_stats = await seed_lifestyle_photos(db)
+        logger.info(f"Photo library: {photo_stats}")
+
     yield
     logger.info("Shutting down Lab Creator")
 
@@ -69,7 +75,7 @@ app = FastAPI(
 # CORS — allow frontend dev server
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3002", "http://127.0.0.1:3002"],
+    allow_origins=["http://localhost:3002", "http://127.0.0.1:3002", "http://localhost:3005", "http://127.0.0.1:3005"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

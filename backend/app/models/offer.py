@@ -69,6 +69,16 @@ class Supplier(BaseModel):
     contact_phone = Column(String(50))
     delivery_days = Column(Integer, default=5)  # domyślny czas dostawy w dniach
 
+    # Adres
+    address_street = Column(String(255), nullable=True)
+    address_number = Column(String(20), nullable=True)
+    address_postal_code = Column(String(10), nullable=True)
+    address_city = Column(String(100), nullable=True)
+
+    # Dane firmowe
+    nip = Column(String(20), nullable=True)
+    www = Column(String(500), nullable=True)
+
     products = relationship("Product", back_populates="supplier")
 
     def __repr__(self):
