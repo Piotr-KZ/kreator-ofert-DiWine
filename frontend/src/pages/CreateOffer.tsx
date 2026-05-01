@@ -132,9 +132,9 @@ export default function CreateOffer() {
   const [activeTab, setActiveTab] = useState<'reg' | 'addr' | 'person' | 'order'>('reg');
 
   // Order data
-  const [quantity, setQuantity] = useState(100);
-  const [budget, setBudget] = useState(150);
-  const [occasion, setOccasion] = useState('christmas');
+  const [quantity, setQuantity] = useState(0);
+  const [budget, setBudget] = useState(0);
+  const [occasion, setOccasion] = useState('');
   const [deadline, setDeadline] = useState('');
   const [requestedItems, setRequestedItems] = useState<string[]>([]);
   const [vagueRequests, setVagueRequests] = useState<string[]>([]);
@@ -633,15 +633,16 @@ export default function CreateOffer() {
                       <div className="grid grid-cols-2 gap-3">
                         <div>
                           <label className={LBL}>Ilość prezentów *</label>
-                          <input type="number" className={`${INP} font-bold`} value={quantity} onChange={e => setQuantity(parseInt(e.target.value) || 0)} />
+                          <input type="number" className={`${INP} font-bold`} value={quantity || ''} onChange={e => setQuantity(parseInt(e.target.value) || 0)} placeholder="np. 100" />
                         </div>
                         <div>
                           <label className={LBL}>Budżet netto / szt.</label>
-                          <input type="number" className={`${INP} font-bold`} value={budget} onChange={e => setBudget(parseFloat(e.target.value) || 0)} />
+                          <input type="number" className={`${INP} font-bold`} value={budget || ''} onChange={e => setBudget(parseFloat(e.target.value) || 0)} placeholder="np. 150" />
                         </div>
                         <div>
                           <label className={LBL}>Okazja</label>
                           <select className={INP} value={occasion} onChange={e => setOccasion(e.target.value)}>
+                            <option value="">— wybierz —</option>
                             {OCCASIONS.map(o => <option key={o.code} value={o.code}>{o.name}</option>)}
                           </select>
                         </div>
