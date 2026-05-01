@@ -55,7 +55,7 @@ const DEVICES = {
   mobile:  { w: 390,  label: 'Mobile',  icon: 'M7 2h10a1 1 0 011 1v18a1 1 0 01-1 1H7a1 1 0 01-1-1V3a1 1 0 011-1z M10 19h4' },
 };
 
-function _UnusedAIAssistant({ onClose, viewportEl }) {
+function _UnusedAIAssistant({ onClose, viewportEl }: { onClose: () => void; viewportEl: any }) {
   const [messages, setMessages] = React.useState([
     { role: 'ai', text: 'Cześć! Widzę Twoją stronę. Mogę przepisać sekcje, skrócić teksty, dopasować ton albo zasugerować zmiany. Co chcesz zrobić?' },
   ]);
@@ -289,7 +289,7 @@ export default function Step5Wizualizacja() {
   const storeSections = useLabStore(s => s.sections);
   const updateSection = useLabStore(s => s.updateSection);
   const [tweaks, setTweaks] = React.useState(WIZ_TWEAKS_DEFAULT);
-  const [device, setDevice] = React.useState('desktop');
+  const [device, setDevice] = React.useState<keyof typeof DEVICES>('desktop');
   const [tweaksOpen, setTweaksOpen] = React.useState(false);
   const [liveEdit, setLiveEdit] = React.useState(true);
 
@@ -363,7 +363,7 @@ export default function Step5Wizualizacja() {
   const [fullscreen, setFullscreen] = React.useState(false);
   React.useEffect(() => {
     if (!fullscreen) return;
-    const onKey = (e) => { if (e.key === 'Escape') setFullscreen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setFullscreen(false); };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [fullscreen]);
@@ -376,7 +376,7 @@ export default function Step5Wizualizacja() {
   
   // activePageName removed — single page in Lab Creator
   const [published, setPublished] = React.useState(false);
-  const [toast, setToast] = React.useState(null);
+  const [toast, setToast] = React.useState<{msg:string;icon?:string}|null>(null);
   const [editMode, setEditMode] = React.useState(false);
   // Synchronizuj klasę na body — CSS może reagować (np. hint na obrazach).
   React.useEffect(() => {
@@ -804,7 +804,7 @@ export default function Step5Wizualizacja() {
         {/* Device switcher */}
         <div style={{ display: 'inline-flex', background: '#F1F5F9', padding: 3, borderRadius: 9, gap: 2 }}>
           {Object.entries(DEVICES).map(([k, d]) => (
-            <button key={k} onClick={() => setDevice(k)} title={d.label}
+            <button key={k} onClick={() => setDevice(k as keyof typeof DEVICES)} title={d.label}
               style={{
                 padding: '6px 10px', border: 'none',
                 background: device === k ? '#fff' : 'transparent',
@@ -950,14 +950,14 @@ export default function Step5Wizualizacja() {
               fontFamily: `'${pair.b}', sans-serif`,
               '--font-heading': `'${pair.h}', serif`,
               '--font-body': `'${pair.b}', sans-serif`,
-            }}>
+            } as React.CSSProperties}>
               {(() => {
                 const densityIdx = tweaks.density === 'compact' ? 2 : tweaks.density === 'spacious' ? 4 : 3;
                 const typo = makeWizTypo(pair, densityIdx);
                 const brand = { bg: tweaks.headerBg || '#FFFFFF', bg2: '#F1F5F9', cta: tweaks.brandColor, cta2: tweaks.accentColor, ctaGradient: true };
                 return (
                   <DeviceCtx.Provider value={device}>
-                  <SREditCtx.Provider value={wzEditCtx}>
+                  <SREditCtx.Provider value={wzEditCtx as any}>
                     {wzContent.map((s, idx) => {
                       const Renderer = WIZ_SECTION_RENDERERS[s.code] || SECTION_RENDERERS[s.code] || SECTION_RENDERERS.PLACEHOLDER;
                       if (!Renderer) return null;
@@ -1159,7 +1159,7 @@ export default function Step5Wizualizacja() {
             </div>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               {Object.keys(DEVICES).map(d => (
-                <button key={d} onClick={() => setDevice(d)} style={{
+                <button key={d} onClick={() => setDevice(d as keyof typeof DEVICES)} style={{
                   padding: '4px 10px', border: '1px solid rgba(255,255,255,.15)',
                   background: device === d ? 'rgba(255,255,255,.12)' : 'transparent',
                   color: '#fff', borderRadius: 6, cursor: 'pointer',
@@ -1190,18 +1190,18 @@ export default function Step5Wizualizacja() {
               fontFamily: `'${pair.b}', sans-serif`,
               '--font-heading': `'${pair.h}', serif`,
               '--font-body': `'${pair.b}', sans-serif`,
-            }}>
+            } as React.CSSProperties}>
               {(() => {
                 const densityIdx = tweaks.density === 'compact' ? 2 : tweaks.density === 'spacious' ? 4 : 3;
                 const typo = makeWizTypo(pair, densityIdx);
                 const brand = { bg: tweaks.headerBg || '#FFFFFF', bg2: '#F1F5F9', cta: tweaks.brandColor, cta2: tweaks.accentColor, ctaGradient: true };
                 return (
                   <DeviceCtx.Provider value={device}>
-                  <SREditCtx.Provider value={wzEditCtx}>
+                  <SREditCtx.Provider value={wzEditCtx as any}>
                     {wzContent.map((s, idx) => {
                       const Renderer = WIZ_SECTION_RENDERERS[s.code] || SECTION_RENDERERS[s.code] || SECTION_RENDERERS.PLACEHOLDER;
                       if (!Renderer) return null;
-                      return <Renderer key={s.id} s={s} brand={idx % 2 === 0 ? brand : { ...brand, bg: brand.bg2 }} typo={typo} device={device} update={(p) => wzUpdateSection(s.id, p)}/>;
+                      return <Renderer key={s.id} s={s} brand={idx % 2 === 0 ? brand : { ...brand, bg: brand.bg2 }} typo={typo} device={device} update={(p: any) => wzUpdateSection(s.id, p)}/>;
                     })}
                   </SREditCtx.Provider>
                   </DeviceCtx.Provider>
@@ -1215,7 +1215,7 @@ export default function Step5Wizualizacja() {
   );
 }
 
-function StepperBold({ current }) {
+function StepperBold({ current }: { current: number }) {
   const steps = [
     { n: 1, name: 'Brief' }, { n: 2, name: 'Brand' }, { n: 3, name: 'Walidacja' },
     { n: 4, name: 'Struktura' }, { n: 5, name: 'Treści' }, { n: 6, name: 'Wizualizacja' },

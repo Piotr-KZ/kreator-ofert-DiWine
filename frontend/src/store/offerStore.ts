@@ -7,7 +7,7 @@ import { create } from 'zustand';
 import * as offerApi from '@/api/offerClient';
 import type {
   Product, PackagingItem, ColorItem, OccasionItem,
-  DiscountRuleItem, OfferData, OfferSetData, ClientData,
+  DiscountRuleItem, OfferData,
 } from '@/types/offer';
 
 function extractError(e: unknown, fallback = 'Wystąpił błąd'): string {
@@ -119,7 +119,7 @@ export const useOfferStore = create<OfferState>((set, get) => ({
   },
 
   addSet: async (name, packagingId, budget) => {
-    const { offer, busy, currentOfferId } = get();
+    const { offer, busy } = get();
     if (!offer || busy) return;
     set({ busy: true, error: null });
     try {
