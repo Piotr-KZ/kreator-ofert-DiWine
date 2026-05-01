@@ -514,8 +514,8 @@ export default function OfferConfigurator() {
         <OfferNavButtons
           onBack={() => navigate('/offer/create')}
           backLabel="← Nowa oferta"
-          onNext={() => navigate(`/offer/${offerId}/content`)}
-          nextLabel="Dalej — treść oferty"
+          onNext={() => navigate(`/offer/${offerId}/cost`)}
+          nextLabel="Dalej — kosztorys"
           nextDisabled={!offer || offer.sets.length === 0}
         />
       </div>

@@ -19,7 +19,7 @@ TEMPLATES = {
         "description": "Klasyczna oferta: nagłówek, powitanie, zestawy, dlaczego my, zakończenie, CTA.",
         "blocks": [
             {
-                "block_code": "OG1",
+                "block_code": "NO1",
                 "slots_map": {
                     "offer_number": "offer.offer_number",
                     "date": "offer.date",
@@ -31,32 +31,32 @@ TEMPLATES = {
                 },
             },
             {
-                "block_code": "OT1",
+                "block_code": "DW3",
                 "slots_map": {
                     "heading": "static:",
                     "body": "text:greeting:occasion",
                 },
             },
             {
-                "block_code": "OZ1",
+                "block_code": "DW1",
                 "repeat": "sets",
             },
             {
-                "block_code": "OT2",
+                "block_code": "DW4",
                 "slots_map": {
                     "heading": "static:Dlaczego my",
                     "body": "text:why_us",
                 },
             },
             {
-                "block_code": "OT1",
+                "block_code": "DW3",
                 "slots_map": {
                     "heading": "static:",
                     "body": "text:closing",
                 },
             },
             {
-                "block_code": "OA1",
+                "block_code": "CTA1",
                 "slots_map": {
                     "heading": "static:Zainteresowany?",
                     "body": "static:Skontaktuj się z nami — chętnie dopasujemy ofertę do Twoich potrzeb.",
@@ -74,19 +74,19 @@ TEMPLATES = {
         "name": "Premium",
         "description": "Rozbudowana oferta z ciekawostkami i większą ilością treści.",
         "blocks": [
-            {"block_code": "OG2", "slots_map": {
+            {"block_code": "NO2", "slots_map": {
                 "offer_number": "offer.offer_number", "date": "offer.date",
                 "client_name": "client.company_name", "client_logo_url": "client.logo_url",
                 "occasion_name": "offer.occasion_name",
                 "bg_photo_url": "unsplash:luxury wine gift box premium",
             }},
-            {"block_code": "OT1", "slots_map": {"heading": "static:", "body": "text:greeting:occasion"}},
-            {"block_code": "OT3", "slots_map": {"heading": "static:Czy wiesz, że...", "body": "text:fun_fact"}},
-            {"block_code": "OZ2", "repeat": "sets"},
-            {"block_code": "OT2", "slots_map": {"heading": "static:Dlaczego my", "body": "text:why_us"}},
-            {"block_code": "OT3", "slots_map": {"heading": "static:Ciekawostka", "body": "text:fun_fact"}},
-            {"block_code": "OT1", "slots_map": {"heading": "static:", "body": "text:closing"}},
-            {"block_code": "OA1", "slots_map": {
+            {"block_code": "DW3", "slots_map": {"heading": "static:", "body": "text:greeting:occasion"}},
+            {"block_code": "DW5", "slots_map": {"heading": "static:Czy wiesz, że...", "body": "text:fun_fact"}},
+            {"block_code": "DW2", "repeat": "sets"},
+            {"block_code": "DW4", "slots_map": {"heading": "static:Dlaczego my", "body": "text:why_us"}},
+            {"block_code": "DW5", "slots_map": {"heading": "static:Ciekawostka", "body": "text:fun_fact"}},
+            {"block_code": "DW3", "slots_map": {"heading": "static:", "body": "text:closing"}},
+            {"block_code": "CTA1", "slots_map": {
                 "heading": "static:Gotowy na wyjątkowe prezenty?",
                 "body": "static:Zaakceptuj ofertę lub skontaktuj się — dostosujemy wszystko do Twoich potrzeb.",
                 "cta_text": "static:Akceptuję ofertę",
@@ -102,14 +102,14 @@ TEMPLATES = {
         "name": "Szybka wycena",
         "description": "Minimum treści — same zestawy z cenami i CTA.",
         "blocks": [
-            {"block_code": "OG1", "slots_map": {
+            {"block_code": "NO1", "slots_map": {
                 "offer_number": "offer.offer_number", "date": "offer.date",
                 "client_name": "client.company_name", "occasion_name": "offer.occasion_name",
                 "bg_photo_url": "unsplash:wine gift box",
             }},
-            {"block_code": "OZ1", "repeat": "sets"},
-            {"block_code": "OT1", "slots_map": {"heading": "static:", "body": "text:closing"}},
-            {"block_code": "OA1", "slots_map": {
+            {"block_code": "DW1", "repeat": "sets"},
+            {"block_code": "DW3", "slots_map": {"heading": "static:", "body": "text:closing"}},
+            {"block_code": "CTA1", "slots_map": {
                 "heading": "static:Zainteresowany?",
                 "cta_text": "static:Akceptuję ofertę",
                 "cta_url": "offer.accept_url",
@@ -123,19 +123,19 @@ TEMPLATES = {
         "name": "Prezentacyjna",
         "description": "Na spotkanie lub wydruk — duże zdjęcia, pełne opisy.",
         "blocks": [
-            {"block_code": "OG2", "slots_map": {
+            {"block_code": "NO2", "slots_map": {
                 "offer_number": "offer.offer_number", "date": "offer.date",
                 "client_name": "client.company_name", "client_logo_url": "client.logo_url",
                 "occasion_name": "offer.occasion_name",
                 "bg_photo_url": "unsplash:premium wine tasting elegant",
             }},
-            {"block_code": "OT1", "slots_map": {"heading": "static:", "body": "text:greeting:occasion"}},
-            {"block_code": "OT2", "slots_map": {"heading": "static:O nas", "body": "text:why_us"}},
-            {"block_code": "OT3", "slots_map": {"heading": "static:Czy wiesz, że...", "body": "text:fun_fact"}},
-            {"block_code": "OZ2", "repeat": "sets"},
-            {"block_code": "OT3", "slots_map": {"heading": "static:Ciekawostka", "body": "text:fun_fact"}},
-            {"block_code": "OT1", "slots_map": {"heading": "static:", "body": "text:closing"}},
-            {"block_code": "OA1", "slots_map": {
+            {"block_code": "DW3", "slots_map": {"heading": "static:", "body": "text:greeting:occasion"}},
+            {"block_code": "DW4", "slots_map": {"heading": "static:O nas", "body": "text:why_us"}},
+            {"block_code": "DW5", "slots_map": {"heading": "static:Czy wiesz, że...", "body": "text:fun_fact"}},
+            {"block_code": "DW2", "repeat": "sets"},
+            {"block_code": "DW5", "slots_map": {"heading": "static:Ciekawostka", "body": "text:fun_fact"}},
+            {"block_code": "DW3", "slots_map": {"heading": "static:", "body": "text:closing"}},
+            {"block_code": "CTA1", "slots_map": {
                 "heading": "static:Następny krok",
                 "body": "static:Zaakceptuj ofertę online lub umów się na prezentację próbek.",
                 "cta_text": "static:Akceptuję ofertę",

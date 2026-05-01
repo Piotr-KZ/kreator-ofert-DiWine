@@ -15,8 +15,14 @@ async def seed_offer_data(db: AsyncSession) -> dict:
 
     # ─── SUPPLIERS ───
     suppliers_data = [
-        {"name": "Manufaktura Saska", "contact_email": "zamowienia@saska.pl", "delivery_days": 5},
-        {"name": "Stroiki Jan", "contact_email": "jan@stroiki.pl", "delivery_days": 3},
+        {"name": "Manufaktura Saska", "contact_email": "zamowienia@saska.pl", "contact_phone": "+48 22 345 67 89",
+         "delivery_days": 5, "address_street": "Francuska", "address_number": "12",
+         "address_postal_code": "03-906", "address_city": "Warszawa",
+         "nip": "5213456789", "www": "https://manufakturasaska.pl"},
+        {"name": "Stroiki Jan", "contact_email": "jan@stroiki.pl", "contact_phone": "+48 601 234 567",
+         "delivery_days": 3, "address_street": "Kwiatowa", "address_number": "5A",
+         "address_postal_code": "05-077", "address_city": "Piaseczno",
+         "nip": "1231234567", "www": "https://stroikijan.pl"},
     ]
     sup_map = {}
     for s in suppliers_data:

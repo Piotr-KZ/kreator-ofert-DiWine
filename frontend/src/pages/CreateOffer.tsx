@@ -382,8 +382,10 @@ export default function CreateOffer() {
       <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap" rel="stylesheet" />
 
       <nav className="bg-gray-950 px-6 py-2.5 flex items-center gap-3">
-        <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600" />
-        <span className="text-white font-bold text-sm">OfferCreator</span>
+        <button onClick={() => navigate('/offer')} className="flex items-center gap-2 hover:opacity-80">
+          <div className="w-6 h-6 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600" />
+          <span className="text-white font-bold text-sm">DiWine</span>
+        </button>
         <span className="text-gray-500 text-xs">/ Nowa oferta</span>
       </nav>
 
@@ -427,6 +429,12 @@ export default function CreateOffer() {
             />
 
             <div className="flex items-center gap-3 mt-4">
+              <button
+                onClick={() => navigate('/offer')}
+                className="px-4 py-2 text-sm font-semibold bg-white text-gray-700 border border-gray-200 rounded-lg hover:border-gray-300"
+              >
+                ← Wróć
+              </button>
               <button
                 onClick={() => setEmail(SAMPLE_EMAIL)}
                 className="px-4 py-2 text-sm font-semibold bg-white text-gray-700 border border-gray-200 rounded-lg hover:border-gray-300"

@@ -42,6 +42,7 @@ export default function OfferOrders(){
       <div className="flex items-center gap-1">
         <button onClick={()=>nav('/offer/list')} className="px-4 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-lg">Oferty</button>
         <button className="px-4 py-1.5 text-sm text-white bg-white/10 rounded-lg">Zamówienia</button>
+        <button onClick={()=>nav('/offer/invoices')} className="px-4 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-lg">Faktury</button>
         <button onClick={()=>nav('/offer/settings')} className="px-4 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-lg">Ustawienia</button>
       </div>
     </nav>

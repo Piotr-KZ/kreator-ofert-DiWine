@@ -42,6 +42,7 @@ class BlockTemplate(BaseModel):
     variants = Column(JSON)
 
     size = Column(String(1), default="M")
+    page_height = Column(String(2), default="M")  # S=25%, M=33%, L=50%, XL=100% strony A4
     responsive = Column(Boolean, default=True)
     is_active = Column(Boolean, default=True)
 

@@ -182,8 +182,11 @@ async def build_offer_page(
                     slots[slot_key] = all_facts[idx] if all_facts else ""
                 else:
                     slots[slot_key] = await get_text(block_type, occ)
-            elif source.startswith("unsplash:"):
-                slots[slot_key] = ""  # TODO: resolve via Unsplash service
+            elif source.startswith("unsplash:") or source.startswith("photo:"):
+                photo_category = source.split(":", 1)[1]
+                from app.services.offer.photo_library import get_default_photo
+                photo = await get_default_photo(db, photo_category)
+                slots[slot_key] = photo["url"] if photo else ""
 
         section = ProjectSection(
             id=str(uuid4()),
@@ -207,7 +210,7 @@ def _build_set_slots(
     offer_set: OfferSet, products: dict, packagings: dict,
     colors: dict, quantity: int,
 ) -> dict:
-    """Build slots_json for OZ1/OZ2 block from offer set data."""
+    """Build slots_json for DW1/DW2 block from offer set data."""
     pkg = packagings.get(offer_set.packaging_id) if offer_set.packaging_id else None
     type_labels = {"wine": "Wino", "sweet": "Słodycze", "decoration": "Dodatek", "personalization": "Personalizacja"}
 

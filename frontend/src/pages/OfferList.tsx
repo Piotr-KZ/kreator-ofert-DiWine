@@ -37,6 +37,8 @@ export default function OfferList() {
         </div>
         <div className="flex items-center gap-1">
           <button onClick={() => navigate('/offer/list')} className="px-4 py-1.5 text-sm text-white bg-white/10 rounded-lg">Oferty</button>
+          <button onClick={() => navigate('/offer/orders')} className="px-4 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-lg">Zamówienia</button>
+          <button onClick={() => navigate('/offer/invoices')} className="px-4 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-lg">Faktury</button>
           <button onClick={() => navigate('/offer/settings')} className="px-4 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-white/10 rounded-lg">Ustawienia</button>
         </div>
       </nav>

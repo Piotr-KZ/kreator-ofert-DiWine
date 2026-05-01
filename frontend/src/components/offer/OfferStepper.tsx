@@ -4,9 +4,11 @@ const STEPS: Step[] = [
   { num: 1, name: 'Email' },
   { num: 2, name: 'Weryfikacja' },
   { num: 3, name: 'Zestawy' },
-  { num: 4, name: 'Treść oferty' },
-  { num: 5, name: 'Podsumowanie' },
-  { num: 6, name: 'Eksport' },
+  { num: 4, name: 'Kosztorys' },
+  { num: 5, name: 'Struktura' },
+  { num: 6, name: 'Treści' },
+  { num: 7, name: 'Zdjęcia' },
+  { num: 8, name: 'Eksport' },
 ];
 
 interface Props {

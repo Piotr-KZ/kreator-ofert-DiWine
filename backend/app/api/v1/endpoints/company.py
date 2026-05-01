@@ -32,6 +32,8 @@ class CompanySettingsSchema(PydanticBase):
     person_phone: str = ""
     person_email: str = ""
     logo_url: str = ""
+    fakturownia_token: str = ""
+    fakturownia_account: str = ""
 
 
 @router.get("")
@@ -54,6 +56,8 @@ async def get_settings(db: AsyncSession = Depends(get_db)):
         "person_first_name": settings.person_first_name, "person_last_name": settings.person_last_name,
         "person_role": settings.person_role, "person_phone": settings.person_phone, "person_email": settings.person_email,
         "logo_url": settings.logo_url,
+        "fakturownia_token": settings.fakturownia_token,
+        "fakturownia_account": settings.fakturownia_account,
     }
 
 

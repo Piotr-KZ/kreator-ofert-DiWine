@@ -36,3 +36,7 @@ class CompanySettings(BaseModel):
 
     # Logo URL
     logo_url = Column(String(500), default="")
+
+    # Fakturownia
+    fakturownia_token = Column(String(255), default="")
+    fakturownia_account = Column(String(100), default="")  # subdomain

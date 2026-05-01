@@ -1,4 +1,5 @@
 import React from "react";
+import { useNavigate } from "react-router-dom";
 import { useLabStore } from "@/store/labStore";
 import { ImagePicker } from "@/components/wizualizacja/WizRender";
 import { SECTION_RENDERERS, EditCtx as SREditCtx } from "@/components/shared/SectionRenderers";
@@ -286,6 +287,7 @@ function _UnusedFormatToolbar({ toolbar, onClose }) {
 }
 
 export default function Step5Wizualizacja() {
+  const navigate = useNavigate();
   const storeSections = useLabStore(s => s.sections);
   const updateSection = useLabStore(s => s.updateSection);
   const [tweaks, setTweaks] = React.useState(WIZ_TWEAKS_DEFAULT);
@@ -887,6 +889,27 @@ export default function Step5Wizualizacja() {
             </>
           )}
         </button>
+
+        {(() => {
+          try {
+            const ctx = JSON.parse(localStorage.getItem('_offer_context') || '{}');
+            if (ctx.offer_id) {
+              return (
+                <button onClick={() => navigate(`/offer/${ctx.offer_id}/export`)}
+                  style={{
+                    padding: '8px 16px',
+                    background: 'linear-gradient(135deg, #16A34A 0%, #059669 100%)',
+                    color: '#fff', border: 'none', borderRadius: 9,
+                    fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
+                    cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7,
+                    boxShadow: '0 2px 8px rgba(22,163,74,.35)',
+                  }}>
+                  Eksport oferty →
+                </button>
+              );
+            }
+          } catch {} return null;
+        })()}
       </div>
 
       {/* MAIN */}

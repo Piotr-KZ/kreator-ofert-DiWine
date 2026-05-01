@@ -31,9 +31,9 @@ class TestPageTemplates:
     def test_standard_has_required_blocks(self):
         tpl = get_template("standard")
         codes = [b["block_code"] for b in tpl["blocks"]]
-        assert "OG1" in codes  # header
-        assert "OZ1" in codes  # set (repeated)
-        assert "OA1" in codes  # CTA
+        assert "NO1" in codes  # header
+        assert "DW1" in codes  # set (repeated)
+        assert "CTA1" in codes  # CTA
 
     def test_quick_is_shortest(self):
         quick = get_template("quick")
@@ -53,4 +53,4 @@ class TestPageTemplates:
         for tid in ["standard", "premium", "quick", "presentation"]:
             tpl = get_template(tid)
             codes = [b["block_code"] for b in tpl["blocks"]]
-            assert "OA1" in codes, f"{tid} brakuje CTA"
+            assert "CTA1" in codes, f"{tid} brakuje CTA"

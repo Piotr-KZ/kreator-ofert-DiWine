@@ -32,6 +32,10 @@ class Settings:
     UPLOAD_DIR: str = os.getenv("UPLOAD_DIR", "./uploads")
     MAX_UPLOAD_SIZE: int = 10 * 1024 * 1024  # 10 MB
 
+    # Fakturownia
+    FAKTUROWNIA_API_TOKEN: str = os.getenv("FAKTUROWNIA_API_TOKEN", "")
+    FAKTUROWNIA_ACCOUNT: str = os.getenv("FAKTUROWNIA_ACCOUNT", "")  # subdomain, np. "diwine"
+
     # Server
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "8002"))

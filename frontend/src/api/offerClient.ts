@@ -93,3 +93,22 @@ export const calculatePrice = (data: {
   packaging_id?: string;
   items: Array<{ product_id: string; item_type: string }>;
 }) => api.post('/calculate', data);
+
+// ─── Fakturownia ───
+
+export const generateProforma = (offerId: string, data: {
+  set_ids: string[];
+  as_marketing?: boolean;
+  payment_days?: number;
+  notes?: string;
+}) => api.post(`/${offerId}/generate-proforma`, data);
+
+export const generateVat = (offerId: string, data: {
+  set_ids: string[];
+  as_marketing?: boolean;
+  payment_days?: number;
+  notes?: string;
+}) => api.post(`/${offerId}/generate-vat`, data);
+
+export const testFakturownia = () =>
+  api.post('/fakturownia/test');
