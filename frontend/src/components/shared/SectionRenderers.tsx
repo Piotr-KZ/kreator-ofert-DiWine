@@ -20,6 +20,10 @@ const STOCK_IMAGES = {
     'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=400&q=70',
     'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&q=70',
   ],
+  offer_hero: 'https://images.unsplash.com/photo-1516594915697-87eb3b1c14ea?w=1200&q=75',
+  offer_wine: 'https://images.unsplash.com/photo-1474722883778-792e7990302f?w=900&q=75',
+  offer_gift: 'https://images.unsplash.com/photo-1513885535751-8b9238bd345a?w=900&q=75',
+  offer_table: 'https://images.unsplash.com/photo-1414235077428-338989a2e8c0?w=900&q=75',
 };
 
 // Clickable image with hover overlay — opens ImagePicker on click
@@ -806,6 +810,184 @@ function PlaceholderSection({ s }) {
 // ═══════════════════════════════════════════════
 // SECTION_RENDERERS — all 40 block codes mapped
 // ═══════════════════════════════════════════════
+// ═══════════════════════════════════════
+// OFFER BLOCKS — NO, DW, CTA
+// Landscape A4, każdy klocek = 1 strona
+// ═══════════════════════════════════════
+
+function OfferHeaderSection({ s, brand, typo, update }: any) {
+  const f = s.fields || {};
+  const setField = (k: any, v: any) => update({ fields: { ...f, [k]: v } });
+  return (
+    <div style={{ width: '100%', minHeight: '100vh', display: 'flex', alignItems: 'center',
+      background: `linear-gradient(rgba(0,0,0,0.5),rgba(0,0,0,0.5)),url('${txt(f.bg_photo_url) || STOCK_IMAGES.offer_hero}') center/cover no-repeat` }}>
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '80px 64px', width: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <Eyebrow value={f.eyebrow || 'OFERTA PREZENTOWA'} onChange={(v: any) => setField('eyebrow', v)} typo={typo} color="#a78bfa" sectionId={s.id} elId="eyebrow" />
+            <H1 value={f.occasion_name || 'Oferta prezentowa'} onChange={(v: any) => setField('occasion_name', v)} typo={typo} color="#fff" sectionId={s.id} elId="occasion_name" />
+            <Body value={f.client_name ? `dla ${txt(f.client_name)}` : 'dla Klienta'} onChange={(v: any) => setField('client_name', v)} typo={typo} color="#cbd5e1" sectionId={s.id} elId="client_name" />
+            <Editable tag="div" value={`Nr: ${txt(f.offer_number)} • ${txt(f.date)}`} onChange={(v: any) => setField('offer_number', v)} sectionId={s.id} elId="offer_number" style={{ fontSize: 14, color: '#94a3b8', marginTop: 8 }} />
+          </div>
+          <SectionImg src={f.client_logo_url} fallback="" alt="Logo" sectionId={s.id} field="client_logo_url" style={{ height: 64, width: 'auto', background: '#fff', borderRadius: 14, padding: 12 }} />
+        </div>
+      </div>
+      <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 10 }}>
+        <SectionImg src={f.bg_photo_url} fallback={STOCK_IMAGES.offer_hero} alt="Tło" sectionId={s.id} field="bg_photo_url" style={{ width: 48, height: 48, borderRadius: 8, border: '2px solid rgba(255,255,255,0.3)' }} />
+      </div>
+    </div>
+  );
+}
+
+function OfferHeaderFullSection({ s, brand, typo, update }: any) {
+  const f = s.fields || {};
+  const setField = (k: any, v: any) => update({ fields: { ...f, [k]: v } });
+  return (
+    <div style={{ width: '100%', minHeight: '100vh', display: 'flex', alignItems: 'flex-end',
+      background: `linear-gradient(to top,rgba(0,0,0,0.75) 0%,rgba(0,0,0,0.05) 50%),url('${txt(f.bg_photo_url) || STOCK_IMAGES.offer_hero}') center/cover no-repeat` }}>
+      <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 64px 64px', width: '100%' }}>
+        <SectionImg src={f.client_logo_url} fallback="" alt="Logo" sectionId={s.id} field="client_logo_url" style={{ height: 48, width: 'auto', background: 'rgba(255,255,255,0.9)', borderRadius: 10, padding: 8, marginBottom: 20 }} />
+        <H1 value={f.occasion_name || 'Oferta prezentowa'} onChange={(v: any) => setField('occasion_name', v)} typo={typo} color="#fff" sectionId={s.id} elId="occasion_name" />
+        <Body value={`${txt(f.occasion_name)} — ${txt(f.client_name)}`} onChange={(v: any) => setField('client_name', v)} typo={typo} color="#e2e8f0" sectionId={s.id} elId="client_name" />
+      </div>
+      <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 10 }}>
+        <SectionImg src={f.bg_photo_url} fallback={STOCK_IMAGES.offer_hero} alt="Tło" sectionId={s.id} field="bg_photo_url" style={{ width: 48, height: 48, borderRadius: 8, border: '2px solid rgba(255,255,255,0.3)' }} />
+      </div>
+    </div>
+  );
+}
+
+function OfferImgLeftTextRight({ s, brand, typo, update }: any) {
+  const f = s.fields || {};
+  const setField = (k: any, v: any) => update({ fields: { ...f, [k]: v } });
+  return (
+    <div style={{ width: '100%', minHeight: '100vh', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+      <SectionImg src={f.image} fallback={STOCK_IMAGES.offer_wine} alt="" sectionId={s.id} field="image" style={{ width: '100%', height: '100%', minHeight: 400 }} />
+      <div style={{ padding: '80px 64px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 20, background: s.bg || brand.bg }}>
+        <Eyebrow value={f.eyebrow} onChange={(v: any) => setField('eyebrow', v)} typo={typo} color="#8b7355" sectionId={s.id} elId="eyebrow" />
+        <H2 value={f.heading} onChange={(v: any) => setField('heading', v)} typo={typo} color="#1e293b" sectionId={s.id} elId="heading" />
+        <Body value={f.body} onChange={(v: any) => setField('body', v)} typo={typo} color="#64748b" sectionId={s.id} elId="body" />
+      </div>
+    </div>
+  );
+}
+
+function OfferTextLeftImgRight({ s, brand, typo, update }: any) {
+  const f = s.fields || {};
+  const setField = (k: any, v: any) => update({ fields: { ...f, [k]: v } });
+  return (
+    <div style={{ width: '100%', minHeight: '100vh', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+      <div style={{ padding: '80px 64px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 20, background: s.bg || brand.bg }}>
+        <Eyebrow value={f.eyebrow} onChange={(v: any) => setField('eyebrow', v)} typo={typo} color="#8b7355" sectionId={s.id} elId="eyebrow" />
+        <H2 value={f.heading} onChange={(v: any) => setField('heading', v)} typo={typo} color="#1e293b" sectionId={s.id} elId="heading" />
+        <Body value={f.body} onChange={(v: any) => setField('body', v)} typo={typo} color="#64748b" sectionId={s.id} elId="body" />
+      </div>
+      <SectionImg src={f.image} fallback={STOCK_IMAGES.offer_gift} alt="" sectionId={s.id} field="image" style={{ width: '100%', height: '100%', minHeight: 400 }} />
+    </div>
+  );
+}
+
+function OfferImgTopTextBottom({ s, brand, typo, update }: any) {
+  const f = s.fields || {};
+  const setField = (k: any, v: any) => update({ fields: { ...f, [k]: v } });
+  return (
+    <div style={{ width: '100%', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <SectionImg src={f.image} fallback={STOCK_IMAGES.offer_table} alt="" sectionId={s.id} field="image" style={{ flex: '0 0 55%', width: '100%' }} />
+      <div style={{ flex: 1, padding: '48px 64px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 16, maxWidth: 900, margin: '0 auto', width: '100%' }}>
+        <Eyebrow value={f.eyebrow} onChange={(v: any) => setField('eyebrow', v)} typo={typo} color="#8b7355" sectionId={s.id} elId="eyebrow" />
+        <H2 value={f.heading} onChange={(v: any) => setField('heading', v)} typo={typo} color="#1e293b" sectionId={s.id} elId="heading" />
+        <Body value={f.body} onChange={(v: any) => setField('body', v)} typo={typo} color="#64748b" sectionId={s.id} elId="body" />
+      </div>
+    </div>
+  );
+}
+
+function OfferGridSection({ s, brand, typo, update, cols = 2 }: any) {
+  const f = s.fields || {};
+  const setField = (k: any, v: any) => update({ fields: { ...f, [k]: v } });
+  const fontSize = cols > 3 ? { h: 18, b: 13 } : cols > 2 ? { h: 22, b: 14 } : { h: 26, b: 15 };
+  const radius = cols > 3 ? 12 : cols > 2 ? 14 : 16;
+  return (
+    <div style={{ width: '100%', minHeight: '100vh', display: 'flex', flexDirection: 'column', padding: '48px 64px', background: s.bg || brand.bg }}>
+      <Eyebrow value={f.eyebrow} onChange={(v: any) => setField('eyebrow', v)} typo={typo} color="#8b7355" sectionId={s.id} elId="eyebrow" />
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: cols > 3 ? 20 : 24, flex: 1, marginTop: 24 }}>
+        {Array.from({ length: cols }, (_, i) => (
+          <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <SectionImg src={f[`image_${i+1}`]} fallback={STOCK_IMAGES.offer_wine} alt="" sectionId={s.id} field={`image_${i+1}`} style={{ flex: '0 0 55%', borderRadius: radius }} />
+            <H3 value={f[`heading_${i+1}`]} onChange={(v: any) => setField(`heading_${i+1}`, v)} typo={typo} color="#1e293b" sectionId={s.id} elId={`heading_${i+1}`} />
+            <Body value={f[`body_${i+1}`]} onChange={(v: any) => setField(`body_${i+1}`, v)} typo={typo} color="#64748b" sectionId={s.id} elId={`body_${i+1}`} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OfferGrid2Section(props: any) { return <OfferGridSection {...props} cols={2} />; }
+function OfferGrid3Section(props: any) { return <OfferGridSection {...props} cols={3} />; }
+function OfferGrid4Section(props: any) { return <OfferGridSection {...props} cols={4} />; }
+
+function OfferColumnsSection({ s, brand, typo, update }: any) {
+  const f = s.fields || {};
+  const setField = (k: any, v: any) => update({ fields: { ...f, [k]: v } });
+  return (
+    <div style={{ width: '100%', minHeight: '100vh', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 32 }}>
+        {[1,2,3].map(i => <SectionImg key={i} src={f[`image_${i}`]} fallback={STOCK_IMAGES.offer_wine} alt="" sectionId={s.id} field={`image_${i}`} style={{ flex: 1, borderRadius: 14 }} />)}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 40, padding: 64, background: s.bg || brand.bg }}>
+        <Eyebrow value={f.eyebrow} onChange={(v: any) => setField('eyebrow', v)} typo={typo} color="#8b7355" sectionId={s.id} elId="eyebrow" />
+        {[1,2,3].map(i => (
+          <div key={i}>
+            <H3 value={f[`heading_${i}`]} onChange={(v: any) => setField(`heading_${i}`, v)} typo={typo} color="#1e293b" sectionId={s.id} elId={`heading_${i}`} />
+            <Body value={f[`body_${i}`]} onChange={(v: any) => setField(`body_${i}`, v)} typo={typo} color="#64748b" sectionId={s.id} elId={`body_${i}`} />
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function OfferQuoteSection({ s, brand, typo, update }: any) {
+  const f = s.fields || {};
+  const setField = (k: any, v: any) => update({ fields: { ...f, [k]: v } });
+  return (
+    <div style={{ width: '100%', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: `linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url('${txt(f.image) || STOCK_IMAGES.offer_table}') center/cover no-repeat` }}>
+      <div style={{ maxWidth: 800, textAlign: 'center' as const, padding: '80px 64px' }}>
+        <div style={{ width: 56, height: 2, background: '#c4a87a', margin: '0 auto 32px' }} />
+        <H2 value={f.heading} onChange={(v: any) => setField('heading', v)} typo={typo} color="#fff" sectionId={s.id} elId="heading" />
+        <Body value={f.body} onChange={(v: any) => setField('body', v)} typo={typo} color="#c4a87a" sectionId={s.id} elId="body" />
+        <div style={{ width: 56, height: 2, background: '#c4a87a', margin: '32px auto 0' }} />
+      </div>
+      <div style={{ position: 'absolute', top: 8, right: 8, zIndex: 10 }}>
+        <SectionImg src={f.image} fallback={STOCK_IMAGES.offer_table} alt="Tło" sectionId={s.id} field="image" style={{ width: 48, height: 48, borderRadius: 8, border: '2px solid rgba(255,255,255,0.3)' }} />
+      </div>
+    </div>
+  );
+}
+
+function OfferCtaSection({ s, brand, typo, update }: any) {
+  const f = s.fields || {};
+  const setField = (k: any, v: any) => update({ fields: { ...f, [k]: v } });
+  return (
+    <div style={{ width: '100%', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#111827', padding: '80px 64px' }}>
+      <div style={{ textAlign: 'center' as const, maxWidth: 700 }}>
+        <H2 value={f.heading || 'Zainteresowany?'} onChange={(v: any) => setField('heading', v)} typo={typo} color="#fff" sectionId={s.id} elId="heading" />
+        <Body value={f.body} onChange={(v: any) => setField('body', v)} typo={typo} color="#9ca3af" sectionId={s.id} elId="body" />
+        <div style={{ marginTop: 32 }}>
+          <CTAButton value={f.cta_text || 'Akceptuję ofertę'} onChange={(v: any) => setField('cta_text', v)} typo={typo} brand={brand} sectionId={s.id} elId="cta_text" />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 32, marginTop: 32 }}>
+          <Editable tag="span" value={f.contact_name} onChange={(v: any) => setField('contact_name', v)} sectionId={s.id} elId="contact_name" style={{ fontSize: 15, color: '#6b7280' }} />
+          <Editable tag="span" value={f.contact_email} onChange={(v: any) => setField('contact_email', v)} sectionId={s.id} elId="contact_email" style={{ fontSize: 15, color: '#818cf8' }} />
+          <Editable tag="span" value={f.contact_phone} onChange={(v: any) => setField('contact_phone', v)} sectionId={s.id} elId="contact_phone" style={{ fontSize: 15, color: '#6b7280' }} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const SECTION_RENDERERS = {
   // Navigation (NA)
   NA1: NavSection, NA2: NavSection, NA3: NavSection,
@@ -847,6 +1029,18 @@ const SECTION_RENDERERS = {
   ST1: StatsSection,
   // Footer (FO)
   FO1: FooterSection,
+  // Offer blocks (NO, DW, CTA)
+  NO1: OfferHeaderSection,
+  NO2: OfferHeaderFullSection,
+  DW1: OfferImgLeftTextRight,
+  DW2: OfferTextLeftImgRight,
+  DW3: OfferImgTopTextBottom,
+  DW4: OfferGrid2Section,
+  DW5: OfferGrid3Section,
+  DW6: OfferGrid4Section,
+  DW7: OfferColumnsSection,
+  DW8: OfferQuoteSection,
+  CTA1: OfferCtaSection,
   // Fallback
   PLACEHOLDER: PlaceholderSection,
 };

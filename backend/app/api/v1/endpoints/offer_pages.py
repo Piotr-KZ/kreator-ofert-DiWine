@@ -160,6 +160,15 @@ async def _render_project(project: Project, db: AsyncSession) -> str:
     renderer = PageRenderer()
     html_body, css = await renderer.render_project_html(db, project)
     name = project.name or "Oferta"
+
+    is_offer = project.site_type == "offer"
+    landscape_css = """
+    @page { size: A4 landscape; margin: 0; }
+    html, body { margin: 0; padding: 0; width: 297mm; }
+    .section-page { width: 297mm; height: 210mm; overflow: hidden; page-break-after: always; }
+    .section-page:last-child { page-break-after: auto; }
+    """ if is_offer else ""
+
     return f"""<!DOCTYPE html>
 <html lang="pl">
 <head>
@@ -167,7 +176,7 @@ async def _render_project(project: Project, db: AsyncSession) -> str:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{name}</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>{css}</style>
+    <style>{css}{landscape_css}</style>
 </head>
 <body>{html_body}</body>
 </html>"""
