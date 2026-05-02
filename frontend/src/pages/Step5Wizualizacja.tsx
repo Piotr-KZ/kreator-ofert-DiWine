@@ -1036,7 +1036,7 @@ export default function Step5Wizualizacja() {
                         <React.Fragment key={s.id}>
                           {/* Add page button between sections */}
                           {isOfferProject && idx > 0 && (
-                            <div data-no-edit="true" style={{ display: 'flex', justifyContent: 'center', padding: '1px 0', opacity: 0.3 }}
+                            <div data-no-edit="true" style={{ display: 'flex', justifyContent: 'center', padding: '0', opacity: 0.3 }}
                               onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
                               onMouseLeave={e => (e.currentTarget.style.opacity = '0.3')}>
                               <button
@@ -1061,7 +1061,7 @@ export default function Step5Wizualizacja() {
                             onMouseLeave={() => { if (wzHovered === s.id) setWzHovered(null); }}
                             style={{
                               position: 'relative',
-                              aspectRatio: isOfferProject ? '297 / 210' : undefined,
+                              // aspectRatio handled by PDF @page, not needed in editor
                               width: '100%',
                               overflow: 'hidden',
                               margin: 0,
@@ -1087,7 +1087,7 @@ export default function Step5Wizualizacja() {
                     })}
                     {/* Add block at end */}
                     {useLabStore.getState().siteType === 'offer' && (
-                      <div data-no-edit="true" style={{ display: 'flex', justifyContent: 'center', padding: '4px 0' }}>
+                      <div data-no-edit="true" style={{ display: 'flex', justifyContent: 'center', padding: '0' }}>
                         <button onClick={() => { setUniToolbar(null); setWzSelected(null); setInsertAt(wzContent.length); setShowBlockPicker(true); }} style={{
                           padding: '8px 24px', borderRadius: 20, border: '2px dashed #CBD5E1',
                           background: '#F8FAFC', color: '#94A3B8', fontSize: 12, fontWeight: 600, cursor: 'pointer',

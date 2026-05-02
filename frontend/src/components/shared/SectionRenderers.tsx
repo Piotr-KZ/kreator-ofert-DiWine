@@ -830,7 +830,7 @@ function OfferHeaderSection({ s, brand, typo, update }: any) {
   const f = s.fields || {};
   const setField = (k: any, v: any) => update({ fields: { ...f, [k]: v } });
   return (
-    <div style={{ width: '100%', minHeight: '100vh', display: 'flex', alignItems: 'center',
+    <div style={{ width: '100%', minHeight: 500, display: 'flex', alignItems: 'center',
       background: `linear-gradient(rgba(0,0,0,0.5),rgba(0,0,0,0.5)),url('${txt(f.bg_photo_url) || STOCK_IMAGES.offer_hero}') center/cover no-repeat` }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '80px 64px', width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -854,7 +854,7 @@ function OfferHeaderFullSection({ s, brand, typo, update }: any) {
   const f = s.fields || {};
   const setField = (k: any, v: any) => update({ fields: { ...f, [k]: v } });
   return (
-    <div style={{ width: '100%', minHeight: '100vh', display: 'flex', alignItems: 'flex-end',
+    <div style={{ width: '100%', minHeight: 500, display: 'flex', alignItems: 'flex-end',
       background: `linear-gradient(to top,rgba(0,0,0,0.75) 0%,rgba(0,0,0,0.05) 50%),url('${txt(f.bg_photo_url) || STOCK_IMAGES.offer_hero}') center/cover no-repeat` }}>
       <div style={{ maxWidth: 1100, margin: '0 auto', padding: '0 64px 64px', width: '100%' }}>
         <SectionImg src={f.client_logo_url} fallback="" alt="Logo" sectionId={s.id} field="client_logo_url" style={{ height: 48, width: 'auto', background: 'rgba(255,255,255,0.9)', borderRadius: 10, padding: 8, marginBottom: 20 }} />
@@ -872,7 +872,7 @@ function OfferImgLeftTextRight({ s, brand, typo, update }: any) {
   const f = s.fields || {};
   const setField = (k: any, v: any) => update({ fields: { ...f, [k]: v } });
   return (
-    <div style={{ width: '100%', minHeight: '100vh', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+    <div style={{ width: '100%', minHeight: 500, display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
       <SectionImg src={f.image} fallback={STOCK_IMAGES.offer_wine} alt="" sectionId={s.id} field="image" style={{ width: '100%', height: '100%', minHeight: 400 }} />
       <div style={{ padding: '80px 64px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 20, background: s.bg || brand.bg }}>
         <Eyebrow value={f.eyebrow} onChange={(v: any) => setField('eyebrow', v)} typo={typo} color="#8b7355" sectionId={s.id} elId="eyebrow" />
@@ -887,7 +887,7 @@ function OfferTextLeftImgRight({ s, brand, typo, update }: any) {
   const f = s.fields || {};
   const setField = (k: any, v: any) => update({ fields: { ...f, [k]: v } });
   return (
-    <div style={{ width: '100%', minHeight: '100vh', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+    <div style={{ width: '100%', minHeight: 500, display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
       <div style={{ padding: '80px 64px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 20, background: s.bg || brand.bg }}>
         <Eyebrow value={f.eyebrow} onChange={(v: any) => setField('eyebrow', v)} typo={typo} color="#8b7355" sectionId={s.id} elId="eyebrow" />
         <H2 value={f.heading} onChange={(v: any) => setField('heading', v)} typo={typo} color="#1e293b" sectionId={s.id} elId="heading" />
@@ -902,7 +902,7 @@ function OfferImgTopTextBottom({ s, brand, typo, update }: any) {
   const f = s.fields || {};
   const setField = (k: any, v: any) => update({ fields: { ...f, [k]: v } });
   return (
-    <div style={{ width: '100%', minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ width: '100%', minHeight: 500, display: 'flex', flexDirection: 'column' }}>
       <SectionImg src={f.image} fallback={STOCK_IMAGES.offer_table} alt="" sectionId={s.id} field="image" style={{ flex: '0 0 55%', width: '100%' }} />
       <div style={{ flex: 1, padding: '48px 64px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 16, maxWidth: 900, margin: '0 auto', width: '100%' }}>
         <Eyebrow value={f.eyebrow} onChange={(v: any) => setField('eyebrow', v)} typo={typo} color="#8b7355" sectionId={s.id} elId="eyebrow" />
@@ -919,7 +919,7 @@ function OfferGridSection({ s, brand, typo, update, cols = 2 }: any) {
   const fontSize = cols > 3 ? { h: 18, b: 13 } : cols > 2 ? { h: 22, b: 14 } : { h: 26, b: 15 };
   const radius = cols > 3 ? 12 : cols > 2 ? 14 : 16;
   return (
-    <div style={{ width: '100%', minHeight: '100vh', display: 'flex', flexDirection: 'column', padding: '48px 64px', background: s.bg || brand.bg }}>
+    <div style={{ width: '100%', minHeight: 500, display: 'flex', flexDirection: 'column', padding: '48px 64px', background: s.bg || brand.bg }}>
       <Eyebrow value={f.eyebrow} onChange={(v: any) => setField('eyebrow', v)} typo={typo} color="#8b7355" sectionId={s.id} elId="eyebrow" />
       <div style={{ display: 'grid', gridTemplateColumns: `repeat(${cols}, 1fr)`, gap: cols > 3 ? 20 : 24, flex: 1, marginTop: 24 }}>
         {Array.from({ length: cols }, (_, i) => (
@@ -942,7 +942,7 @@ function OfferColumnsSection({ s, brand, typo, update }: any) {
   const f = s.fields || {};
   const setField = (k: any, v: any) => update({ fields: { ...f, [k]: v } });
   return (
-    <div style={{ width: '100%', minHeight: '100vh', display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
+    <div style={{ width: '100%', minHeight: 500, display: 'grid', gridTemplateColumns: '1fr 1fr' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: 32 }}>
         {[1,2,3].map(i => <SectionImg key={i} src={f[`image_${i}`]} fallback={STOCK_IMAGES.offer_wine} alt="" sectionId={s.id} field={`image_${i}`} style={{ flex: 1, borderRadius: 14 }} />)}
       </div>
@@ -963,7 +963,7 @@ function OfferQuoteSection({ s, brand, typo, update }: any) {
   const f = s.fields || {};
   const setField = (k: any, v: any) => update({ fields: { ...f, [k]: v } });
   return (
-    <div style={{ width: '100%', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center',
+    <div style={{ width: '100%', minHeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center',
       background: `linear-gradient(rgba(0,0,0,0.6),rgba(0,0,0,0.6)),url('${txt(f.image) || STOCK_IMAGES.offer_table}') center/cover no-repeat` }}>
       <div style={{ maxWidth: 800, textAlign: 'center' as const, padding: '80px 64px' }}>
         <div style={{ width: 56, height: 2, background: '#c4a87a', margin: '0 auto 32px' }} />
@@ -982,7 +982,7 @@ function OfferCtaSection({ s, brand, typo, update }: any) {
   const f = s.fields || {};
   const setField = (k: any, v: any) => update({ fields: { ...f, [k]: v } });
   return (
-    <div style={{ width: '100%', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#111827', padding: '80px 64px' }}>
+    <div style={{ width: '100%', minHeight: 500, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#111827', padding: '80px 64px' }}>
       <div style={{ textAlign: 'center' as const, maxWidth: 700 }}>
         <H2 value={f.heading || 'Zainteresowany?'} onChange={(v: any) => setField('heading', v)} typo={typo} color="#fff" sectionId={s.id} elId="heading" />
         <Body value={f.body} onChange={(v: any) => setField('body', v)} typo={typo} color="#9ca3af" sectionId={s.id} elId="body" />
