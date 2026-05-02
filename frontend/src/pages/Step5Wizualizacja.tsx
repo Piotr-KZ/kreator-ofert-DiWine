@@ -315,8 +315,11 @@ export default function Step5Wizualizacja() {
     style.textContent = `
       @page { size: A4 landscape; margin: 0; }
       @media print {
-        [data-section-id] { page-break-after: always; page-break-inside: avoid; }
+        header, nav, [data-no-edit], [data-screen-label] > div:first-child { display: none !important; }
+        [data-screen-label] { min-height: auto !important; }
+        [data-section-id] { page-break-after: always; page-break-inside: avoid; aspect-ratio: auto; width: 100%; height: auto; }
         [data-section-id]:last-child { page-break-after: auto; }
+        .viewport-desktop { transform: none !important; width: 100% !important; }
       }
     `;
     document.head.appendChild(style);
@@ -473,6 +476,7 @@ export default function Step5Wizualizacja() {
       if (dragMode) return;
       let t = e.target;
       if (t.closest('[data-no-edit]')) return;
+      if (t.closest('[data-wiz-img]')) return;
       t = resolveClickTarget?.(t) || t;
       // Wybieralne: teksty, inputy, buttony, sekcje, obrazy
       const kind = detectElementType(t);
@@ -504,6 +508,8 @@ export default function Step5Wizualizacja() {
     const onClick = (e) => {
       let t = e.target;
       if (t.closest('[data-no-edit]')) return;
+      // Let image picker handle its own clicks
+      if (t.closest('[data-wiz-img]')) return;
       t = resolveClickTarget?.(t) || t;
       const kind = detectElementType(t);
       if (!kind) return;
@@ -950,7 +956,7 @@ export default function Step5Wizualizacja() {
       <div style={{ flex: 1, display: 'grid', gridTemplateColumns: tweaksOpen ? 'minmax(0,1fr) 320px' : '1fr', overflow: 'hidden' }}>
 
         {/* PREVIEW COLUMN */}
-        <div ref={colRef} style={{ background: '#E5E7EB', padding: '20px 24px 40px', overflow: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div ref={colRef} style={{ background: '#E5E7EB', padding: useLabStore.getState().siteType === 'offer' ? '8px 24px 12px' : '20px 24px 40px', overflow: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           {/* Browser chrome w/ page tabs */}
           <div style={{
             width: Math.min(DEVICES[device].w * previewScale, DEVICES[device].w),
@@ -1024,7 +1030,7 @@ export default function Step5Wizualizacja() {
                         <React.Fragment key={s.id}>
                           {/* Add page button between sections */}
                           {isOfferProject && idx > 0 && (
-                            <div style={{ display: 'flex', justifyContent: 'center', padding: '2px 0', opacity: 0.3 }}
+                            <div data-no-edit="true" style={{ display: 'flex', justifyContent: 'center', padding: '1px 0', opacity: 0.3 }}
                               onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
                               onMouseLeave={e => (e.currentTarget.style.opacity = '0.3')}>
                               <button
@@ -1072,7 +1078,7 @@ export default function Step5Wizualizacja() {
                     })}
                     {/* Add block at end */}
                     {useLabStore.getState().siteType === 'offer' && (
-                      <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}>
+                      <div data-no-edit="true" style={{ display: 'flex', justifyContent: 'center', padding: '4px 0' }}>
                         <button onClick={() => { setInsertAt(wzContent.length); setShowBlockPicker(true); }} style={{
                           padding: '8px 24px', borderRadius: 20, border: '2px dashed #CBD5E1',
                           background: '#F8FAFC', color: '#94A3B8', fontSize: 12, fontWeight: 600, cursor: 'pointer',
@@ -1438,31 +1444,41 @@ export default function Step5Wizualizacja() {
       {/* MODAL: Eksport PDF */}
       {showPdfExport && (() => {
         const ctx = JSON.parse(localStorage.getItem('_offer_context') || '{}');
+        const defaultName = `Oferta_${ctx.offer_id || 'export'}`;
         return (
           <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
             onClick={() => setShowPdfExport(false)}>
             <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)' }} />
-            <div style={{ position: 'relative', background: '#fff', borderRadius: 16, padding: 24, width: 420 }}
+            <div style={{ position: 'relative', background: '#fff', borderRadius: 16, padding: 24, width: 440 }}
               onClick={e => e.stopPropagation()}>
-              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Eksport do PDF</h3>
+              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 4 }}>Eksport do PDF</h3>
+              <p style={{ fontSize: 12, color: '#64748B', marginBottom: 16 }}>Drukuj ofertę do PDF za pomocą przeglądarki (Ctrl+P → Zapisz jako PDF)</p>
               <div style={{ marginBottom: 12 }}>
-                <label style={{ fontSize: 11, color: '#64748B', display: 'block', marginBottom: 4 }}>Nazwa pliku</label>
+                <label style={{ fontSize: 11, color: '#64748B', display: 'block', marginBottom: 4 }}>Nazwa oferty</label>
                 <input value={pdfFilename} onChange={e => setPdfFilename(e.target.value)}
-                  placeholder={`Oferta_${ctx.offer_id || ''}`}
+                  placeholder={defaultName}
                   style={{ width: '100%', padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 14, outline: 'none' }} />
+              </div>
+              <div style={{ marginBottom: 16, padding: '10px 12px', background: '#F0FDF4', borderRadius: 8, border: '1px solid #BBF7D0' }}>
+                <div style={{ fontSize: 12, color: '#166534', fontWeight: 600 }}>Oferta zostanie zapisana w zakładce Oferty</div>
+                <div style={{ fontSize: 11, color: '#15803D', marginTop: 2 }}>W dialogu drukowania wybierz "Zapisz jako PDF" i wskaż folder na dysku.</div>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
                 <button onClick={() => setShowPdfExport(false)}
                   style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontSize: 12, cursor: 'pointer' }}>Anuluj</button>
                 <button onClick={() => {
-                  const fname = pdfFilename.trim() || `Oferta_${ctx.offer_id || 'export'}`;
-                  const link = document.createElement('a');
-                  link.href = `/api/v1/offers/${ctx.offer_id}/pdf`;
-                  link.download = `${fname}.pdf`;
-                  link.click();
+                  const fname = pdfFilename.trim() || defaultName;
+                  // Set document title temporarily for PDF filename
+                  const prevTitle = document.title;
+                  document.title = fname;
                   setShowPdfExport(false);
+                  // Small delay to let modal close, then print
+                  setTimeout(() => {
+                    window.print();
+                    document.title = prevTitle;
+                  }, 200);
                 }}
-                  style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#4F46E5', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Pobierz PDF</button>
+                  style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#4F46E5', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Drukuj / Zapisz PDF</button>
               </div>
             </div>
           </div>

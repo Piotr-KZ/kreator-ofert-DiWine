@@ -170,15 +170,56 @@ function EditableText({ children, as = 'span', style }) {
 export { EditableText };
 
 // Popover do wymiany zdjęć
+const CAT_LABELS: Record<string, string> = {
+  wine: 'Wino', gift: 'Prezenty', christmas: 'Święta', easter: 'Wielkanoc',
+  lifestyle: 'Lifestyle', universal: 'Uniwersalne', custom: 'Wgrane',
+};
+
 function ImagePicker({ picker, onClose }) {
   const SEARCH_TAB = '🔍 Szukaj';
-  const [category, setCategory] = React.useState(picker.category || 'Wnętrze');
   const [uploadedSrc, setUploadedSrc] = React.useState(null);
   const fileInputRef = React.useRef(null);
   const [searchQuery, setSearchQuery] = React.useState('');
   const [searchResults, setSearchResults] = React.useState<string[]>([]);
   const [isSearching, setIsSearching] = React.useState(false);
   const searchTimerRef = React.useRef<any>(null);
+
+  // Load photos from API for offers, fallback to PHOTO_LIBRARY for web
+  const [apiPhotos, setApiPhotos] = React.useState<Record<string, string[]> | null>(null);
+  const [loadingApi, setLoadingApi] = React.useState(false);
+  React.useEffect(() => {
+    let cancelled = false;
+    // Try loading from offer photos API
+    setLoadingApi(true);
+    fetch('/api/v1/offers/photos/library')
+      .then(r => r.json())
+      .then((data: any[]) => {
+        if (cancelled || !Array.isArray(data) || data.length === 0) {
+          if (!cancelled) setApiPhotos(null);
+          return;
+        }
+        const grouped: Record<string, string[]> = {};
+        for (const p of data) {
+          const cat = CAT_LABELS[p.category] || p.category || 'Inne';
+          if (!grouped[cat]) grouped[cat] = [];
+          grouped[cat].push(p.thumbnail_url || p.url);
+        }
+        if (!cancelled) setApiPhotos(grouped);
+      })
+      .catch(() => { if (!cancelled) setApiPhotos(null); })
+      .finally(() => { if (!cancelled) setLoadingApi(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const photoLib = apiPhotos && Object.keys(apiPhotos).length > 0 ? apiPhotos : PHOTO_LIBRARY;
+  const defaultCat = Object.keys(photoLib)[0] || 'Wnętrze';
+  const [category, setCategory] = React.useState(picker.category || defaultCat);
+  // Reset category when photoLib changes
+  React.useEffect(() => {
+    if (!photoLib[category] && category !== SEARCH_TAB) {
+      setCategory(Object.keys(photoLib)[0] || SEARCH_TAB);
+    }
+  }, [apiPhotos]);
 
   const doSearch = React.useCallback(async (q: string) => {
     if (!q.trim()) { setSearchResults([]); return; }
@@ -211,7 +252,7 @@ function ImagePicker({ picker, onClose }) {
   };
 
   const isSearchTab = category === SEARCH_TAB;
-  const gridPhotos = isSearchTab ? searchResults : (PHOTO_LIBRARY[category] || []);
+  const gridPhotos = isSearchTab ? searchResults : (photoLib[category] || []);
 
   return (
     <div onClick={onClose} style={{
@@ -229,7 +270,7 @@ function ImagePicker({ picker, onClose }) {
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#0F172A" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg>
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 15, fontWeight: 700, color: '#0F172A' }}>Wymień zdjęcie</div>
-            <div style={{ fontSize: 12, color: '#64748B' }}>Wybierz z galerii Unsplash albo wrzuć własne</div>
+            <div style={{ fontSize: 12, color: '#64748B' }}>Wybierz z biblioteki zdjęć, szukaj na Unsplash albo wrzuć własne</div>
           </div>
           <button onClick={onClose} style={{
             width: 30, height: 30, border: 'none', background: '#F1F5F9',
@@ -240,7 +281,7 @@ function ImagePicker({ picker, onClose }) {
         </div>
         {/* Tabs */}
         <div style={{ padding: '12px 22px 0', display: 'flex', gap: 4, borderBottom: '1px solid #E2E8F0' }}>
-          {[SEARCH_TAB, ...Object.keys(PHOTO_LIBRARY)].map(cat => (
+          {[SEARCH_TAB, ...Object.keys(photoLib)].map(cat => (
             <button key={cat} onClick={() => setCategory(cat)} style={{
               padding: '9px 14px', border: 'none', background: 'transparent',
               fontSize: 13, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
