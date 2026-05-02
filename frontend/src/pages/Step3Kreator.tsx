@@ -5,8 +5,8 @@
 import React from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useLabStore } from '@/store/labStore';
-import { BLOCK_LIBRARY, CATEGORIES, BRAND_PALETTE, INITIAL_BRAND } from '@/config/blocks';
-import type { Block } from '@/config/blocks';
+import { BLOCK_LIBRARY, CATEGORIES, BRAND_PALETTE, INITIAL_BRAND, getBlocksForSiteType, getCategoriesForSiteType } from '@/config/blocks';
+import type { Block, Category } from '@/config/blocks';
 import SectionCard from '@/components/kreator/SectionCard';
 
 // Helper z makiety — kontrast tekstu na tle koloru
@@ -21,7 +21,11 @@ function getContrastColor(hex: string) {
 export default function Step3Kreator() {
   const navigate = useNavigate();
   const { projectId } = useParams<{ projectId: string }>();
-  const { sections, projectName, addSection, removeSection, reorderSections, duplicateSection, updateSection: storeUpdateSection, generateContent, isGenerating } = useLabStore();
+  const { sections, projectName, siteType, addSection, removeSection, reorderSections, duplicateSection, updateSection: storeUpdateSection, generateContent, isGenerating } = useLabStore();
+
+  const availableBlocks = getBlocksForSiteType(siteType);
+  const availableCategories = getCategoriesForSiteType(siteType);
+  const isOffer = siteType === 'offer';
 
   // Brand — local state (kolory bg/cta/gradient, nie ma tego w store)
   const [brand, setBrand] = React.useState(INITIAL_BRAND);
@@ -74,7 +78,7 @@ export default function Step3Kreator() {
 
   const openAI = (sec?: typeof sections[0]) => {
     if (sec) {
-      const b = BLOCK_LIBRARY.find(x => x.code === sec.block_code);
+      const b = availableBlocks.find(x => x.code === sec.block_code) || BLOCK_LIBRARY.find(x => x.code === sec.block_code);
       setAiContext({ code: sec.block_code, label: b?.name || sec.block_code, name: b?.name || '' });
     } else {
       setAiContext(null);
@@ -135,7 +139,7 @@ export default function Step3Kreator() {
         {/* Sections list */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {sections.map((s, i) => {
-            const block = BLOCK_LIBRARY.find(b => b.code === s.block_code);
+            const block = availableBlocks.find(b => b.code === s.block_code) || BLOCK_LIBRARY.find(b => b.code === s.block_code);
             return (
               <React.Fragment key={s.id}>
                 <div
@@ -188,7 +192,7 @@ export default function Step3Kreator() {
 
         {/* Next step button */}
         <div style={{ marginTop: 32, display: 'flex', justifyContent: 'flex-end' }}>
-          <button disabled={isGenerating} onClick={async () => { await generateContent(); navigate(`/lab/${projectId}/step/4`); }} style={{
+          <button disabled={isGenerating} onClick={async () => { if (!isOffer) await generateContent(); navigate(`/lab/${projectId}/step/4`); }} style={{
             padding: '10px 20px', background: 'linear-gradient(135deg, #6366F1, #EC4899)',
             color: '#fff', border: 'none', borderRadius: 10,
             fontFamily: 'inherit', fontSize: 14, fontWeight: 600, cursor: isGenerating ? 'wait' : 'pointer',
@@ -212,6 +216,8 @@ export default function Step3Kreator() {
         onPick={onPickFromModal}
         restrictCat={variantsModal?.restrictCat}
         title={variantsModal?.mode === 'swap' ? 'Wybierz inny wariant tej sekcji' : 'Dodaj nowa sekcje'}
+        blocks={availableBlocks}
+        categories={availableCategories}
       />
 
       {/* Toast */}
@@ -255,20 +261,24 @@ function AddSectionBtn({ onClick }: { onClick: () => void }) {
 }
 
 // ─── BlocksModal (z makiety — biblioteka klockow) ─────
-function BlocksModal({ open, onClose, onPick, restrictCat, title }: {
+function BlocksModal({ open, onClose, onPick, restrictCat, title, blocks, categories }: {
   open: boolean;
   onClose: () => void;
   onPick: (block: Block) => void;
   restrictCat?: string;
   title: string;
+  blocks?: Block[];
+  categories?: Record<string, Category>;
 }) {
   const [search, setSearch] = React.useState('');
   const [activeCat, setActiveCat] = React.useState<string | null>(null);
 
   if (!open) return null;
 
+  const blockList = blocks || BLOCK_LIBRARY;
+  const catList = categories || CATEGORIES;
   const effectiveCat = restrictCat || activeCat;
-  const filtered = BLOCK_LIBRARY.filter(b => {
+  const filtered = blockList.filter(b => {
     if (effectiveCat && b.cat !== effectiveCat) return false;
     if (search && !b.name.toLowerCase().includes(search.toLowerCase()) && !b.code.toLowerCase().includes(search.toLowerCase())) return false;
     return true;
@@ -302,7 +312,7 @@ function BlocksModal({ open, onClose, onPick, restrictCat, title }: {
                 background: !activeCat ? '#0F172A' : '#fff', color: !activeCat ? '#fff' : '#475569',
                 cursor: 'pointer', fontFamily: 'inherit',
               }}>Wszystkie</button>
-              {Object.entries(CATEGORIES).map(([key, cat]) => (
+              {Object.entries(catList).map(([key, cat]) => (
                 <button key={key} onClick={() => setActiveCat(key)} style={{
                   padding: '4px 10px', borderRadius: 6, border: '1px solid #E2E8F0', fontSize: 11, fontWeight: 600,
                   background: activeCat === key ? cat.color : '#fff', color: activeCat === key ? '#fff' : cat.color,
@@ -315,7 +325,7 @@ function BlocksModal({ open, onClose, onPick, restrictCat, title }: {
         {/* Body */}
         <div style={{ flex: 1, overflow: 'auto', padding: 20 }}>
           {Object.entries(grouped).map(([catKey, blocks]) => {
-            const cat = CATEGORIES[catKey];
+            const cat = catList[catKey];
             return (
               <div key={catKey} style={{ marginBottom: 20 }}>
                 <div style={{ fontSize: 10, fontWeight: 700, color: cat?.color || '#64748B', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>

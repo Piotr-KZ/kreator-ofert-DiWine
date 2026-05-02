@@ -41,6 +41,8 @@ export default function Step4Tresci() {
   const storeSections = useLabStore(s => s.sections);
   const storeUpdateSlot = useLabStore(s => s.updateSlot);
   const generateVisualConcept = useLabStore(s => s.generateVisualConcept);
+  const siteType = useLabStore(s => s.siteType);
+  const isOffer = siteType === 'offer';
   const [isGeneratingVC, setIsGeneratingVC] = React.useState(false);
   const [content, setContent] = React.useState(() => storeSections.map(mapFromStore));
   React.useEffect(() => { setContent(storeSections.map(mapFromStore)); }, [storeSections]);
@@ -252,8 +254,10 @@ export default function Step4Tresci() {
         <div style={{ flex: 1 }}/>
 
         <button disabled={isGeneratingVC} onClick={async () => {
-          setIsGeneratingVC(true);
-          try { await generateVisualConcept(); } catch(_) { /* handled by store */ } finally { setIsGeneratingVC(false); }
+          if (!isOffer) {
+            setIsGeneratingVC(true);
+            try { await generateVisualConcept(); } catch(_) { /* handled by store */ } finally { setIsGeneratingVC(false); }
+          }
           navigate(`/lab/${projectId}/step/5`);
         }} style={{
           padding: '8px 18px', background: isGeneratingVC ? '#94A3B8' : 'linear-gradient(135deg, #6366F1, #EC4899)',
@@ -385,8 +389,8 @@ export default function Step4Tresci() {
         />
       )}
 
-      {/* AI FAB - zawsze dostępny */}
-      {!aiChatOpen && (
+      {/* AI FAB - dostępny tylko dla web */}
+      {!aiChatOpen && !isOffer && (
         <button onClick={() => setAiChatOpen(true)}
           style={{
             position: 'fixed', right: 24, bottom: 24, zIndex: 60,

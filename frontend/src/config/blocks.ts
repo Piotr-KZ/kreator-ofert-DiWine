@@ -13,6 +13,7 @@ export interface Block {
   desc: string;
   size: 'S' | 'M' | 'L';
   thumb?: string;
+  forOffer?: boolean;
 }
 
 export interface BrandPaletteColor {
@@ -219,3 +220,52 @@ export const INITIAL_BRAND: Brand = {
   cta2: '#EC4899',
   ctaGradient: true,
 };
+
+// ═══ OFFER BLOCKS ═══
+// Dostępne tylko w projektach site_type="offer"
+
+export const OFFER_BLOCKS: Block[] = [
+  { code: 'NO1', cat: 'NO', name: 'Nagłówek — standard', desc: 'Zdjęcie w tle + logo + dane', size: 'L', forOffer: true },
+  { code: 'NO2', cat: 'NO', name: 'Nagłówek — pełnoekranowy', desc: 'Wielkie zdjęcie + tekst na dole', size: 'L', forOffer: true },
+  { code: 'DW1', cat: 'DW', name: 'Obraz lewo + Tekst prawo', desc: 'Split 50/50', size: 'L', forOffer: true },
+  { code: 'DW2', cat: 'DW', name: 'Tekst lewo + Obraz prawo', desc: 'Split 50/50', size: 'L', forOffer: true },
+  { code: 'DW3', cat: 'DW', name: 'Obraz góra + Tekst dół', desc: 'Stacked', size: 'L', forOffer: true },
+  { code: 'DW4', cat: 'DW', name: '2 kolumny', desc: '2 obrazy + 2 teksty', size: 'L', forOffer: true },
+  { code: 'DW5', cat: 'DW', name: '3 kolumny', desc: '3 obrazy + 3 teksty', size: 'L', forOffer: true },
+  { code: 'DW6', cat: 'DW', name: '4 kolumny', desc: '4 obrazy + 4 teksty', size: 'L', forOffer: true },
+  { code: 'DW7', cat: 'DW', name: 'Obrazy lewo + Teksty prawo', desc: '3+3 kolumny', size: 'L', forOffer: true },
+  { code: 'DW8', cat: 'DW', name: 'Cytat z obrazem', desc: 'Zdjęcie w tle + cytat', size: 'L', forOffer: true },
+  { code: 'CTA1', cat: 'CTA', name: 'Zaproszenie do kontaktu', desc: 'Ciemne tło + przycisk', size: 'L', forOffer: true },
+];
+
+export const OFFER_CATEGORIES: Record<string, Category> = {
+  NO: { name: 'Nagłówek Oferty', color: '#7C3AED', icon: 'M4 4h16v4H4zM4 12h10v2H4z' },
+  DW: { name: 'DiWine Bloki', color: '#059669', icon: 'M21 16V8l-7-4-7 4v8l7 4 7-4z' },
+  CTA: { name: 'Zaproszenie', color: '#DC2626', icon: 'M13 2L3 14h9l-1 8 10-12h-9l1-8z' },
+};
+
+// Stare klocki dostępne RÓWNIEŻ w ofertach (uniwersalne)
+export const OLD_BLOCKS_FOR_OFFERS = ['FI1','FI2','FI3','FI4','OP1','OP2','ST1','LO1','ZE1','ZE2','PR1','PR2','FA1'];
+
+// Funkcja: pobierz klocki per typ projektu
+export function getBlocksForSiteType(siteType: string): Block[] {
+  if (siteType === 'offer') {
+    const oldForOffer = BLOCK_LIBRARY.filter(b => OLD_BLOCKS_FOR_OFFERS.includes(b.code));
+    return [...OFFER_BLOCKS, ...oldForOffer];
+  }
+  return BLOCK_LIBRARY;
+}
+
+export function getCategoriesForSiteType(siteType: string): Record<string, Category> {
+  if (siteType === 'offer') {
+    const oldCats: Record<string, Category> = {};
+    for (const code of OLD_BLOCKS_FOR_OFFERS) {
+      const block = BLOCK_LIBRARY.find(b => b.code === code);
+      if (block && CATEGORIES[block.cat]) {
+        oldCats[block.cat] = CATEGORIES[block.cat];
+      }
+    }
+    return { ...OFFER_CATEGORIES, ...oldCats };
+  }
+  return CATEGORIES;
+}
