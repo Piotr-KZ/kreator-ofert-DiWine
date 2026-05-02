@@ -309,6 +309,9 @@ export default function Step5Wizualizacja() {
   const [showPdfExport, setShowPdfExport] = React.useState(false);
   const [templateName, setTemplateName] = React.useState('');
   const [pdfFilename, setPdfFilename] = React.useState('');
+  const [showSaveSuccess, setShowSaveSuccess] = React.useState('');
+  const [saveToDisk, setSaveToDisk] = React.useState(false);
+  const [diskPath, setDiskPath] = React.useState('');
 
   // Print CSS for offer landscape
   React.useEffect(() => {
@@ -693,8 +696,19 @@ export default function Step5Wizualizacja() {
         },
       });
     } else if (action === 'addBlockAfter') {
-      setBlocksModal({ afterEl: el });
-      setUniToolbar(null);
+      if (useLabStore.getState().siteType === 'offer') {
+        // For offers, use unified BlocksModal
+        const idx = wzContent.findIndex(s => {
+          const sectionEl = document.querySelector(`[data-section-id="${s.id}"]`);
+          return sectionEl && sectionEl.contains(el);
+        });
+        setInsertAt(idx >= 0 ? idx + 1 : wzContent.length);
+        setUniToolbar(null);
+        setShowBlockPicker(true);
+      } else {
+        setBlocksModal({ afterEl: el });
+        setUniToolbar(null);
+      }
     } else if (action === 'infographic-duplicate-step' || action === 'infographic-add-step') {
       // Klonuj pojedynczy krok i wstaw jako kolejny element w gridzie
       const container = el.parentElement;
@@ -815,54 +829,56 @@ export default function Step5Wizualizacja() {
 
   return (
     <div data-screen-label="06 Wizualizacja" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* TOPBAR — TYLKO DLA WEB, ukryte dla ofert */}
-      {useLabStore.getState().siteType !== 'offer' && (
+      {/* TOPBAR — widoczny ZAWSZE, poszczególne elementy ukryte dla ofert */}
       <div style={{
         background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '12px 24px',
         display: 'flex', alignItems: 'center', gap: 16, position: 'sticky', top: 0, zIndex: 20,
       }}>
+        {/* Logo */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <div style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg, #6366F1, #EC4899)', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 15, fontFamily: 'Instrument Serif', fontStyle: 'italic' }}>W</div>
-          <div>
-            {(() => {
-              const st = useLabStore.getState();
-              if (st.siteType === 'offer') {
-                const bn = (st.brief as any)?.offer_number || '';
-                return <div style={{ fontSize: 14, fontWeight: 600, color: '#4F46E5' }}>Oferta {bn}</div>;
-              }
-              return (
-                <>
-                  <div style={{ fontSize: 11, color: '#94A3B8', letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 600 }}>Projekt</div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{st.projectName}</div>
-                </>
-              );
-            })()}
-          </div>
-        </div>
-
-        <div style={{ flex: 1 }} />
-        <StepperBold current={5} />
-        <div style={{ flex: 1 }} />
-
-        {/* Device switcher */}
-        <div style={{ display: 'inline-flex', background: '#F1F5F9', padding: 3, borderRadius: 9, gap: 2 }}>
-          {Object.entries(DEVICES).map(([k, d]) => (
-            <button key={k} onClick={() => setDevice(k as keyof typeof DEVICES)} title={d.label}
-              style={{
-                padding: '6px 10px', border: 'none',
-                background: device === k ? '#fff' : 'transparent',
-                borderRadius: 6, cursor: 'pointer',
-                color: device === k ? '#0F172A' : '#64748B',
-                boxShadow: device === k ? '0 1px 2px rgba(15,23,42,.08)' : 'none',
-                display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: device === k ? 600 : 500,
-              }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">{d.icon.split(' M').map((p, i) => <path key={i} d={i === 0 ? p : 'M' + p}/>)}</svg>
-              {d.label}
+          {useLabStore.getState().siteType === 'offer' ? (
+            <button onClick={() => navigate('/offer')} style={{ display: 'flex', alignItems: 'center', gap: 8, border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}>
+              <div style={{ width: 28, height: 28, borderRadius: 8, background: 'linear-gradient(135deg, #22C55E, #059669)', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 12 }}>D</div>
+              <span style={{ fontSize: 14, fontWeight: 700, color: '#059669' }}>DiWine</span>
             </button>
-          ))}
+          ) : (
+            <>
+              <div style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg, #6366F1, #EC4899)', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 15, fontFamily: 'Instrument Serif', fontStyle: 'italic' }}>W</div>
+              <div>
+                <div style={{ fontSize: 11, color: '#94A3B8', letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 600 }}>Projekt</div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{useLabStore.getState().projectName}</div>
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Toggle: Edytuj / Podgląd */}
+        {/* StepperBold — ukryj dla ofert */}
+        {useLabStore.getState().siteType !== 'offer' && (
+          <><div style={{ flex: 1 }} /><StepperBold current={5} /><div style={{ flex: 1 }} /></>
+        )}
+        {useLabStore.getState().siteType === 'offer' && <div style={{ flex: 1 }} />}
+
+        {/* Device switcher — ukryj dla ofert */}
+        {useLabStore.getState().siteType !== 'offer' && (
+          <div style={{ display: 'inline-flex', background: '#F1F5F9', padding: 3, borderRadius: 9, gap: 2 }}>
+            {Object.entries(DEVICES).map(([k, d]) => (
+              <button key={k} onClick={() => setDevice(k as keyof typeof DEVICES)} title={d.label}
+                style={{
+                  padding: '6px 10px', border: 'none',
+                  background: device === k ? '#fff' : 'transparent',
+                  borderRadius: 6, cursor: 'pointer',
+                  color: device === k ? '#0F172A' : '#64748B',
+                  boxShadow: device === k ? '0 1px 2px rgba(15,23,42,.08)' : 'none',
+                  display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, fontWeight: device === k ? 600 : 500,
+                }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">{d.icon.split(' M').map((p, i) => <path key={i} d={i === 0 ? p : 'M' + p}/>)}</svg>
+                {d.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Toggle: Edytuj / Podgląd — widoczne zawsze */}
         <div style={{ display: 'inline-flex', background: '#F1F5F9', padding: 3, borderRadius: 9, gap: 2 }}>
           <button onClick={() => setLiveEdit(true)} title="Edycja inline"
             style={{
@@ -892,7 +908,7 @@ export default function Step5Wizualizacja() {
           </button>
         </div>
 
-        {/* Pełny podgląd — otwiera fullscreen overlay */}
+        {/* Pełny podgląd */}
         <button onClick={() => { setLiveEdit(false); setFullscreen(true); }} title="Pełny ekran — podgląd strony 1:1"
           style={{
             padding: '7px 12px', border: '1px solid #E2E8F0',
@@ -907,52 +923,37 @@ export default function Step5Wizualizacja() {
           Pełny ekran
         </button>
 
-        {/* Publikuj */}
-        <button onClick={publish} disabled={published} style={{
-          padding: '8px 16px',
-          background: published ? '#DCFCE7' : 'linear-gradient(135deg, #10B981 0%, #14B8A6 100%)',
-          color: published ? '#065F46' : '#fff',
-          border: 'none', borderRadius: 9,
-          fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
-          cursor: published ? 'default' : 'pointer',
-          display: 'inline-flex', alignItems: 'center', gap: 7,
-          boxShadow: published ? 'none' : '0 2px 8px rgba(16,185,129,.35)',
-        }}>
-          {published ? (
-            <>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
-              Opublikowano
-            </>
-          ) : (
-            <>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 00-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 012-3.95A12.88 12.88 0 0122 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 01-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/></svg>
-              Publikuj stronę
-            </>
-          )}
-        </button>
-
-        {(() => {
-          try {
-            const ctx = JSON.parse(localStorage.getItem('_offer_context') || '{}');
-            if (ctx.offer_id) {
-              return (
-                <button onClick={() => navigate(`/offer/${ctx.offer_id}/export`)}
-                  style={{
-                    padding: '8px 16px',
-                    background: 'linear-gradient(135deg, #16A34A 0%, #059669 100%)',
-                    color: '#fff', border: 'none', borderRadius: 9,
-                    fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
-                    cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 7,
-                    boxShadow: '0 2px 8px rgba(22,163,74,.35)',
-                  }}>
-                  Eksport oferty →
-                </button>
-              );
-            }
-          } catch {} return null;
-        })()}
+        {/* Publikuj / Eksport PDF — zależnie od typu */}
+        {useLabStore.getState().siteType === 'offer' ? (
+          <button onClick={() => setShowPdfExport(true)}
+            style={{ padding: '7px 14px', border: 'none', background: '#4F46E5', borderRadius: 9, cursor: 'pointer', color: '#fff', fontSize: 12, fontWeight: 700 }}>
+            Eksport PDF
+          </button>
+        ) : (
+          <button onClick={publish} disabled={published} style={{
+            padding: '8px 16px',
+            background: published ? '#DCFCE7' : 'linear-gradient(135deg, #10B981 0%, #14B8A6 100%)',
+            color: published ? '#065F46' : '#fff',
+            border: 'none', borderRadius: 9,
+            fontFamily: 'inherit', fontSize: 13, fontWeight: 600,
+            cursor: published ? 'default' : 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 7,
+            boxShadow: published ? 'none' : '0 2px 8px rgba(16,185,129,.35)',
+          }}>
+            {published ? (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round"><polyline points="20 6 9 17 4 12"/></svg>
+                Opublikowano
+              </>
+            ) : (
+              <>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 00-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 012-3.95A12.88 12.88 0 0122 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 01-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/></svg>
+                Publikuj stronę
+              </>
+            )}
+          </button>
+        )}
       </div>
-      )}
 
       {/* MAIN */}
       <div style={{ flex: 1, display: 'grid', gridTemplateColumns: tweaksOpen ? 'minmax(0,1fr) 320px' : '1fr', overflow: 'hidden' }}>
@@ -1015,6 +1016,9 @@ export default function Step5Wizualizacja() {
               fontFamily: `'${pair.b}', sans-serif`,
               '--font-heading': `'${pair.h}', serif`,
               '--font-body': `'${pair.b}', sans-serif`,
+              display: 'flex',
+              flexDirection: 'column' as const,
+              gap: 0,
             } as React.CSSProperties}>
               {(() => {
                 const densityIdx = tweaks.density === 'compact' ? 2 : tweaks.density === 'spacious' ? 4 : 3;
@@ -1039,6 +1043,8 @@ export default function Step5Wizualizacja() {
                                 onClick={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
+                                  setUniToolbar(null);
+                                  setWzSelected(null);
                                   setInsertAt(idx);
                                   setShowBlockPicker(true);
                                 }}
@@ -1058,7 +1064,8 @@ export default function Step5Wizualizacja() {
                               aspectRatio: isOfferProject ? '297 / 210' : undefined,
                               width: '100%',
                               overflow: 'hidden',
-                              marginBottom: 0,
+                              margin: 0,
+                              padding: 0,
                             }}>
                             <Renderer s={s} brand={idx % 2 === 0 ? brand : { ...brand, bg: brand.bg2 }} typo={typo} device={device} update={(p) => wzUpdateSection(s.id, p)}/>
                             {wzHovered === s.id && liveEdit && !wzSelected && (
@@ -1081,7 +1088,7 @@ export default function Step5Wizualizacja() {
                     {/* Add block at end */}
                     {useLabStore.getState().siteType === 'offer' && (
                       <div data-no-edit="true" style={{ display: 'flex', justifyContent: 'center', padding: '4px 0' }}>
-                        <button onClick={() => { setInsertAt(wzContent.length); setShowBlockPicker(true); }} style={{
+                        <button onClick={() => { setUniToolbar(null); setWzSelected(null); setInsertAt(wzContent.length); setShowBlockPicker(true); }} style={{
                           padding: '8px 24px', borderRadius: 20, border: '2px dashed #CBD5E1',
                           background: '#F8FAFC', color: '#94A3B8', fontSize: 12, fontWeight: 600, cursor: 'pointer',
                         }}>+ Dodaj stronę</button>
@@ -1139,7 +1146,7 @@ export default function Step5Wizualizacja() {
       )}
 
       {/* BLOCKS LIBRARY MODAL — "Dodaj pod" */}
-      {blocksModal && WizBlocksModal && (
+      {blocksModal && WizBlocksModal && useLabStore.getState().siteType !== 'offer' && (
         <WizBlocksModal
           open={true}
           onClose={() => setBlocksModal(null)}
@@ -1394,7 +1401,7 @@ export default function Step5Wizualizacja() {
                     method: 'POST', headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ project_id: pid, name: templateName }),
                   });
-                  alert('Szablon zapisany!');
+                  setShowSaveSuccess(templateName);
                   setShowSaveTemplate(false);
                   setTemplateName('');
                 } catch { alert('Błąd zapisu szablonu'); }
@@ -1423,6 +1430,17 @@ export default function Step5Wizualizacja() {
                   placeholder={defaultName}
                   style={{ width: '100%', padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 14, outline: 'none' }} />
               </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: saveToDisk ? 8 : 16, cursor: 'pointer' }}>
+                <input type="checkbox" checked={saveToDisk} onChange={e => setSaveToDisk(e.target.checked)} style={{ accentColor: '#6366F1', width: 16, height: 16 }} />
+                <span style={{ fontSize: 13, color: '#374151' }}>Zapisz dodatkowo na dysku</span>
+              </label>
+              {saveToDisk && (
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 11, color: '#64748B', display: 'block', marginBottom: 4 }}>Ścieżka zapisu</label>
+                  <input value={diskPath} onChange={e => setDiskPath(e.target.value)} placeholder="C:\Users\...\Documents"
+                    style={{ width: '100%', padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 13, outline: 'none' }} />
+                </div>
+              )}
               <div style={{ marginBottom: 16, padding: '10px 12px', background: '#F0FDF4', borderRadius: 8, border: '1px solid #BBF7D0' }}>
                 <div style={{ fontSize: 12, color: '#166534', fontWeight: 600 }}>Oferta zostanie zapisana w zakładce Oferty</div>
                 <div style={{ fontSize: 11, color: '#15803D', marginTop: 2 }}>W dialogu drukowania wybierz "Zapisz jako PDF" i wskaż folder na dysku.</div>
@@ -1448,6 +1466,24 @@ export default function Step5Wizualizacja() {
           </div>
         );
       })()}
+
+      {/* MODAL: Szablon zapisany — sukces */}
+      {showSaveSuccess && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 110, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setShowSaveSuccess('')}>
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.3)' }} />
+          <div style={{ position: 'relative', background: '#fff', borderRadius: 16, padding: '32px 40px', textAlign: 'center' as const }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ width: 48, height: 48, borderRadius: '50%', background: '#D1FAE5', display: 'grid', placeItems: 'center', margin: '0 auto 12px' }}>
+              <span style={{ color: '#059669', fontSize: 24 }}>✓</span>
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>Szablon zapisany</div>
+            <div style={{ fontSize: 13, color: '#64748B', marginBottom: 16 }}>„{showSaveSuccess}"</div>
+            <button onClick={() => setShowSaveSuccess('')}
+              style={{ padding: '8px 24px', borderRadius: 8, border: 'none', background: '#059669', color: '#fff', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>OK</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

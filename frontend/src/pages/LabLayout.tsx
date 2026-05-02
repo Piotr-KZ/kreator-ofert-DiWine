@@ -53,10 +53,14 @@ export default function LabLayout() {
         <div className="flex items-center gap-3">
           {isOffer ? (
             <>
-              <span className="text-lg font-bold text-indigo-600">LC</span>
-              <span className="text-sm font-semibold text-gray-800">
-                Oferta {offerNumber}
-              </span>
+              <button onClick={() => navigate('/offer')} className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 grid place-items-center">
+                  <span className="text-white text-xs font-bold">D</span>
+                </div>
+                <span className="text-sm font-bold text-emerald-700">DiWine</span>
+              </button>
+              <span className="text-gray-300">/</span>
+              <span className="text-sm text-gray-600">Oferta {offerNumber}</span>
             </>
           ) : (
             <>

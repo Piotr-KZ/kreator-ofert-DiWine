@@ -225,17 +225,33 @@ export const INITIAL_BRAND: Brand = {
 // Dostępne tylko w projektach site_type="offer"
 
 export const OFFER_BLOCKS: Block[] = [
-  { code: 'NO1', cat: 'NO', name: 'Nagłówek — standard', desc: 'Zdjęcie w tle + logo + dane', size: 'L', forOffer: true },
-  { code: 'NO2', cat: 'NO', name: 'Nagłówek — pełnoekranowy', desc: 'Wielkie zdjęcie + tekst na dole', size: 'L', forOffer: true },
-  { code: 'DW1', cat: 'DW', name: 'Obraz lewo + Tekst prawo', desc: 'Split 50/50', size: 'L', forOffer: true },
-  { code: 'DW2', cat: 'DW', name: 'Tekst lewo + Obraz prawo', desc: 'Split 50/50', size: 'L', forOffer: true },
-  { code: 'DW3', cat: 'DW', name: 'Obraz góra + Tekst dół', desc: 'Stacked', size: 'L', forOffer: true },
-  { code: 'DW4', cat: 'DW', name: '2 kolumny', desc: '2 obrazy + 2 teksty', size: 'L', forOffer: true },
-  { code: 'DW5', cat: 'DW', name: '3 kolumny', desc: '3 obrazy + 3 teksty', size: 'L', forOffer: true },
-  { code: 'DW6', cat: 'DW', name: '4 kolumny', desc: '4 obrazy + 4 teksty', size: 'L', forOffer: true },
-  { code: 'DW7', cat: 'DW', name: 'Obrazy lewo + Teksty prawo', desc: '3+3 kolumny', size: 'L', forOffer: true },
-  { code: 'DW8', cat: 'DW', name: 'Cytat z obrazem', desc: 'Zdjęcie w tle + cytat', size: 'L', forOffer: true },
-  { code: 'CTA1', cat: 'CTA', name: 'Zaproszenie do kontaktu', desc: 'Ciemne tło + przycisk', size: 'L', forOffer: true },
+  // ═══ NO — Nagłówek Oferty (accent: #7C3AED violet) ═══
+  { code: 'NO1', cat: 'NO', name: 'Nagłówek — standard', desc: 'Zdjęcie w tle + logo + dane', size: 'L', forOffer: true,
+    thumb: '<rect x="0" y="0" width="80" height="56" fill="#1E293B"/><rect x="0" y="0" width="80" height="56" fill="#334155" opacity="0.4"/><rect x="6" y="8" width="20" height="2" rx="1" fill="#7C3AED"/><rect x="6" y="14" width="40" height="6" rx="1" fill="#fff"/><rect x="6" y="24" width="28" height="3" rx="1" fill="#CBD5E1"/><rect x="6" y="30" width="18" height="2" rx="1" fill="#64748B"/><rect x="60" y="8" width="14" height="10" rx="2" fill="#fff" opacity="0.8"/>' },
+  { code: 'NO2', cat: 'NO', name: 'Nagłówek — pełnoekranowy', desc: 'Wielkie zdjęcie + tekst na dole', size: 'L', forOffer: true,
+    thumb: '<rect x="0" y="0" width="80" height="56" fill="#0F172A"/><rect x="0" y="0" width="80" height="40" fill="#334155" opacity="0.3"/><rect x="6" y="38" width="10" height="6" rx="1.5" fill="#fff" opacity="0.7"/><rect x="6" y="46" width="50" height="5" rx="1" fill="#fff"/><rect x="6" y="53" width="30" height="2" rx="1" fill="#7C3AED"/>' },
+
+  // ═══ DW — DiWine Bloki (accent: #059669 emerald) ═══
+  { code: 'DW1', cat: 'DW', name: 'Obraz lewo + Tekst prawo', desc: 'Split 50/50', size: 'L', forOffer: true,
+    thumb: '<rect x="0" y="0" width="38" height="56" fill="#D1FAE5"/><rect x="14" y="22" width="10" height="12" rx="1" fill="#059669" opacity="0.3"/><rect x="44" y="10" width="14" height="2" rx="1" fill="#059669"/><rect x="44" y="16" width="30" height="4" rx="1" fill="#1E293B"/><rect x="44" y="24" width="32" height="2" rx="1" fill="#94A3B8"/><rect x="44" y="28" width="28" height="2" rx="1" fill="#94A3B8"/><rect x="44" y="32" width="24" height="2" rx="1" fill="#94A3B8"/>' },
+  { code: 'DW2', cat: 'DW', name: 'Tekst lewo + Obraz prawo', desc: 'Split 50/50', size: 'L', forOffer: true,
+    thumb: '<rect x="42" y="0" width="38" height="56" fill="#D1FAE5"/><rect x="56" y="22" width="10" height="12" rx="1" fill="#059669" opacity="0.3"/><rect x="6" y="10" width="14" height="2" rx="1" fill="#059669"/><rect x="6" y="16" width="30" height="4" rx="1" fill="#1E293B"/><rect x="6" y="24" width="32" height="2" rx="1" fill="#94A3B8"/><rect x="6" y="28" width="28" height="2" rx="1" fill="#94A3B8"/>' },
+  { code: 'DW3', cat: 'DW', name: 'Obraz góra + Tekst dół', desc: 'Stacked', size: 'L', forOffer: true,
+    thumb: '<rect x="0" y="0" width="80" height="30" fill="#D1FAE5"/><rect x="30" y="10" width="20" height="10" rx="1" fill="#059669" opacity="0.3"/><rect x="10" y="34" width="14" height="2" rx="1" fill="#059669"/><rect x="10" y="40" width="40" height="4" rx="1" fill="#1E293B"/><rect x="10" y="48" width="60" height="2" rx="1" fill="#94A3B8"/>' },
+  { code: 'DW4', cat: 'DW', name: '2 kolumny', desc: '2 obrazy + 2 teksty', size: 'L', forOffer: true,
+    thumb: '<rect x="4" y="4" width="34" height="28" rx="3" fill="#D1FAE5"/><rect x="42" y="4" width="34" height="28" rx="3" fill="#D1FAE5"/><rect x="4" y="36" width="24" height="3" rx="1" fill="#1E293B"/><rect x="4" y="41" width="30" height="2" rx="1" fill="#94A3B8"/><rect x="42" y="36" width="24" height="3" rx="1" fill="#1E293B"/><rect x="42" y="41" width="30" height="2" rx="1" fill="#94A3B8"/>' },
+  { code: 'DW5', cat: 'DW', name: '3 kolumny', desc: '3 obrazy + 3 teksty', size: 'L', forOffer: true,
+    thumb: '<rect x="2" y="4" width="24" height="24" rx="2" fill="#D1FAE5"/><rect x="28" y="4" width="24" height="24" rx="2" fill="#D1FAE5"/><rect x="54" y="4" width="24" height="24" rx="2" fill="#D1FAE5"/><rect x="2" y="32" width="18" height="2" rx="1" fill="#1E293B"/><rect x="2" y="36" width="22" height="2" rx="1" fill="#94A3B8"/><rect x="28" y="32" width="18" height="2" rx="1" fill="#1E293B"/><rect x="28" y="36" width="22" height="2" rx="1" fill="#94A3B8"/><rect x="54" y="32" width="18" height="2" rx="1" fill="#1E293B"/><rect x="54" y="36" width="22" height="2" rx="1" fill="#94A3B8"/>' },
+  { code: 'DW6', cat: 'DW', name: '4 kolumny', desc: '4 obrazy + 4 teksty', size: 'L', forOffer: true,
+    thumb: '<rect x="1" y="4" width="18" height="22" rx="2" fill="#D1FAE5"/><rect x="21" y="4" width="18" height="22" rx="2" fill="#D1FAE5"/><rect x="41" y="4" width="18" height="22" rx="2" fill="#D1FAE5"/><rect x="61" y="4" width="18" height="22" rx="2" fill="#D1FAE5"/><rect x="1" y="30" width="14" height="2" rx="1" fill="#1E293B"/><rect x="21" y="30" width="14" height="2" rx="1" fill="#1E293B"/><rect x="41" y="30" width="14" height="2" rx="1" fill="#1E293B"/><rect x="61" y="30" width="14" height="2" rx="1" fill="#1E293B"/>' },
+  { code: 'DW7', cat: 'DW', name: 'Obrazy lewo + Teksty prawo', desc: '3+3 kolumny', size: 'L', forOffer: true,
+    thumb: '<rect x="2" y="2" width="36" height="16" rx="2" fill="#D1FAE5"/><rect x="2" y="20" width="36" height="16" rx="2" fill="#D1FAE5"/><rect x="2" y="38" width="36" height="16" rx="2" fill="#D1FAE5"/><rect x="44" y="6" width="24" height="3" rx="1" fill="#1E293B"/><rect x="44" y="11" width="30" height="2" rx="1" fill="#94A3B8"/><rect x="44" y="24" width="24" height="3" rx="1" fill="#1E293B"/><rect x="44" y="29" width="30" height="2" rx="1" fill="#94A3B8"/><rect x="44" y="42" width="24" height="3" rx="1" fill="#1E293B"/><rect x="44" y="47" width="30" height="2" rx="1" fill="#94A3B8"/>' },
+  { code: 'DW8', cat: 'DW', name: 'Cytat z obrazem', desc: 'Zdjęcie w tle + cytat', size: 'L', forOffer: true,
+    thumb: '<rect x="0" y="0" width="80" height="56" fill="#064E3B"/><rect x="0" y="0" width="80" height="56" fill="#059669" opacity="0.15"/><rect x="34" y="14" width="12" height="1" fill="#059669"/><rect x="15" y="20" width="50" height="4" rx="1" fill="#fff" opacity="0.9"/><rect x="20" y="28" width="40" height="3" rx="1" fill="#fff" opacity="0.6"/><rect x="34" y="36" width="12" height="1" fill="#059669"/>' },
+
+  // ═══ CTA — Zaproszenie (accent: #DC2626 red) ═══
+  { code: 'CTA1', cat: 'CTA', name: 'Zaproszenie do kontaktu', desc: 'Ciemne tło + przycisk', size: 'L', forOffer: true,
+    thumb: '<rect x="0" y="0" width="80" height="56" fill="#1E293B"/><rect x="18" y="12" width="44" height="5" rx="1" fill="#fff"/><rect x="24" y="22" width="32" height="3" rx="1" fill="#6B7280"/><rect x="28" y="32" width="24" height="6" rx="3" fill="#DC2626"/><rect x="14" y="44" width="14" height="2" rx="1" fill="#4B5563"/><rect x="33" y="44" width="14" height="2" rx="1" fill="#FCA5A5"/><rect x="52" y="44" width="14" height="2" rx="1" fill="#4B5563"/>' },
 ];
 
 export const OFFER_CATEGORIES: Record<string, Category> = {
@@ -247,25 +263,11 @@ export const OFFER_CATEGORIES: Record<string, Category> = {
 // Stare klocki dostępne RÓWNIEŻ w ofertach (uniwersalne)
 export const OLD_BLOCKS_FOR_OFFERS = ['FI1','FI2','FI3','FI4','OP1','OP2','ST1','LO1','ZE1','ZE2','PR1','PR2','FA1'];
 
-// Funkcja: pobierz klocki per typ projektu
+// Funkcja: pobierz klocki per typ projektu — WSZYSTKIE klocki (stare + ofertowe)
 export function getBlocksForSiteType(siteType: string): Block[] {
-  if (siteType === 'offer') {
-    const oldForOffer = BLOCK_LIBRARY.filter(b => OLD_BLOCKS_FOR_OFFERS.includes(b.code));
-    return [...OFFER_BLOCKS, ...oldForOffer];
-  }
-  return BLOCK_LIBRARY;
+  return [...BLOCK_LIBRARY, ...OFFER_BLOCKS];
 }
 
 export function getCategoriesForSiteType(siteType: string): Record<string, Category> {
-  if (siteType === 'offer') {
-    const oldCats: Record<string, Category> = {};
-    for (const code of OLD_BLOCKS_FOR_OFFERS) {
-      const block = BLOCK_LIBRARY.find(b => b.code === code);
-      if (block && CATEGORIES[block.cat]) {
-        oldCats[block.cat] = CATEGORIES[block.cat];
-      }
-    }
-    return { ...OFFER_CATEGORIES, ...oldCats };
-  }
-  return CATEGORIES;
+  return { ...CATEGORIES, ...OFFER_CATEGORIES };
 }
