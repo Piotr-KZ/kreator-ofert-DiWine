@@ -1058,7 +1058,13 @@ export default function Step5Wizualizacja() {
                           {/* Section */}
                           <div data-section-id={s.id}
                             onMouseEnter={() => setWzHovered(s.id)}
-                            onMouseLeave={() => { if (wzHovered === s.id) setWzHovered(null); }}
+                            onMouseLeave={(e) => {
+                              setTimeout(() => {
+                                const still = document.querySelector(`[data-section-id="${s.id}"]:hover`);
+                                const toolbarHovered = document.querySelector(`[data-action-bar="${s.id}"]:hover`);
+                                if (!still && !toolbarHovered) setWzHovered(null);
+                              }, 100);
+                            }}
                             style={{
                               position: 'relative',
                               // aspectRatio handled by PDF @page, not needed in editor
@@ -1069,16 +1075,20 @@ export default function Step5Wizualizacja() {
                             }}>
                             <Renderer s={s} brand={idx % 2 === 0 ? brand : { ...brand, bg: brand.bg2 }} typo={typo} device={device} update={(p) => wzUpdateSection(s.id, p)}/>
                             {wzHovered === s.id && liveEdit && !wzSelected && (
-                              <div style={{
-                                position: 'absolute', top: 6, right: 6, display: 'flex', gap: 4, zIndex: 20,
-                                background: 'rgba(15,23,42,.85)', borderRadius: 8, padding: '4px 6px',
-                                alignItems: 'center',
-                              }}>
+                              <div
+                                data-no-edit="true"
+                                data-action-bar={s.id}
+                                onMouseEnter={() => setWzHovered(s.id)}
+                                style={{
+                                  position: 'absolute', top: 6, right: 6, display: 'flex', gap: 4, zIndex: 20,
+                                  background: 'rgba(15,23,42,.85)', borderRadius: 8, padding: '4px 6px',
+                                  alignItems: 'center',
+                                }}>
                                 <span style={{ color: '#fff', fontSize: 10, fontWeight: 600, padding: '2px 6px', opacity: 0.7 }}>{s.label || s.code}</span>
-                                {idx > 0 && <button onClick={() => wzMoveSection(s.id, 'up')} style={hoverBtnStyle} title="W górę">↑</button>}
-                                {idx < wzContent.length - 1 && <button onClick={() => wzMoveSection(s.id, 'down')} style={hoverBtnStyle} title="W dół">↓</button>}
-                                <button onClick={() => wzDuplicateSection(s.id)} style={hoverBtnStyle} title="Duplikuj">⧉</button>
-                                {!isLocked && <button onClick={() => wzDeleteSection(s.id)} style={{...hoverBtnStyle, color: '#FCA5A5'}} title="Usuń">✕</button>}
+                                {idx > 0 && <button onClick={(e) => { e.stopPropagation(); wzMoveSection(s.id, 'up'); }} style={hoverBtnStyle} title="W górę">↑</button>}
+                                {idx < wzContent.length - 1 && <button onClick={(e) => { e.stopPropagation(); wzMoveSection(s.id, 'down'); }} style={hoverBtnStyle} title="W dół">↓</button>}
+                                <button onClick={(e) => { e.stopPropagation(); wzDuplicateSection(s.id); }} style={hoverBtnStyle} title="Duplikuj">⧉</button>
+                                {!isLocked && <button onClick={(e) => { e.stopPropagation(); wzDeleteSection(s.id); }} style={{...hoverBtnStyle, color: '#FCA5A5'}} title="Usuń">✕</button>}
                               </div>
                             )}
                           </div>
