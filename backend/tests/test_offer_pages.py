@@ -32,7 +32,7 @@ class TestPageTemplates:
         tpl = get_template("standard")
         codes = [b["block_code"] for b in tpl["blocks"]]
         assert "NO1" in codes  # header
-        assert "DW1" in codes  # set (repeated)
+        assert "DW4" in codes  # set (repeated — 2 kolumny)
         assert "CTA1" in codes  # CTA
 
     def test_quick_is_shortest(self):

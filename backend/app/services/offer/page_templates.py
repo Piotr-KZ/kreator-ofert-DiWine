@@ -3,6 +3,8 @@ Offer page templates — predefined block structures for offer pages.
 Each template = list of blocks with slot mapping instructions.
 
 User picks template → system creates Project → fills slots from offer data.
+Blocks: NO1-2 (headers), DW1-8 (content pages), CTA1 (closing).
+All blocks = 1 full landscape A4 page.
 """
 
 # slot_source tells auto-builder where to get data:
@@ -23,7 +25,6 @@ TEMPLATES = {
                 "slots_map": {
                     "offer_number": "offer.offer_number",
                     "date": "offer.date",
-                    "expires": "offer.expires_at",
                     "client_name": "client.company_name",
                     "client_logo_url": "client.logo_url",
                     "occasion_name": "offer.occasion_name",
@@ -31,28 +32,31 @@ TEMPLATES = {
                 },
             },
             {
-                "block_code": "DW3",
+                "block_code": "DW1",
                 "slots_map": {
                     "heading": "static:",
                     "body": "text:greeting:occasion",
+                    "image": "unsplash:wine bottle elegant",
+                },
+            },
+            {
+                "block_code": "DW4",
+                "repeat": "sets",
+            },
+            {
+                "block_code": "DW2",
+                "slots_map": {
+                    "heading": "static:Dlaczego my",
+                    "body": "text:why_us",
+                    "image": "unsplash:wine cellar craftsmanship",
                 },
             },
             {
                 "block_code": "DW1",
-                "repeat": "sets",
-            },
-            {
-                "block_code": "DW4",
-                "slots_map": {
-                    "heading": "static:Dlaczego my",
-                    "body": "text:why_us",
-                },
-            },
-            {
-                "block_code": "DW3",
                 "slots_map": {
                     "heading": "static:",
                     "body": "text:closing",
+                    "image": "unsplash:wine toast celebration",
                 },
             },
             {
@@ -80,12 +84,12 @@ TEMPLATES = {
                 "occasion_name": "offer.occasion_name",
                 "bg_photo_url": "unsplash:luxury wine gift box premium",
             }},
-            {"block_code": "DW3", "slots_map": {"heading": "static:", "body": "text:greeting:occasion"}},
-            {"block_code": "DW5", "slots_map": {"heading": "static:Czy wiesz, że...", "body": "text:fun_fact"}},
-            {"block_code": "DW2", "repeat": "sets"},
-            {"block_code": "DW4", "slots_map": {"heading": "static:Dlaczego my", "body": "text:why_us"}},
-            {"block_code": "DW5", "slots_map": {"heading": "static:Ciekawostka", "body": "text:fun_fact"}},
-            {"block_code": "DW3", "slots_map": {"heading": "static:", "body": "text:closing"}},
+            {"block_code": "DW1", "slots_map": {"heading": "static:", "body": "text:greeting:occasion", "image": "unsplash:wine bottle elegant"}},
+            {"block_code": "DW8", "slots_map": {"heading": "text:fun_fact", "body": "static:Czy wiesz, że...", "image": "unsplash:wine vineyard sunset"}},
+            {"block_code": "DW5", "repeat": "sets"},
+            {"block_code": "DW2", "slots_map": {"heading": "static:Dlaczego my", "body": "text:why_us", "image": "unsplash:wine cellar craftsmanship"}},
+            {"block_code": "DW8", "slots_map": {"heading": "text:fun_fact", "body": "static:Ciekawostka", "image": "unsplash:wine grapes harvest"}},
+            {"block_code": "DW1", "slots_map": {"heading": "static:", "body": "text:closing", "image": "unsplash:wine toast celebration"}},
             {"block_code": "CTA1", "slots_map": {
                 "heading": "static:Gotowy na wyjątkowe prezenty?",
                 "body": "static:Zaakceptuj ofertę lub skontaktuj się — dostosujemy wszystko do Twoich potrzeb.",
@@ -107,8 +111,8 @@ TEMPLATES = {
                 "client_name": "client.company_name", "occasion_name": "offer.occasion_name",
                 "bg_photo_url": "unsplash:wine gift box",
             }},
-            {"block_code": "DW1", "repeat": "sets"},
-            {"block_code": "DW3", "slots_map": {"heading": "static:", "body": "text:closing"}},
+            {"block_code": "DW4", "repeat": "sets"},
+            {"block_code": "DW1", "slots_map": {"heading": "static:", "body": "text:closing", "image": "unsplash:wine toast celebration"}},
             {"block_code": "CTA1", "slots_map": {
                 "heading": "static:Zainteresowany?",
                 "cta_text": "static:Akceptuję ofertę",
@@ -129,12 +133,12 @@ TEMPLATES = {
                 "occasion_name": "offer.occasion_name",
                 "bg_photo_url": "unsplash:premium wine tasting elegant",
             }},
-            {"block_code": "DW3", "slots_map": {"heading": "static:", "body": "text:greeting:occasion"}},
-            {"block_code": "DW4", "slots_map": {"heading": "static:O nas", "body": "text:why_us"}},
-            {"block_code": "DW5", "slots_map": {"heading": "static:Czy wiesz, że...", "body": "text:fun_fact"}},
-            {"block_code": "DW2", "repeat": "sets"},
-            {"block_code": "DW5", "slots_map": {"heading": "static:Ciekawostka", "body": "text:fun_fact"}},
-            {"block_code": "DW3", "slots_map": {"heading": "static:", "body": "text:closing"}},
+            {"block_code": "DW1", "slots_map": {"heading": "static:", "body": "text:greeting:occasion", "image": "unsplash:wine bottle elegant"}},
+            {"block_code": "DW2", "slots_map": {"heading": "static:O nas", "body": "text:why_us", "image": "unsplash:wine cellar artisan"}},
+            {"block_code": "DW8", "slots_map": {"heading": "text:fun_fact", "body": "static:Czy wiesz, że...", "image": "unsplash:wine vineyard sunset"}},
+            {"block_code": "DW5", "repeat": "sets"},
+            {"block_code": "DW8", "slots_map": {"heading": "text:fun_fact", "body": "static:Ciekawostka", "image": "unsplash:wine grapes harvest"}},
+            {"block_code": "DW1", "slots_map": {"heading": "static:", "body": "text:closing", "image": "unsplash:wine toast celebration"}},
             {"block_code": "CTA1", "slots_map": {
                 "heading": "static:Następny krok",
                 "body": "static:Zaakceptuj ofertę online lub umów się na prezentację próbek.",

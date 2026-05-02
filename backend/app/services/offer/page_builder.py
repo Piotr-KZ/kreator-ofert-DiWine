@@ -210,7 +210,7 @@ def _build_set_slots(
     offer_set: OfferSet, products: dict, packagings: dict,
     colors: dict, quantity: int,
 ) -> dict:
-    """Build slots_json for DW1/DW2 block from offer set data."""
+    """Build slots_json for set-repeat blocks (DW4/DW5) from offer set data."""
     pkg = packagings.get(offer_set.packaging_id) if offer_set.packaging_id else None
     type_labels = {"wine": "Wino", "sweet": "Słodycze", "decoration": "Dodatek", "personalization": "Personalizacja"}
 

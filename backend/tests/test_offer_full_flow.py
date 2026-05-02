@@ -175,7 +175,7 @@ class TestBuildPageFlow:
         assert r.status_code == 200
         html = r.text
         assert "<!DOCTYPE html>" in html
-        assert "Zestaw Testowy" in html
+        assert "OFERTA PREZENTOWA" in html  # NO1 header block content
 
     async def test_build_page_without_sets_fails(self, client):
         """Building page without sets should return 400."""
