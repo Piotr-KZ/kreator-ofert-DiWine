@@ -121,6 +121,27 @@ async def build_offer_page(
     position = 0
     used_fun_facts = 0
 
+    # Mandatory title page — always first, with client data
+    first_block = tpl["blocks"][0]["block_code"] if tpl["blocks"] else ""
+    if first_block not in ("NO1", "NO2"):
+        title_section = ProjectSection(
+            id=str(uuid4()),
+            project_id=project.id,
+            block_code="NO1",
+            position=0,
+            slots_json={
+                "offer_number": offer.offer_number,
+                "date": now.strftime("%d.%m.%Y"),
+                "client_name": client.company_name if client else "",
+                "client_logo_url": getattr(client, 'logo_url', "") or "" if client else "",
+                "occasion_name": occasion_name,
+                "bg_photo_url": "",
+                "_locked": True,
+            },
+        )
+        db.add(title_section)
+        position = 1
+
     for block_def in tpl["blocks"]:
         code = block_def["block_code"]
 

@@ -27,7 +27,7 @@ export default function OfferCostEstimate() {
     try {
       const { data } = await axios.post(`${API}/${offerId}/build-page`, { template_id: 'standard' });
       localStorage.setItem('_offer_context', JSON.stringify({ offer_id: offerId }));
-      nav(`/lab/${data.project_id}/step/3`);
+      nav(`/lab/${data.project_id}/step/5`);
     } catch (e: any) {
       alert(e.response?.data?.detail || 'Błąd budowania strony');
     } finally {

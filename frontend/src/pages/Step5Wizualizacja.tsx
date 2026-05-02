@@ -794,8 +794,19 @@ export default function Step5Wizualizacja() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <div style={{ width: 32, height: 32, borderRadius: 8, background: 'linear-gradient(135deg, #6366F1, #EC4899)', display: 'grid', placeItems: 'center', color: '#fff', fontWeight: 800, fontSize: 15, fontFamily: 'Instrument Serif', fontStyle: 'italic' }}>W</div>
           <div>
-            <div style={{ fontSize: 11, color: '#94A3B8', letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 600 }}>Projekt</div>
-            <div style={{ fontSize: 14, fontWeight: 600 }}>Strona Kawiarni Miętowa</div>
+            {(() => {
+              const st = useLabStore.getState();
+              if (st.siteType === 'offer') {
+                const bn = (st.brief as any)?.offer_number || '';
+                return <div style={{ fontSize: 14, fontWeight: 600, color: '#4F46E5' }}>Oferta {bn}</div>;
+              }
+              return (
+                <>
+                  <div style={{ fontSize: 11, color: '#94A3B8', letterSpacing: 0.5, textTransform: 'uppercase', fontWeight: 600 }}>Projekt</div>
+                  <div style={{ fontSize: 14, fontWeight: 600 }}>{st.projectName}</div>
+                </>
+              );
+            })()}
           </div>
         </div>
 
