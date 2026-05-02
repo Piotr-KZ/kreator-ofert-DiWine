@@ -3,12 +3,13 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 const API = '/api/v1/offers';
-type Tab = 'wines'|'sweets'|'personalization'|'deco'|'packaging'|'discounts'|'stock'|'texts'|'suppliers'|'company'|'graphics'|'client_logos'|'photos';
+type Tab = 'wines'|'sweets'|'personalization'|'deco'|'packaging'|'discounts'|'stock'|'texts'|'suppliers'|'company'|'graphics'|'client_logos'|'photos'|'templates';
 const TABS: {id:Tab;label:string}[] = [
   {id:'wines',label:'Wina'},{id:'sweets',label:'Słodycze'},{id:'personalization',label:'Personalizacja'},
   {id:'deco',label:'Dodatki'},{id:'packaging',label:'Opakowania'},{id:'discounts',label:'Rabaty'},
   {id:'stock',label:'Stany'},{id:'texts',label:'Teksty'},{id:'suppliers',label:'Dostawcy'},{id:'company',label:'Dane DiWine'},
   {id:'graphics',label:'Grafiki'},{id:'client_logos',label:'Logo klientów'},{id:'photos',label:'Zdjęcia'},
+  {id:'templates',label:'Szablony ofert'},
 ];
 const WC:Record<string,string>={czerwone:'#DC2626',białe:'#FEF9E7',różowe:'#FBCFE8',pomarańczowe:'#EA580C'};
 const SC:Record<string,string>={red:'#DC2626',gold:'#D97706',green:'#16A34A',blue:'#2563EB',yellow:'#EAB308',craft:'#8B5E3C',pastel:'#F9A8D4',silver:'#9CA3AF'};
@@ -401,6 +402,7 @@ export default function OfferSettings(){
         if(!sh.length)return<div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-400">Brak zdjęć</div>;
         return<div className="grid grid-cols-4 gap-3">{sh.map((p:any)=><div key={p.id} className="bg-white rounded-xl border border-gray-200 overflow-hidden group"><div className="aspect-video overflow-hidden"><img src={p.thumbnail_url||p.url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform"/></div><div className="p-2"><div className="flex items-center gap-1 flex-wrap"><span className="text-[9px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{p.category}</span>{p.source&&<span className="text-[9px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-500">{p.source}</span>}{(p.tags||[]).slice(0,2).map((t:string)=><span key={t} className="text-[9px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600">{t}</span>)}</div></div></div>)}</div>;})()}
       </div>}
+      {tab==='templates'&&<TemplatesTab/>}
     </div>
 
     {/* ═══ MODALE ═══ */}
@@ -436,6 +438,45 @@ export default function OfferSettings(){
     {/* Discount edit/create */}
     {modal?.type==='discount'&&<DiscountForm item={modal.item} onSave={saveDiscount} onClose={()=>setModal(null)}/>}
   </div>);
+}
+
+/* ─── Templates Tab ─── */
+function TemplatesTab() {
+  const [tpls, setTpls] = useState<any[]>([]);
+  useEffect(() => {
+    fetch('/api/v1/offer-templates').then(r=>r.json()).then(setTpls).catch(()=>{});
+  }, []);
+  if (tpls.length === 0) {
+    return <div><h2 className="text-lg font-bold text-gray-900 mb-4">Szablony ofert</h2><div className="bg-white rounded-xl border p-8 text-center text-gray-400">Brak szablonów. Zapisz ofertę jako szablon w edytorze.</div></div>;
+  }
+  return (
+    <div>
+      <h2 className="text-lg font-bold text-gray-900 mb-4">Szablony ofert</h2>
+      <div className="bg-white rounded-xl border overflow-hidden">
+        <table className="w-full text-sm">
+          <thead><tr className="bg-gray-50 border-b">
+            <th className="text-left p-3 text-xs text-gray-500">Nazwa</th>
+            <th className="text-left p-3 text-xs text-gray-500">Okazja</th>
+            <th className="text-center p-3 text-xs text-gray-500">Stron</th>
+            <th className="text-left p-3 text-xs text-gray-500">Data</th>
+            <th className="text-center p-3 text-xs text-gray-500">Akcje</th>
+          </tr></thead>
+          <tbody>{tpls.map((t:any)=>(
+            <tr key={t.id} className="border-b last:border-0 hover:bg-gray-50">
+              <td className="p-3 font-medium">{t.name}</td>
+              <td className="p-3 text-gray-500">{t.occasion_code||'—'}</td>
+              <td className="p-3 text-center">{t.block_count}</td>
+              <td className="p-3 text-gray-500 text-xs">{t.created_at}</td>
+              <td className="p-3 text-center">
+                <button onClick={async()=>{if(confirm('Usunąć szablon?')){await fetch(`/api/v1/offer-templates/${t.id}`,{method:'DELETE'});setTpls(tpls.filter((x:any)=>x.id!==t.id));}}}
+                  className="text-xs text-red-500 hover:text-red-700">Usuń</button>
+              </td>
+            </tr>
+          ))}</tbody>
+        </table>
+      </div>
+    </div>
+  );
 }
 
 /* ─── FORM MODALS ─── */

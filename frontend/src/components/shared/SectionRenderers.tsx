@@ -35,9 +35,16 @@ function SectionImg({ src, fallback, alt, style, sectionId, field }) {
   const imgSrc = rawSrc || fallback;
   const [hover, setHover] = React.useState(false);
   return (
-    <div style={{ ...style, position: 'relative', overflow: 'hidden', cursor: 'pointer' }}
+    <div
+      data-wiz-img="true"
+      style={{ ...style, position: 'relative', overflow: 'hidden', cursor: 'pointer' }}
       onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      onClick={(e) => { e.stopPropagation(); ctx?.onImageClick?.({ sectionId, field, current: imgSrc }); }}>
+      onMouseDown={(e) => e.stopPropagation()}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setTimeout(() => ctx?.onImageClick?.({ sectionId, field, current: imgSrc }), 10);
+      }}>
       {imgSrc ? <img src={imgSrc} alt={alt || ''} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}/> : <div style={{ width: '100%', height: '100%', background: '#E2E8F0', display: 'grid', placeItems: 'center', color: '#94A3B8' }}><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-5-5L5 21"/></svg></div>}
       {hover && (
         <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.25)', display: 'grid', placeItems: 'center' }}>
@@ -84,7 +91,10 @@ function Editable({ tag: Tag = 'span', value, onChange, style, placeholder, mult
     color: ov.color || color || style.color,
     textAlign: ov.align || style.textAlign,
     cursor: editable ? 'text' : 'default',
-    minWidth: 20,
+    resize: 'both' as const,
+    overflow: 'auto' as const,
+    minWidth: 50,
+    minHeight: 20,
     display: style.display || 'inline-block',
     outline: ctx.selected && ctx.selected.sectionId === sectionId && ctx.selected.elId === elId ? '2px solid #6366F1' : 'none',
     outlineOffset: 2,

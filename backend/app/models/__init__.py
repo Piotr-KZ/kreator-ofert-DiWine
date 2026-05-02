@@ -10,10 +10,11 @@ from app.models.offer import (
 from app.models.offer_text import OfferTextTemplate
 from app.models.offer_photo import OfferPhoto
 from app.models.company_settings import CompanySettings
+from app.models.offer_template import OfferTemplate
 
 __all__ = [
     "Project", "ProjectSection", "ProjectMaterial", "BlockCategory", "BlockTemplate",
     "Client", "Supplier", "Occasion", "Product", "Packaging",
     "DiscountRule", "Color", "Offer", "OfferSet", "OfferSetItem",
-    "OfferTextTemplate", "OfferPhoto", "CompanySettings",
+    "OfferTextTemplate", "OfferPhoto", "CompanySettings", "OfferTemplate",
 ]

@@ -11,7 +11,12 @@ const STEPS_WEB = [
 ];
 
 const STEPS_OFFER = [
-  { num: 5, label: "Edycja oferty" },
+  { num: 1, name: 'Email', done: true },
+  { num: 2, name: 'Weryfikacja', done: true },
+  { num: 3, name: 'Zestawy', done: true },
+  { num: 4, name: 'Kosztorys', done: true },
+  { num: 5, name: 'Edycja oferty', done: false },
+  { num: 6, name: 'Eksport', done: false },
 ];
 
 export default function LabLayout() {
@@ -88,22 +93,33 @@ export default function LabLayout() {
         </div>
       </header>
 
-      {/* Step bar — for offers show only "Edycja oferty", for web show all 5 */}
+      {/* Step bar */}
       <nav className="bg-white border-b border-gray-100 px-6">
-        <div className="max-w-4xl mx-auto flex">
-          {steps.map((step) => (
-            <button
-              key={step.num}
-              onClick={() => navigate(`/lab/${projectId}/step/${step.num}`)}
-              className={`flex-1 py-3 text-xs font-medium border-b-2 transition-colors ${
-                currentStep === step.num
-                  ? "border-emerald-500 text-emerald-700"
-                  : "border-transparent text-gray-400 hover:text-gray-600"
-              }`}
-            >
-              {step.num}. {step.label}
-            </button>
-          ))}
+        <div className="max-w-5xl mx-auto flex">
+          {(isOffer ? STEPS_OFFER : STEPS_WEB).map((step) => {
+            const isDone = isOffer && (step as any).done;
+            const isActive = step.num === (isOffer ? 5 : currentStep);
+            return (
+              <button
+                key={step.num}
+                onClick={() => {
+                  if (isOffer && step.num <= 4) navigate(`/offer/${offerId}${step.num === 4 ? '/cost' : step.num === 3 ? '' : '/create'}`);
+                  else if (isOffer && step.num === 6) navigate(`/offer/${offerId}/export`);
+                  else navigate(`/lab/${projectId}/step/${step.num}`);
+                }}
+                className={`flex-1 py-3 text-xs font-medium border-b-2 transition-colors ${
+                  isActive
+                    ? "border-indigo-500 text-indigo-700"
+                    : isDone
+                      ? "border-transparent text-green-600"
+                      : "border-transparent text-gray-400 hover:text-gray-600"
+                }`}
+              >
+                {isDone && <span className="mr-1">&#10003;</span>}
+                {step.num}. {(step as any).name || (step as any).label}
+              </button>
+            );
+          })}
         </div>
       </nav>
 

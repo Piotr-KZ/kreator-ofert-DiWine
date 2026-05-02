@@ -12,8 +12,13 @@ export default function OfferCostEstimate() {
   const { offer, products, packagings, loadOffer, loadCatalog } = useOfferStore();
   const [activeIdx, setActiveIdx] = useState(0);
   const [building, setBuilding] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
+  const [templates, setTemplates] = useState<any[]>([]);
 
   useEffect(() => { loadCatalog(); if (offerId) loadOffer(offerId); }, [offerId]);
+  useEffect(() => {
+    axios.get('/api/v1/offer-templates').then(r => setTemplates(r.data)).catch(() => {});
+  }, []);
   if (!offer) return <div className="p-8 text-gray-400">Ładowanie...</div>;
 
   const getPkg = (id?: string | null) => packagings.find(p => p.id === id);
@@ -133,6 +138,10 @@ export default function OfferCostEstimate() {
             <button onClick={() => nav(`/offer/${offerId}`)}
               className="px-4 py-2 text-sm font-semibold bg-white text-gray-700 border border-gray-200 rounded-lg">← Wróć do zestawów</button>
             <div className="flex-1" />
+            <button onClick={() => setShowTemplateModal(true)} disabled={offer.sets.length === 0}
+              style={{ padding: '10px 20px', borderRadius: 8, border: '1px solid #D97706', background: '#FFFBEB', color: '#D97706', fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+              Utwórz z szablonu
+            </button>
             <button onClick={handleNext} disabled={offer.sets.length === 0 || building}
               className={`px-6 py-2.5 text-sm font-bold text-white rounded-lg ${offer.sets.length === 0 || building ? 'bg-gray-300' : 'bg-indigo-600 hover:bg-indigo-700'}`}>
               {building ? 'Przygotowuję...' : 'Dalej — buduj ofertę'}
@@ -140,6 +149,38 @@ export default function OfferCostEstimate() {
           </div>
         </div>
       </div>
+      {showTemplateModal && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setShowTemplateModal(false)}>
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)' }} />
+          <div style={{ position: 'relative', background: '#fff', borderRadius: 16, padding: 24, width: 480 }}
+            onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Wybierz szablon</h3>
+            {templates.length === 0 ? (
+              <div style={{ padding: 24, textAlign: 'center', color: '#94A3B8' }}>Brak szablonów</div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {templates.map(t => (
+                  <button key={t.id} onClick={async () => {
+                    try {
+                      const { data } = await axios.post(`${API}/${offerId}/build-page`, { template_id: 'standard' });
+                      await axios.post(`/api/v1/offer-templates/${t.id}/apply?project_id=${data.project_id}`);
+                      localStorage.setItem('_offer_context', JSON.stringify({ offer_id: offerId }));
+                      nav(`/lab/${data.project_id}/step/5`);
+                    } catch (e: any) { alert(e.response?.data?.detail || 'Błąd'); }
+                  }}
+                    style={{ padding: 12, borderRadius: 10, border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer', textAlign: 'left' as const }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: '#1E293B' }}>{t.name}</div>
+                    <div style={{ fontSize: 11, color: '#94A3B8', marginTop: 2 }}>{t.block_count} stron &bull; {t.occasion_code || 'uniwersalny'}</div>
+                  </button>
+                ))}
+              </div>
+            )}
+            <button onClick={() => setShowTemplateModal(false)}
+              style={{ marginTop: 12, padding: '6px 14px', borderRadius: 6, border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontSize: 11, cursor: 'pointer' }}>Anuluj</button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

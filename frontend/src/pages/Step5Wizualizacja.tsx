@@ -303,6 +303,10 @@ export default function Step5Wizualizacja() {
   React.useEffect(() => { setWzContent(storeSections.map(mapFromStore)); }, [storeSections]);
   const [showBlockPicker, setShowBlockPicker] = React.useState(false);
   const [insertAt, setInsertAt] = React.useState(0);
+  const [showSaveTemplate, setShowSaveTemplate] = React.useState(false);
+  const [showPdfExport, setShowPdfExport] = React.useState(false);
+  const [templateName, setTemplateName] = React.useState('');
+  const [pdfFilename, setPdfFilename] = React.useState('');
 
   // Print CSS for offer landscape
   React.useEffect(() => {
@@ -803,7 +807,8 @@ export default function Step5Wizualizacja() {
 
   return (
     <div data-screen-label="06 Wizualizacja" style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      {/* TOPBAR */}
+      {/* TOPBAR — TYLKO DLA WEB, ukryte dla ofert */}
+      {useLabStore.getState().siteType !== 'offer' && (
       <div style={{
         background: '#fff', borderBottom: '1px solid #E2E8F0', padding: '12px 24px',
         display: 'flex', alignItems: 'center', gap: 16, position: 'sticky', top: 0, zIndex: 20,
@@ -939,6 +944,7 @@ export default function Step5Wizualizacja() {
           } catch {} return null;
         })()}
       </div>
+      )}
 
       {/* MAIN */}
       <div style={{ flex: 1, display: 'grid', gridTemplateColumns: tweaksOpen ? 'minmax(0,1fr) 320px' : '1fr', overflow: 'hidden' }}>
@@ -1016,19 +1022,23 @@ export default function Step5Wizualizacja() {
                       if (!Renderer) return null;
                       return (
                         <React.Fragment key={s.id}>
-                          {/* Add block button BETWEEN sections */}
+                          {/* Add page button between sections */}
                           {isOfferProject && idx > 0 && (
-                            <div style={{
-                              display: 'flex', justifyContent: 'center', padding: '4px 0',
-                              opacity: 0.4, transition: 'opacity 0.2s',
-                            }}
+                            <div style={{ display: 'flex', justifyContent: 'center', padding: '2px 0', opacity: 0.3 }}
                               onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
-                              onMouseLeave={e => (e.currentTarget.style.opacity = '0.4')}>
-                              <button onClick={() => { setInsertAt(idx); setShowBlockPicker(true); }} style={{
-                                padding: '4px 16px', borderRadius: 20, border: '2px dashed #CBD5E1',
-                                background: '#F8FAFC', color: '#94A3B8', fontSize: 11, fontWeight: 600,
-                                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
-                              }}>+ Dodaj klocek</button>
+                              onMouseLeave={e => (e.currentTarget.style.opacity = '0.3')}>
+                              <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  setInsertAt(idx);
+                                  setShowBlockPicker(true);
+                                }}
+                                style={{
+                                  padding: '3px 14px', borderRadius: 16, border: '1.5px dashed #CBD5E1',
+                                  background: '#FAFAFA', color: '#94A3B8', fontSize: 11, fontWeight: 500,
+                                  cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+                                }}>+ Dodaj stronę</button>
                             </div>
                           )}
                           {/* Section */}
@@ -1040,6 +1050,7 @@ export default function Step5Wizualizacja() {
                               aspectRatio: isOfferProject ? '297 / 210' : undefined,
                               width: '100%',
                               overflow: 'hidden',
+                              marginBottom: 0,
                             }}>
                             <Renderer s={s} brand={idx % 2 === 0 ? brand : { ...brand, bg: brand.bg2 }} typo={typo} device={device} update={(p) => wzUpdateSection(s.id, p)}/>
                             {wzHovered === s.id && liveEdit && !wzSelected && (
@@ -1375,10 +1386,84 @@ export default function Step5Wizualizacja() {
                 style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #6366F1', background: '#EEF2FF', color: '#4F46E5', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
                 Zapisz
               </button>
-              <button onClick={() => navigate(`/offer/${oid}/export`)}
-                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#4F46E5', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-                Zapisz i eksport →
+              <button onClick={() => setShowSaveTemplate(true)}
+                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #D97706', background: '#FFFBEB', color: '#D97706', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                Zapisz jako szablon
               </button>
+              <button onClick={() => setShowPdfExport(true)}
+                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#4F46E5', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                Eksport do PDF
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* MODAL: Zapisz jako szablon */}
+      {showSaveTemplate && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+          onClick={() => setShowSaveTemplate(false)}>
+          <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)' }} />
+          <div style={{ position: 'relative', background: '#fff', borderRadius: 16, padding: 24, width: 420 }}
+            onClick={e => e.stopPropagation()}>
+            <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Zapisz jako szablon</h3>
+            <div style={{ marginBottom: 12 }}>
+              <label style={{ fontSize: 11, color: '#64748B', display: 'block', marginBottom: 4 }}>Nazwa szablonu</label>
+              <input value={templateName} onChange={e => setTemplateName(e.target.value)}
+                placeholder="np. Oferta Wielkanoc — długa"
+                style={{ width: '100%', padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 14, outline: 'none' }} />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={() => setShowSaveTemplate(false)}
+                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontSize: 12, cursor: 'pointer' }}>Anuluj</button>
+              <button onClick={async () => {
+                if (!templateName.trim()) return;
+                try {
+                  const pid = useLabStore.getState().projectId;
+                  await fetch('/api/v1/offer-templates', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ project_id: pid, name: templateName }),
+                  });
+                  alert('Szablon zapisany!');
+                  setShowSaveTemplate(false);
+                  setTemplateName('');
+                } catch { alert('Błąd zapisu szablonu'); }
+              }}
+                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#D97706', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Zapisz</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: Eksport PDF */}
+      {showPdfExport && (() => {
+        const ctx = JSON.parse(localStorage.getItem('_offer_context') || '{}');
+        return (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onClick={() => setShowPdfExport(false)}>
+            <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)' }} />
+            <div style={{ position: 'relative', background: '#fff', borderRadius: 16, padding: 24, width: 420 }}
+              onClick={e => e.stopPropagation()}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16 }}>Eksport do PDF</h3>
+              <div style={{ marginBottom: 12 }}>
+                <label style={{ fontSize: 11, color: '#64748B', display: 'block', marginBottom: 4 }}>Nazwa pliku</label>
+                <input value={pdfFilename} onChange={e => setPdfFilename(e.target.value)}
+                  placeholder={`Oferta_${ctx.offer_id || ''}`}
+                  style={{ width: '100%', padding: '8px 12px', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 14, outline: 'none' }} />
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                <button onClick={() => setShowPdfExport(false)}
+                  style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontSize: 12, cursor: 'pointer' }}>Anuluj</button>
+                <button onClick={() => {
+                  const fname = pdfFilename.trim() || `Oferta_${ctx.offer_id || 'export'}`;
+                  const link = document.createElement('a');
+                  link.href = `/api/v1/offers/${ctx.offer_id}/pdf`;
+                  link.download = `${fname}.pdf`;
+                  link.click();
+                  setShowPdfExport(false);
+                }}
+                  style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#4F46E5', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Pobierz PDF</button>
+              </div>
             </div>
           </div>
         );
