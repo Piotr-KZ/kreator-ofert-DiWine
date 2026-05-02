@@ -498,6 +498,150 @@ const Previews: Record<string, PreviewFn> = {
       </div>
     </div>
   ); },
+
+  // ═══ OFFER BLOCKS — NO, DW, CTA ═══
+
+  // NO1 — Nagłówek standard (zdjęcie w tle + tytuł + logo)
+  NO1: (bg) => { return (
+    <div style={{ padding: 0, height: '100%', background: '#1E293B', display: 'flex', flexDirection: 'column' }}>
+      <ImgFrame ratio="16/7" dark style={{ borderRadius: 0, flex: '0 0 60%' }} />
+      <div style={{ padding: '16px 20px', flex: 1 }}>
+        <Chip bg="rgba(167,139,250,0.2)" fg="#A78BFA">OFERTA</Chip>
+        <BigBar w="75%" c="#E2E8F0" mb={8} />
+        <Bar w="55%" c="#94A3B8" mb={4} />
+        <Bar w="40%" c="#64748B" mb={0} />
+      </div>
+      <div style={{ position: 'absolute', top: 12, right: 12, width: 28, height: 20, background: '#fff', borderRadius: 4 }} />
+    </div>
+  );},
+
+  // NO2 — Nagłówek pełnoekranowy (wielkie zdjęcie + tekst na dole)
+  NO2: (bg) => { return (
+    <div style={{ padding: 0, height: '100%', background: '#0F172A', display: 'flex', flexDirection: 'column' }}>
+      <ImgFrame ratio="16/9" dark style={{ borderRadius: 0, flex: 1 }} />
+      <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, padding: '20px', background: 'linear-gradient(transparent, rgba(0,0,0,0.8))' }}>
+        <BigBar w="65%" c="#E2E8F0" mb={6} />
+        <Bar w="45%" c="#94A3B8" />
+      </div>
+    </div>
+  );},
+
+  // DW1 — Obraz lewo + Tekst prawo
+  DW1: (bg) => { const c = getTextColors(bg); return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', height: '100%' }}>
+      <ImgFrame ratio="auto" style={{ borderRadius: 0, height: '100%' }} />
+      <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6 }}>
+        <Chip fg="#8B7355" bg="rgba(139,115,85,0.1)">SEKCJA</Chip>
+        <BigBar w="80%" c={c.big} />
+        <Bar w="95%" c={c.small} />
+        <Bar w="85%" c={c.small} />
+        <Bar w="70%" c={c.small} />
+      </div>
+    </div>
+  );},
+
+  // DW2 — Tekst lewo + Obraz prawo
+  DW2: (bg) => { const c = getTextColors(bg); return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', height: '100%' }}>
+      <div style={{ padding: '24px 20px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6 }}>
+        <Chip fg="#8B7355" bg="rgba(139,115,85,0.1)">SEKCJA</Chip>
+        <BigBar w="80%" c={c.big} />
+        <Bar w="95%" c={c.small} />
+        <Bar w="85%" c={c.small} />
+        <Bar w="70%" c={c.small} />
+      </div>
+      <ImgFrame ratio="auto" style={{ borderRadius: 0, height: '100%' }} />
+    </div>
+  );},
+
+  // DW3 — Obraz góra + Tekst dół
+  DW3: (bg) => { const c = getTextColors(bg); return (
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <ImgFrame ratio="16/7" style={{ borderRadius: 0, flex: '0 0 55%' }} />
+      <div style={{ padding: '16px 20px', flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 5 }}>
+        <Chip fg="#8B7355" bg="rgba(139,115,85,0.1)">SEKCJA</Chip>
+        <BigBar w="70%" c={c.big} />
+        <Bar w="90%" c={c.small} />
+        <Bar w="75%" c={c.small} />
+      </div>
+    </div>
+  );},
+
+  // DW4 — 2 kolumny (obrazy + teksty)
+  DW4: (bg) => { const c = getTextColors(bg); return (
+    <div style={{ padding: '16px 14px', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Chip fg="#8B7355" bg="rgba(139,115,85,0.1)">2 KOLUMNY</Chip>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, flex: 1, marginTop: 8 }}>
+        <div><ImgFrame ratio="4/3" style={{ marginBottom: 6, borderRadius: 6 }} /><BigBar w="75%" c={c.big} mb={4} /><Bar w="90%" c={c.small} /></div>
+        <div><ImgFrame ratio="4/3" style={{ marginBottom: 6, borderRadius: 6 }} /><BigBar w="75%" c={c.big} mb={4} /><Bar w="90%" c={c.small} /></div>
+      </div>
+    </div>
+  );},
+
+  // DW5 — 3 kolumny
+  DW5: (bg) => { const c = getTextColors(bg); return (
+    <div style={{ padding: '16px 14px', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Chip fg="#8B7355" bg="rgba(139,115,85,0.1)">3 KOLUMNY</Chip>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, flex: 1, marginTop: 8 }}>
+        {[1,2,3].map(i => <div key={i}><ImgFrame ratio="4/3" style={{ marginBottom: 5, borderRadius: 5 }} /><Bar w="80%" h={5} c={c.big} mb={3} /><Bar w="95%" c={c.small} h={2} /></div>)}
+      </div>
+    </div>
+  );},
+
+  // DW6 — 4 kolumny
+  DW6: (bg) => { const c = getTextColors(bg); return (
+    <div style={{ padding: '16px 14px', height: '100%', display: 'flex', flexDirection: 'column' }}>
+      <Chip fg="#8B7355" bg="rgba(139,115,85,0.1)">4 KOLUMNY</Chip>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 6, flex: 1, marginTop: 8 }}>
+        {[1,2,3,4].map(i => <div key={i}><ImgFrame ratio="1/1" style={{ marginBottom: 4, borderRadius: 4 }} /><Bar w="80%" h={4} c={c.big} mb={2} /><Bar w="95%" c={c.small} h={2} /></div>)}
+      </div>
+    </div>
+  );},
+
+  // DW7 — Obrazy lewo + Teksty prawo (kolumny)
+  DW7: (bg) => { const c = getTextColors(bg); return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', height: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: 10 }}>
+        <ImgFrame ratio="3/2" style={{ flex: 1, borderRadius: 6 }} />
+        <ImgFrame ratio="3/2" style={{ flex: 1, borderRadius: 6 }} />
+        <ImgFrame ratio="3/2" style={{ flex: 1, borderRadius: 6 }} />
+      </div>
+      <div style={{ padding: '20px 16px', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 16 }}>
+        <div><Bar w="70%" h={5} c={c.big} mb={3} /><Bar w="90%" c={c.small} h={2} /></div>
+        <div><Bar w="65%" h={5} c={c.big} mb={3} /><Bar w="85%" c={c.small} h={2} /></div>
+        <div><Bar w="75%" h={5} c={c.big} mb={3} /><Bar w="80%" c={c.small} h={2} /></div>
+      </div>
+    </div>
+  );},
+
+  // DW8 — Cytat z obrazem w tle
+  DW8: (bg) => { return (
+    <div style={{ height: '100%', background: '#1E293B', display: 'flex', alignItems: 'center', justifyContent: 'center', position: 'relative' }}>
+      <ImgFrame ratio="auto" dark style={{ position: 'absolute', inset: 0, borderRadius: 0, opacity: 0.3 }} />
+      <div style={{ textAlign: 'center', padding: 20, position: 'relative', zIndex: 1 }}>
+        <div style={{ width: 30, height: 2, background: '#C4A87A', margin: '0 auto 12px' }} />
+        <BigBar w="85%" c="#E2E8F0" mb={6} style={{ margin: '0 auto 6px' }} />
+        <Bar w="60%" c="#C4A87A" style={{ margin: '0 auto' }} />
+        <div style={{ width: 30, height: 2, background: '#C4A87A', margin: '12px auto 0' }} />
+      </div>
+    </div>
+  );},
+
+  // CTA1 — Zaproszenie do kontaktu
+  CTA1: (bg) => { return (
+    <div style={{ height: '100%', background: '#111827', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ textAlign: 'center', padding: 20 }}>
+        <BigBar w="70%" c="#E2E8F0" mb={8} style={{ margin: '0 auto 8px' }} />
+        <Bar w="55%" c="#6B7280" mb={12} style={{ margin: '0 auto 12px' }} />
+        <CTA text="Akceptuję ofertę" />
+        <div style={{ display: 'flex', gap: 12, justifyContent: 'center', marginTop: 12 }}>
+          <Bar w={40} c="#4B5563" h={2} mb={0} />
+          <Bar w={50} c="#818CF8" h={2} mb={0} />
+          <Bar w={40} c="#4B5563" h={2} mb={0} />
+        </div>
+      </div>
+    </div>
+  );},
 };
 
 // ─── BlockPreview — glowny eksport ────────────────────
