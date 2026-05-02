@@ -10,6 +10,8 @@ import { UniToolbar, resolveClickTarget, detectElementType } from "@/components/
 import { WizAIPanel } from "@/components/wizualizacja/AiWizPanel";
 import { openInfographicGallery } from "@/components/wizualizacja/UnsplashGallery";
 import { TweakPanel, TWEAKS_DEFAULT } from "@/components/wizualizacja/TweakPanel";
+import { BlocksModal } from "@/pages/Step3Kreator";
+import { getBlocksForSiteType, getCategoriesForSiteType } from "@/config/blocks";
 // Wizualizacja — ekran 5. Pełny podgląd strony z device switcher, Tweaki.
 
 // Tweaks (domyślne) — persist via __edit_mode_set_keys
@@ -1315,58 +1317,20 @@ export default function Step5Wizualizacja() {
       )}
 
       {/* OFFER BLOCK PICKER MODAL */}
-      {showBlockPicker && (() => {
-        const offerBlocks = [
-          { code: 'NO1', cat: 'NO', name: 'Nagłówek — standard', desc: 'Zdjęcie w tle + logo + dane' },
-          { code: 'NO2', cat: 'NO', name: 'Nagłówek — pełnoekranowy', desc: 'Wielkie zdjęcie + tekst na dole' },
-          { code: 'DW1', cat: 'DW', name: 'Obraz lewo + Tekst prawo', desc: 'Split 50/50' },
-          { code: 'DW2', cat: 'DW', name: 'Tekst lewo + Obraz prawo', desc: 'Split 50/50' },
-          { code: 'DW3', cat: 'DW', name: 'Obraz góra + Tekst dół', desc: 'Stacked' },
-          { code: 'DW4', cat: 'DW', name: '2 kolumny', desc: '2 obrazy + 2 teksty' },
-          { code: 'DW5', cat: 'DW', name: '3 kolumny', desc: '3 obrazy + 3 teksty' },
-          { code: 'DW6', cat: 'DW', name: '4 kolumny', desc: '4 obrazy + 4 teksty' },
-          { code: 'DW7', cat: 'DW', name: 'Obrazy lewo + Teksty prawo', desc: '3+3 kolumny' },
-          { code: 'DW8', cat: 'DW', name: 'Cytat z obrazem', desc: 'Zdjęcie w tle + cytat' },
-          { code: 'CTA1', cat: 'CTA', name: 'Zaproszenie do kontaktu', desc: 'Ciemne tło + przycisk' },
-        ];
-        const cats = { NO: 'Nagłówek', DW: 'DiWine Bloki', CTA: 'Zaproszenie' };
-        return (
-          <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            onClick={() => setShowBlockPicker(false)}>
-            <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} />
-            <div style={{ position: 'relative', background: '#fff', borderRadius: 16, padding: 24, width: 600, maxHeight: '80vh', overflow: 'auto' }}
-              onClick={e => e.stopPropagation()}>
-              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, margin: 0 }}>Dodaj klocek</h3>
-              {Object.entries(cats).map(([catCode, catName]) => (
-                <div key={catCode} style={{ marginTop: 16 }}>
-                  <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>{catName}</div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
-                    {offerBlocks.filter(b => b.cat === catCode).map(block => (
-                      <button key={block.code} onClick={() => {
-                        const newSection = { id: `${block.code}-${Date.now()}`, code: block.code, label: block.name, fields: {}, bg: undefined };
-                        const next = [...wzContent];
-                        next.splice(insertAt, 0, newSection);
-                        setWzContent(next);
-                        setShowBlockPicker(false);
-                      }}
-                        style={{ padding: 12, borderRadius: 12, border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer', textAlign: 'left', transition: 'border-color 0.15s' }}
-                        onMouseEnter={e => (e.currentTarget.style.borderColor = '#6366F1')}
-                        onMouseLeave={e => (e.currentTarget.style.borderColor = '#E2E8F0')}>
-                        <div style={{ fontSize: 12, fontWeight: 700, color: '#1E293B', marginBottom: 4 }}>{block.name}</div>
-                        <div style={{ fontSize: 10, color: '#94A3B8' }}>{block.desc}</div>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ))}
-              <button onClick={() => setShowBlockPicker(false)}
-                style={{ marginTop: 16, padding: '8px 20px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontSize: 12, cursor: 'pointer' }}>
-                Anuluj
-              </button>
-            </div>
-          </div>
-        );
-      })()}
+      <BlocksModal
+        open={showBlockPicker}
+        onClose={() => setShowBlockPicker(false)}
+        onPick={(block) => {
+          const newSection = { id: `${block.code}-${Date.now()}`, code: block.code, label: block.name, fields: {}, bg: undefined };
+          const next = [...wzContent];
+          next.splice(insertAt, 0, newSection);
+          setWzContent(next);
+          setShowBlockPicker(false);
+        }}
+        title="Dodaj stronę"
+        blocks={getBlocksForSiteType(useLabStore.getState().siteType)}
+        categories={getCategoriesForSiteType(useLabStore.getState().siteType)}
+      />
 
       {/* OFFER ACTION BAR */}
       {useLabStore.getState().siteType === 'offer' && (() => {

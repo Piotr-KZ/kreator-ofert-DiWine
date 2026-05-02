@@ -261,7 +261,7 @@ function AddSectionBtn({ onClick }: { onClick: () => void }) {
 }
 
 // ─── BlocksModal (z makiety — biblioteka klockow) ─────
-function BlocksModal({ open, onClose, onPick, restrictCat, title, blocks, categories }: {
+export function BlocksModal({ open, onClose, onPick, restrictCat, title, blocks, categories }: {
   open: boolean;
   onClose: () => void;
   onPick: (block: Block) => void;
