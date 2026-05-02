@@ -301,6 +301,23 @@ export default function Step5Wizualizacja() {
   const [wzHovered, setWzHovered] = React.useState(null);
   const [wzContent, setWzContent] = React.useState(() => storeSections.map(mapFromStore));
   React.useEffect(() => { setWzContent(storeSections.map(mapFromStore)); }, [storeSections]);
+  const [showBlockPicker, setShowBlockPicker] = React.useState(false);
+  const [insertAt, setInsertAt] = React.useState(0);
+
+  // Print CSS for offer landscape
+  React.useEffect(() => {
+    if (useLabStore.getState().siteType !== 'offer') return;
+    const style = document.createElement('style');
+    style.textContent = `
+      @page { size: A4 landscape; margin: 0; }
+      @media print {
+        [data-section-id] { page-break-after: always; page-break-inside: avoid; }
+        [data-section-id]:last-child { page-break-after: auto; }
+      }
+    `;
+    document.head.appendChild(style);
+    return () => { document.head.removeChild(style); };
+  }, []);
 
   const wzGetOv = (sectionId, elId) => {
     const page = wzOverrides[sectionId] || {};
@@ -993,30 +1010,64 @@ export default function Step5Wizualizacja() {
                   <DeviceCtx.Provider value={device}>
                   <SREditCtx.Provider value={wzEditCtx as any}>
                     {wzContent.map((s, idx) => {
+                      const isOfferProject = useLabStore.getState().siteType === 'offer';
+                      const isLocked = s.fields?._locked;
                       const Renderer = WIZ_SECTION_RENDERERS[s.code] || SECTION_RENDERERS[s.code] || SECTION_RENDERERS.PLACEHOLDER;
                       if (!Renderer) return null;
                       return (
-                        <div key={s.id} data-section-id={s.id}
-                          onMouseEnter={() => setWzHovered(s.id)}
-                          onMouseLeave={() => { if (wzHovered === s.id) setWzHovered(null); }}
-                          style={{ position: 'relative' }}>
-                          <Renderer s={s} brand={idx % 2 === 0 ? brand : { ...brand, bg: brand.bg2 }} typo={typo} device={device} update={(p) => wzUpdateSection(s.id, p)}/>
-                          {wzHovered === s.id && liveEdit && !wzSelected && (
+                        <React.Fragment key={s.id}>
+                          {/* Add block button BETWEEN sections */}
+                          {isOfferProject && idx > 0 && (
                             <div style={{
-                              position: 'absolute', top: 6, right: 6, display: 'flex', gap: 4, zIndex: 20,
-                              background: 'rgba(15,23,42,.85)', borderRadius: 8, padding: '4px 6px',
-                              alignItems: 'center',
-                            }}>
-                              <span style={{ color: '#fff', fontSize: 10, fontWeight: 600, padding: '2px 6px', opacity: 0.7 }}>{s.label || s.code}</span>
-                              {idx > 0 && <button onClick={() => wzMoveSection(s.id, 'up')} style={hoverBtnStyle} title="W górę">↑</button>}
-                              {idx < wzContent.length - 1 && <button onClick={() => wzMoveSection(s.id, 'down')} style={hoverBtnStyle} title="W dół">↓</button>}
-                              <button onClick={() => wzDuplicateSection(s.id)} style={hoverBtnStyle} title="Duplikuj">⧉</button>
-                              <button onClick={() => wzDeleteSection(s.id)} style={{...hoverBtnStyle, color: '#FCA5A5'}} title="Usuń">✕</button>
+                              display: 'flex', justifyContent: 'center', padding: '4px 0',
+                              opacity: 0.4, transition: 'opacity 0.2s',
+                            }}
+                              onMouseEnter={e => (e.currentTarget.style.opacity = '1')}
+                              onMouseLeave={e => (e.currentTarget.style.opacity = '0.4')}>
+                              <button onClick={() => { setInsertAt(idx); setShowBlockPicker(true); }} style={{
+                                padding: '4px 16px', borderRadius: 20, border: '2px dashed #CBD5E1',
+                                background: '#F8FAFC', color: '#94A3B8', fontSize: 11, fontWeight: 600,
+                                cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4,
+                              }}>+ Dodaj klocek</button>
                             </div>
                           )}
-                        </div>
+                          {/* Section */}
+                          <div data-section-id={s.id}
+                            onMouseEnter={() => setWzHovered(s.id)}
+                            onMouseLeave={() => { if (wzHovered === s.id) setWzHovered(null); }}
+                            style={{
+                              position: 'relative',
+                              aspectRatio: isOfferProject ? '297 / 210' : undefined,
+                              width: '100%',
+                              overflow: 'hidden',
+                            }}>
+                            <Renderer s={s} brand={idx % 2 === 0 ? brand : { ...brand, bg: brand.bg2 }} typo={typo} device={device} update={(p) => wzUpdateSection(s.id, p)}/>
+                            {wzHovered === s.id && liveEdit && !wzSelected && (
+                              <div style={{
+                                position: 'absolute', top: 6, right: 6, display: 'flex', gap: 4, zIndex: 20,
+                                background: 'rgba(15,23,42,.85)', borderRadius: 8, padding: '4px 6px',
+                                alignItems: 'center',
+                              }}>
+                                <span style={{ color: '#fff', fontSize: 10, fontWeight: 600, padding: '2px 6px', opacity: 0.7 }}>{s.label || s.code}</span>
+                                {idx > 0 && <button onClick={() => wzMoveSection(s.id, 'up')} style={hoverBtnStyle} title="W górę">↑</button>}
+                                {idx < wzContent.length - 1 && <button onClick={() => wzMoveSection(s.id, 'down')} style={hoverBtnStyle} title="W dół">↓</button>}
+                                <button onClick={() => wzDuplicateSection(s.id)} style={hoverBtnStyle} title="Duplikuj">⧉</button>
+                                {!isLocked && <button onClick={() => wzDeleteSection(s.id)} style={{...hoverBtnStyle, color: '#FCA5A5'}} title="Usuń">✕</button>}
+                              </div>
+                            )}
+                          </div>
+                        </React.Fragment>
                       );
                     })}
+                    {/* Add block at end */}
+                    {useLabStore.getState().siteType === 'offer' && (
+                      <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}>
+                        <button onClick={() => { setInsertAt(wzContent.length); setShowBlockPicker(true); }} style={{
+                          padding: '8px 24px', borderRadius: 20, border: '2px dashed #CBD5E1',
+                          background: '#F8FAFC', color: '#94A3B8', fontSize: 12, fontWeight: 600, cursor: 'pointer',
+                        }}>+ Dodaj stronę</button>
+                      </div>
+                    )}
                   </SREditCtx.Provider>
                   </DeviceCtx.Provider>
                 );
@@ -1245,6 +1296,93 @@ export default function Step5Wizualizacja() {
           </div>
         </div>
       )}
+
+      {/* OFFER BLOCK PICKER MODAL */}
+      {showBlockPicker && (() => {
+        const offerBlocks = [
+          { code: 'NO1', cat: 'NO', name: 'Nagłówek — standard', desc: 'Zdjęcie w tle + logo + dane' },
+          { code: 'NO2', cat: 'NO', name: 'Nagłówek — pełnoekranowy', desc: 'Wielkie zdjęcie + tekst na dole' },
+          { code: 'DW1', cat: 'DW', name: 'Obraz lewo + Tekst prawo', desc: 'Split 50/50' },
+          { code: 'DW2', cat: 'DW', name: 'Tekst lewo + Obraz prawo', desc: 'Split 50/50' },
+          { code: 'DW3', cat: 'DW', name: 'Obraz góra + Tekst dół', desc: 'Stacked' },
+          { code: 'DW4', cat: 'DW', name: '2 kolumny', desc: '2 obrazy + 2 teksty' },
+          { code: 'DW5', cat: 'DW', name: '3 kolumny', desc: '3 obrazy + 3 teksty' },
+          { code: 'DW6', cat: 'DW', name: '4 kolumny', desc: '4 obrazy + 4 teksty' },
+          { code: 'DW7', cat: 'DW', name: 'Obrazy lewo + Teksty prawo', desc: '3+3 kolumny' },
+          { code: 'DW8', cat: 'DW', name: 'Cytat z obrazem', desc: 'Zdjęcie w tle + cytat' },
+          { code: 'CTA1', cat: 'CTA', name: 'Zaproszenie do kontaktu', desc: 'Ciemne tło + przycisk' },
+        ];
+        const cats = { NO: 'Nagłówek', DW: 'DiWine Bloki', CTA: 'Zaproszenie' };
+        return (
+          <div style={{ position: 'fixed', inset: 0, zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onClick={() => setShowBlockPicker(false)}>
+            <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)' }} />
+            <div style={{ position: 'relative', background: '#fff', borderRadius: 16, padding: 24, width: 600, maxHeight: '80vh', overflow: 'auto' }}
+              onClick={e => e.stopPropagation()}>
+              <h3 style={{ fontSize: 18, fontWeight: 700, marginBottom: 16, margin: 0 }}>Dodaj klocek</h3>
+              {Object.entries(cats).map(([catCode, catName]) => (
+                <div key={catCode} style={{ marginTop: 16 }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: '#64748B', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 8 }}>{catName}</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10 }}>
+                    {offerBlocks.filter(b => b.cat === catCode).map(block => (
+                      <button key={block.code} onClick={() => {
+                        const newSection = { id: `${block.code}-${Date.now()}`, code: block.code, label: block.name, fields: {}, bg: undefined };
+                        const next = [...wzContent];
+                        next.splice(insertAt, 0, newSection);
+                        setWzContent(next);
+                        setShowBlockPicker(false);
+                      }}
+                        style={{ padding: 12, borderRadius: 12, border: '1px solid #E2E8F0', background: '#fff', cursor: 'pointer', textAlign: 'left', transition: 'border-color 0.15s' }}
+                        onMouseEnter={e => (e.currentTarget.style.borderColor = '#6366F1')}
+                        onMouseLeave={e => (e.currentTarget.style.borderColor = '#E2E8F0')}>
+                        <div style={{ fontSize: 12, fontWeight: 700, color: '#1E293B', marginBottom: 4 }}>{block.name}</div>
+                        <div style={{ fontSize: 10, color: '#94A3B8' }}>{block.desc}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <button onClick={() => setShowBlockPicker(false)}
+                style={{ marginTop: 16, padding: '8px 20px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontSize: 12, cursor: 'pointer' }}>
+                Anuluj
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* OFFER ACTION BAR */}
+      {useLabStore.getState().siteType === 'offer' && (() => {
+        const ctx = JSON.parse(localStorage.getItem('_offer_context') || '{}');
+        const oid = ctx.offer_id;
+        return (
+          <div style={{
+            position: 'sticky', bottom: 0, background: '#fff', borderTop: '1px solid #E2E8F0',
+            padding: '12px 24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 30,
+          }}>
+            <button onClick={() => navigate(`/offer/${oid}/cost`)}
+              style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+              ← Kosztorys
+            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={() => window.open(`/api/v1/offers/${oid}/page-preview`, '_blank')}
+                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #E2E8F0', background: '#fff', color: '#64748B', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                Podgląd oferty
+              </button>
+              <button onClick={async () => {
+                try { await useLabStore.getState().saveProject(); alert('Zapisano'); } catch { alert('Błąd zapisu'); }
+              }}
+                style={{ padding: '8px 16px', borderRadius: 8, border: '1px solid #6366F1', background: '#EEF2FF', color: '#4F46E5', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
+                Zapisz
+              </button>
+              <button onClick={() => navigate(`/offer/${oid}/export`)}
+                style={{ padding: '8px 16px', borderRadius: 8, border: 'none', background: '#4F46E5', color: '#fff', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                Zapisz i eksport →
+              </button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }
